@@ -99,6 +99,24 @@ public sealed class WarrantyClaim
     public DateTime? SettledAt { get; set; }
 }
 
+/// <summary>Đề nghị giao tài liệu xe (CarDocReq/ĐNGT): ĐL xin hồ sơ (đăng ký/hóa đơn/COC/BH) sau giao → HQ duyệt → giao → nhận.</summary>
+public sealed class DocRequest
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string DealerCode { get; set; } = "";
+    public string DocType { get; set; } = "Registration";  // Registration/Invoice/COC/Warranty
+    public string Status { get; set; } = "Requested";       // Requested → Approved → Shipped → Received (hoặc Rejected)
+    public string? Note { get; set; }
+    public string? TrackingNo { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? ShippedAt { get; set; }
+    public DateTime? ReceivedAt { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

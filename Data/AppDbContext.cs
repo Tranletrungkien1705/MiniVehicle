@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<RecallCampaign> Recalls => Set<RecallCampaign>();
     public DbSet<VehicleRecall> VehicleRecalls => Set<VehicleRecall>();
     public DbSet<WarrantyClaim> Claims => Set<WarrantyClaim>();
+    public DbSet<DocRequest> DocRequests => Set<DocRequest>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {

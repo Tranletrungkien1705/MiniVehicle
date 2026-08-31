@@ -13,6 +13,8 @@ public record TransferDto(string NewOwnerName, string? NewOwnerPhone, string? Ne
 public record RegisterPlateDto(string PlateNo);
 public record CreateClaimDto(string Vin, string DealerCode, string Issue, decimal PartsCost, decimal LaborCost);
 public record ClaimDecisionDto(string? Note);
+public record CreateDocReqDto(string Vin, string DealerCode, string? DocType, string? Note);
+public record ShipDocDto(string? TrackingNo);
 
 public interface IVehicleService
 {
@@ -34,6 +36,9 @@ public interface IVehicleService
     Task<object> ListClaimsAsync(string? status, string? vin, string? dealer);
     Task<object?> DecideClaimAsync(string claimNo, bool approve, string? note);
     Task<object?> SettleClaimAsync(string claimNo);
+    Task<object> CreateDocReqAsync(CreateDocReqDto dto);
+    Task<object> ListDocReqAsync(string? status, string? dealer, string? vin);
+    Task<object?> DocReqTransitionAsync(string code, string action, string? trackingNo);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -272,6 +277,60 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         Log(c.Vin, "WarrantyClaimSettled", $"{claimNo} {c.PartsCost + c.LaborCost}");
         await db.SaveChangesAsync();
         return new { c.ClaimNo, c.Vin, status = c.Status, total = c.PartsCost + c.LaborCost, c.SettledAt };
+    }
+
+    // ===== Đề nghị giao tài liệu (CarDocReq/ĐNGT) =====
+    public async Task<object> CreateDocReqAsync(CreateDocReqDto dto)
+    {
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin)
+            ?? throw new InvalidOperationException($"Không thấy xe {vin}.");
+        if (v.Status != VehicleStatus.Delivered)
+            throw new InvalidOperationException("Xe chưa giao — chưa thể xin hồ sơ.");
+        var code = "DR" + DateTime.Now.ToString("yyMMddHHmmss");
+        var r = new DocRequest
+        {
+            OrgId = Org, Code = code, Vin = vin, DealerCode = dto.DealerCode.Trim(),
+            DocType = string.IsNullOrWhiteSpace(dto.DocType) ? "Registration" : dto.DocType!.Trim(),
+            Note = dto.Note, Status = "Requested"
+        };
+        db.DocRequests.Add(r);
+        Log(vin, "DocRequest", $"{code} {r.DocType}");
+        await db.SaveChangesAsync();
+        return new { r.Code, r.Vin, r.DocType, r.DealerCode, status = r.Status };
+    }
+
+    public async Task<object> ListDocReqAsync(string? status, string? dealer, string? vin)
+    {
+        var q = db.DocRequests.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(r => r.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(vin)) { var vv = vin.Trim().ToUpperInvariant(); q = q.Where(r => r.Vin == vv); }
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.Code, r.Vin, r.DealerCode, r.DocType, r.Status, r.TrackingNo, r.CreatedAt, r.ApprovedAt, r.ShippedAt, r.ReceivedAt
+        }).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    // State machine: approve (Requested→Approved), reject (Requested→Rejected), ship (Approved→Shipped), receive (Shipped→Received)
+    public async Task<object?> DocReqTransitionAsync(string code, string action, string? trackingNo)
+    {
+        code = code.Trim().ToUpperInvariant();
+        var r = await db.DocRequests.FirstOrDefaultAsync(x => x.OrgId == Org && x.Code == code);
+        if (r is null) return null;
+        var now = DateTime.Now;
+        switch (action)
+        {
+            case "approve": if (r.Status != "Requested") return null; r.Status = "Approved"; r.ApprovedAt = now; break;
+            case "reject": if (r.Status != "Requested") return null; r.Status = "Rejected"; r.ApprovedAt = now; break;
+            case "ship": if (r.Status != "Approved") return null; r.Status = "Shipped"; r.ShippedAt = now; r.TrackingNo = trackingNo; break;
+            case "receive": if (r.Status != "Shipped") return null; r.Status = "Received"; r.ReceivedAt = now; break;
+            default: return null;
+        }
+        Log(r.Vin, "DocRequest" + r.Status, code);
+        await db.SaveChangesAsync();
+        return new { r.Code, r.Vin, status = r.Status, r.TrackingNo };
     }
 
     // ===== Triệu hồi (recall) =====

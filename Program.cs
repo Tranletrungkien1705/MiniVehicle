@@ -191,6 +191,26 @@ app.MapPost("/api/recalls/{code}/done", async (string code, RecallDoneDto dto, I
     return r is null ? Results.NotFound(new { code, dto.Vin, error = "Không thấy campaign/xe trong campaign." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Đề nghị giao tài liệu xe (CarDocReq/ĐNGT) ----
+app.MapPost("/api/docreqs", async (CreateDocReqDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Vin) || string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần Vin và DealerCode." });
+    try { return Results.Ok(await svc.CreateDocReqAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/docreqs", async (IVehicleService svc, string? status, string? dealer, string? vin) =>
+    Results.Ok(await svc.ListDocReqAsync(status, dealer, vin))).RequireAuthorization();
+
+app.MapPost("/api/docreqs/{code}/{action}", async (string code, string action, ShipDocDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "reject" or "ship" or "receive"))
+        return Results.BadRequest(new { error = "action = approve|reject|ship|receive" });
+    var r = await svc.DocReqTransitionAsync(code, action, dto?.TrackingNo);
+    return r is null ? Results.NotFound(new { code, error = "Không thấy hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
