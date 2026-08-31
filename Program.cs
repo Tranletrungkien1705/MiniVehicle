@@ -138,6 +138,36 @@ app.MapPost("/api/vehicles/{vin}/register-plate", async (string vin, RegisterPla
     return r is null ? Results.NotFound(new { vin, error = "Không thấy xe hoặc xe chưa giao." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Yêu cầu bảo hành (GrtClaim) ----
+app.MapPost("/api/claims", async (CreateClaimDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Vin) || string.IsNullOrWhiteSpace(dto.Issue))
+        return Results.BadRequest(new { error = "Cần Vin và Issue." });
+    try { return Results.Ok(await svc.CreateClaimAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/claims", async (IVehicleService svc, string? status, string? vin, string? dealer) =>
+    Results.Ok(await svc.ListClaimsAsync(status, vin, dealer))).RequireAuthorization();
+
+app.MapPost("/api/claims/{claimNo}/approve", async (string claimNo, ClaimDecisionDto dto, IVehicleService svc) =>
+{
+    var r = await svc.DecideClaimAsync(claimNo, true, dto.Note);
+    return r is null ? Results.NotFound(new { claimNo, error = "Không thấy claim đang chờ duyệt." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/claims/{claimNo}/reject", async (string claimNo, ClaimDecisionDto dto, IVehicleService svc) =>
+{
+    var r = await svc.DecideClaimAsync(claimNo, false, dto.Note);
+    return r is null ? Results.NotFound(new { claimNo, error = "Không thấy claim đang chờ duyệt." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/claims/{claimNo}/settle", async (string claimNo, IVehicleService svc) =>
+{
+    var r = await svc.SettleClaimAsync(claimNo);
+    return r is null ? Results.NotFound(new { claimNo, error = "Claim chưa duyệt hoặc không tồn tại." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Triệu hồi (recall) ----
 app.MapPost("/api/recalls", async (CreateRecallDto dto, IVehicleService svc) =>
 {

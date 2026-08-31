@@ -11,6 +11,8 @@ public record CreateRecallDto(string Code, string Title, string? Model, string? 
 public record RecallDoneDto(string Vin, string? DoneBy);
 public record TransferDto(string NewOwnerName, string? NewOwnerPhone, string? NewPlateNo);
 public record RegisterPlateDto(string PlateNo);
+public record CreateClaimDto(string Vin, string DealerCode, string Issue, decimal PartsCost, decimal LaborCost);
+public record ClaimDecisionDto(string? Note);
 
 public interface IVehicleService
 {
@@ -28,6 +30,10 @@ public interface IVehicleService
     Task<object?> MarkRecallDoneAsync(string code, RecallDoneDto dto);
     Task<object?> TransferAsync(string vin, TransferDto dto);
     Task<object?> RegisterPlateAsync(string vin, string plateNo);
+    Task<object> CreateClaimAsync(CreateClaimDto dto);
+    Task<object> ListClaimsAsync(string? status, string? vin, string? dealer);
+    Task<object?> DecideClaimAsync(string claimNo, bool approve, string? note);
+    Task<object?> SettleClaimAsync(string claimNo);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -207,6 +213,65 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         Log(vin, "PlateRegistered", v.PlateNo);
         await db.SaveChangesAsync();
         return new { v.Vin, v.PlateNo, v.OwnerName };
+    }
+
+    // ===== Yêu cầu bảo hành (GrtClaim) =====
+    public async Task<object> CreateClaimAsync(CreateClaimDto dto)
+    {
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin)
+            ?? throw new InvalidOperationException($"Không thấy xe {vin}.");
+        if (v.Status != VehicleStatus.Delivered)
+            throw new InvalidOperationException("Xe chưa giao — không thể mở yêu cầu bảo hành.");
+        if (!(v.WarrantyEnd.HasValue && v.WarrantyEnd.Value.Date >= DateTime.Now.Date))
+            throw new InvalidOperationException("Xe đã HẾT bảo hành — không đủ điều kiện.");
+        var claimNo = "WC" + DateTime.Now.ToString("yyMMddHHmmss");
+        var c = new WarrantyClaim
+        {
+            OrgId = Org, ClaimNo = claimNo, Vin = vin, DealerCode = dto.DealerCode.Trim(),
+            Issue = dto.Issue.Trim(), PartsCost = dto.PartsCost, LaborCost = dto.LaborCost, Status = "Submitted"
+        };
+        db.Claims.Add(c);
+        Log(vin, "WarrantyClaim", $"{claimNo} {dto.Issue}");
+        await db.SaveChangesAsync();
+        return new { c.ClaimNo, c.Vin, c.DealerCode, total = c.PartsCost + c.LaborCost, status = c.Status };
+    }
+
+    public async Task<object> ListClaimsAsync(string? status, string? vin, string? dealer)
+    {
+        var q = db.Claims.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(vin)) { var vv = vin.Trim().ToUpperInvariant(); q = q.Where(c => c.Vin == vv); }
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(c => c.DealerCode == dealer);
+        var items = await q.OrderByDescending(c => c.Id).Take(500).Select(c => new
+        {
+            c.ClaimNo, c.Vin, c.DealerCode, c.Issue, c.PartsCost, c.LaborCost,
+            total = c.PartsCost + c.LaborCost, c.Status, c.CreatedAt, c.DecidedAt, c.SettledAt, c.DecisionNote
+        }).ToListAsync();
+        return new { count = items.Count, totalApprovedValue = items.Where(i => i.Status is "Approved" or "Settled").Sum(i => i.total), items };
+    }
+
+    public async Task<object?> DecideClaimAsync(string claimNo, bool approve, string? note)
+    {
+        claimNo = claimNo.Trim().ToUpperInvariant();
+        var c = await db.Claims.FirstOrDefaultAsync(x => x.OrgId == Org && x.ClaimNo == claimNo);
+        if (c is null || c.Status != "Submitted") return null;   // chỉ quyết trên claim đang chờ
+        c.Status = approve ? "Approved" : "Rejected";
+        c.DecisionNote = note; c.DecidedAt = DateTime.Now;
+        Log(c.Vin, "WarrantyClaim" + c.Status, claimNo);
+        await db.SaveChangesAsync();
+        return new { c.ClaimNo, c.Vin, status = c.Status, c.DecisionNote };
+    }
+
+    public async Task<object?> SettleClaimAsync(string claimNo)
+    {
+        claimNo = claimNo.Trim().ToUpperInvariant();
+        var c = await db.Claims.FirstOrDefaultAsync(x => x.OrgId == Org && x.ClaimNo == claimNo);
+        if (c is null || c.Status != "Approved") return null;    // chỉ quyết toán claim đã duyệt
+        c.Status = "Settled"; c.SettledAt = DateTime.Now;
+        Log(c.Vin, "WarrantyClaimSettled", $"{claimNo} {c.PartsCost + c.LaborCost}");
+        await db.SaveChangesAsync();
+        return new { c.ClaimNo, c.Vin, status = c.Status, total = c.PartsCost + c.LaborCost, c.SettledAt };
     }
 
     // ===== Triệu hồi (recall) =====

@@ -81,6 +81,24 @@ public sealed class VehicleRecall
     public string? DoneBy { get; set; }          // đại lý thực hiện
 }
 
+/// <summary>Yêu cầu bảo hành (GrtClaim): đại lý mở cho xe còn BH → hãng duyệt/từ chối → quyết toán.</summary>
+public sealed class WarrantyClaim
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ClaimNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string DealerCode { get; set; } = "";
+    public string Issue { get; set; } = "";
+    public decimal PartsCost { get; set; }
+    public decimal LaborCost { get; set; }
+    public string Status { get; set; } = "Submitted";  // Submitted → Approved/Rejected → Settled
+    public string? DecisionNote { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? DecidedAt { get; set; }
+    public DateTime? SettledAt { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {
