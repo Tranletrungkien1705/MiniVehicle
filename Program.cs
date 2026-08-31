@@ -123,6 +123,21 @@ app.MapGet("/api/vehicles/{vin}/history", async (string vin, IVehicleService svc
 // Thống kê vòng đời
 app.MapGet("/api/stats", async (IVehicleService svc) => Results.Ok(await svc.StatsAsync())).RequireAuthorization();
 
+// ---- Đổi chủ + đăng ký biển số (sau giao) ----
+app.MapPost("/api/vehicles/{vin}/transfer", async (string vin, TransferDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.NewOwnerName)) return Results.BadRequest(new { error = "Cần NewOwnerName." });
+    var r = await svc.TransferAsync(vin, dto);
+    return r is null ? Results.NotFound(new { vin, error = "Không thấy xe hoặc xe chưa giao." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/vehicles/{vin}/register-plate", async (string vin, RegisterPlateDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.PlateNo)) return Results.BadRequest(new { error = "Cần PlateNo." });
+    var r = await svc.RegisterPlateAsync(vin, dto.PlateNo);
+    return r is null ? Results.NotFound(new { vin, error = "Không thấy xe hoặc xe chưa giao." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Triệu hồi (recall) ----
 app.MapPost("/api/recalls", async (CreateRecallDto dto, IVehicleService svc) =>
 {

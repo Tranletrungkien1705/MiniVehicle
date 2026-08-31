@@ -9,6 +9,8 @@ public record CreateDoDto(string DealerCode, List<string> Vins, string? DoNo);
 public record DeliverDto(string? OwnerName, string? OwnerPhone, string? PlateNo);
 public record CreateRecallDto(string Code, string Title, string? Model, string? Reason, string? Remedy, List<string>? Vins);
 public record RecallDoneDto(string Vin, string? DoneBy);
+public record TransferDto(string NewOwnerName, string? NewOwnerPhone, string? NewPlateNo);
+public record RegisterPlateDto(string PlateNo);
 
 public interface IVehicleService
 {
@@ -24,6 +26,8 @@ public interface IVehicleService
     Task<object> ListRecallsAsync();
     Task<object?> RecallAffectedAsync(string code);
     Task<object?> MarkRecallDoneAsync(string code, RecallDoneDto dto);
+    Task<object?> TransferAsync(string vin, TransferDto dto);
+    Task<object?> RegisterPlateAsync(string vin, string plateNo);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -176,6 +180,33 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             hasOpenRecall = openRecalls.Count > 0,
             openRecalls
         };
+    }
+
+    // Đổi chủ (sang tên): chỉ xe đã giao. Bảo hành theo xe nên GIỮ NGUYÊN khi đổi chủ.
+    public async Task<object?> TransferAsync(string vin, TransferDto dto)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null || v.Status != VehicleStatus.Delivered) return null;
+        var old = v.OwnerName;
+        v.OwnerName = dto.NewOwnerName.Trim();
+        v.OwnerPhone = dto.NewOwnerPhone ?? v.OwnerPhone;
+        if (!string.IsNullOrWhiteSpace(dto.NewPlateNo)) v.PlateNo = dto.NewPlateNo.Trim();
+        Log(vin, "Transfer", $"{old} -> {v.OwnerName}");
+        await db.SaveChangesAsync();
+        return new { v.Vin, previousOwner = old, newOwner = v.OwnerName, v.PlateNo };
+    }
+
+    // Đăng ký biển số (sau giao/đăng kiểm)
+    public async Task<object?> RegisterPlateAsync(string vin, string plateNo)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null || v.Status != VehicleStatus.Delivered) return null;
+        v.PlateNo = plateNo.Trim();
+        Log(vin, "PlateRegistered", v.PlateNo);
+        await db.SaveChangesAsync();
+        return new { v.Vin, v.PlateNo, v.OwnerName };
     }
 
     // ===== Triệu hồi (recall) =====
