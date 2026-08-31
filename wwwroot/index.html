@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniVehicle</title>
+<style>:root{color-scheme:light dark}body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.6}code{background:rgba(127,127,127,.15);padding:1px 5px;border-radius:4px}.muted{opacity:.7}li{margin:4px 0}</style></head>
+<body>
+<h1>MiniVehicle</h1>
+<p class="muted">Sổ đăng ký xe theo VIN — vòng đời kho → phân bổ đại lý → lệnh giao → giao &amp; kích hoạt bảo hành. Chuyển đổi từ module Car (2010.HTC).</p>
+<h3>API (cần X-Api-Key + token MiniSSO)</h3>
+<ul>
+<li><code>POST /api/vehicles</code> — nhập xe (VIN, Model)</li>
+<li><code>GET /api/vehicles?status=&model=&dealer=</code> — tra/tìm</li>
+<li><code>POST /api/vehicles/{vin}/allocate</code> — phân bổ đại lý</li>
+<li><code>POST /api/delivery-orders</code> — tạo lệnh giao (nhiều VIN)</li>
+<li><code>POST /api/delivery-orders/{doNo}/deliver</code> — giao + kích hoạt bảo hành</li>
+<li><code>GET /api/vehicles/{vin}/history</code> — lịch sử vòng đời</li>
+<li><code>GET /api/stats</code> — thống kê</li>
+</ul>
+<h3>Công khai</h3>
+<ul><li><code>GET /api/lookup?vin=</code> — tra cứu VIN + bảo hành (khách/đại lý)</li></ul>
+<p class="muted">SSO: <code>/api/whoami</code>. Swagger: <a href="/swagger">/swagger</a>.</p>
+</body></html>
