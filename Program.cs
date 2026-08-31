@@ -123,6 +123,29 @@ app.MapGet("/api/vehicles/{vin}/history", async (string vin, IVehicleService svc
 // Thống kê vòng đời
 app.MapGet("/api/stats", async (IVehicleService svc) => Results.Ok(await svc.StatsAsync())).RequireAuthorization();
 
+// ---- Triệu hồi (recall) ----
+app.MapPost("/api/recalls", async (CreateRecallDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Code) || string.IsNullOrWhiteSpace(dto.Title))
+        return Results.BadRequest(new { error = "Cần Code và Title." });
+    try { return Results.Ok(await svc.CreateRecallAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/recalls", async (IVehicleService svc) => Results.Ok(await svc.ListRecallsAsync())).RequireAuthorization();
+
+app.MapGet("/api/recalls/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.RecallAffectedAsync(code);
+    return r is null ? Results.NotFound(new { code }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/recalls/{code}/done", async (string code, RecallDoneDto dto, IVehicleService svc) =>
+{
+    var r = await svc.MarkRecallDoneAsync(code, dto);
+    return r is null ? Results.NotFound(new { code, dto.Vin, error = "Không thấy campaign/xe trong campaign." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

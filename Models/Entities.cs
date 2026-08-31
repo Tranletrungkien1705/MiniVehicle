@@ -55,6 +55,32 @@ public sealed class DeliveryOrderLine
     public string Vin { get; set; } = "";
 }
 
+/// <summary>Chiến dịch triệu hồi (recall) — theo model, kèm lý do/hành động khắc phục.</summary>
+public sealed class RecallCampaign
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string? Model { get; set; }          // lọc xe bị ảnh hưởng theo model (rỗng = chỉ định VIN thủ công)
+    public string? Reason { get; set; }
+    public string? Remedy { get; set; }          // hành động khắc phục
+    public string Status { get; set; } = "Open"; // Open → Closed
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Xe bị ảnh hưởng bởi 1 chiến dịch triệu hồi + tiến độ khắc phục.</summary>
+public sealed class VehicleRecall
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long CampaignId { get; set; }
+    public string Vin { get; set; } = "";
+    public string Status { get; set; } = "Open"; // Open → Done
+    public DateTime? DoneAt { get; set; }
+    public string? DoneBy { get; set; }          // đại lý thực hiện
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

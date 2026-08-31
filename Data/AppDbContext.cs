@@ -10,6 +10,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<DeliveryOrder> DeliveryOrders => Set<DeliveryOrder>();
     public DbSet<DeliveryOrderLine> DeliveryOrderLines => Set<DeliveryOrderLine>();
     public DbSet<VehicleEvent> Events => Set<VehicleEvent>();
+    public DbSet<RecallCampaign> Recalls => Set<RecallCampaign>();
+    public DbSet<VehicleRecall> VehicleRecalls => Set<VehicleRecall>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {

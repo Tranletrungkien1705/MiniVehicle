@@ -7,6 +7,8 @@ namespace MiniVehicle.Services;
 public record RegisterVehicleDto(string Vin, string Model, string? EngineNo, string? Color, int? ModelYear, int? WarrantyMonths);
 public record CreateDoDto(string DealerCode, List<string> Vins, string? DoNo);
 public record DeliverDto(string? OwnerName, string? OwnerPhone, string? PlateNo);
+public record CreateRecallDto(string Code, string Title, string? Model, string? Reason, string? Remedy, List<string>? Vins);
+public record RecallDoneDto(string Vin, string? DoneBy);
 
 public interface IVehicleService
 {
@@ -18,6 +20,10 @@ public interface IVehicleService
     Task<object?> HistoryAsync(string vin);
     Task<object> StatsAsync();
     Task<object?> PublicLookupAsync(string vin);
+    Task<object> CreateRecallAsync(CreateRecallDto dto);
+    Task<object> ListRecallsAsync();
+    Task<object?> RecallAffectedAsync(string code);
+    Task<object?> MarkRecallDoneAsync(string code, RecallDoneDto dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -155,13 +161,93 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         var v = await db.Vehicles.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Vin == vin);
         if (v is null) return null;
         var active = v.WarrantyEnd.HasValue && v.WarrantyEnd.Value.Date >= DateTime.Now.Date;
+        // Triệu hồi còn mở của xe này (join campaign)
+        var openRecalls = await (from vr in db.VehicleRecalls.IgnoreQueryFilters()
+                                 join c in db.Recalls.IgnoreQueryFilters() on vr.CampaignId equals c.Id
+                                 where vr.Vin == vin && vr.Status == "Open"
+                                 select new { c.Code, c.Title, c.Remedy }).ToListAsync();
         return new
         {
             found = true, v.Vin, v.Model, v.Color, v.ModelYear, status = v.Status.ToString(),
             delivered = v.Status == VehicleStatus.Delivered, v.DeliveredAt,
             warrantyActive = active,
             warrantyEnd = v.WarrantyEnd?.ToString("yyyy-MM-dd"),
-            daysLeft = active ? (int)(v.WarrantyEnd!.Value.Date - DateTime.Now.Date).TotalDays : 0
+            daysLeft = active ? (int)(v.WarrantyEnd!.Value.Date - DateTime.Now.Date).TotalDays : 0,
+            hasOpenRecall = openRecalls.Count > 0,
+            openRecalls
         };
+    }
+
+    // ===== Triệu hồi (recall) =====
+    public async Task<object> CreateRecallAsync(CreateRecallDto dto)
+    {
+        var code = dto.Code.Trim().ToUpperInvariant();
+        if (await db.Recalls.AnyAsync(r => r.OrgId == Org && r.Code == code))
+            throw new InvalidOperationException($"Mã triệu hồi {code} đã tồn tại.");
+        var c = new RecallCampaign
+        {
+            OrgId = Org, Code = code, Title = dto.Title.Trim(), Model = dto.Model,
+            Reason = dto.Reason, Remedy = dto.Remedy, Status = "Open"
+        };
+        db.Recalls.Add(c);
+        await db.SaveChangesAsync();
+
+        // Gắn xe bị ảnh hưởng: theo model (nếu có) và/hoặc danh sách VIN chỉ định.
+        var affected = new List<Vehicle>();
+        if (!string.IsNullOrWhiteSpace(dto.Model))
+            affected.AddRange(await db.Vehicles.Where(v => v.OrgId == Org && v.Model == dto.Model).ToListAsync());
+        if (dto.Vins is { Count: > 0 })
+        {
+            var vins = dto.Vins.Select(s => s.Trim().ToUpperInvariant()).ToList();
+            affected.AddRange(await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync());
+        }
+        var uniq = affected.GroupBy(v => v.Vin).Select(g => g.First()).ToList();
+        foreach (var v in uniq)
+        {
+            db.VehicleRecalls.Add(new VehicleRecall { OrgId = Org, CampaignId = c.Id, Vin = v.Vin, Status = "Open" });
+            Log(v.Vin, "Recall", $"Campaign={code}");
+        }
+        await db.SaveChangesAsync();
+        return new { c.Code, c.Title, c.Model, affected = uniq.Count };
+    }
+
+    public async Task<object> ListRecallsAsync()
+    {
+        var items = await db.Recalls.Where(r => r.OrgId == Org).OrderByDescending(r => r.Id).Select(r => new
+        {
+            r.Code, r.Title, r.Model, r.Reason, r.Remedy, r.Status, r.CreatedAt,
+            affected = db.VehicleRecalls.Count(x => x.OrgId == Org && x.CampaignId == r.Id),
+            done = db.VehicleRecalls.Count(x => x.OrgId == Org && x.CampaignId == r.Id && x.Status == "Done")
+        }).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> RecallAffectedAsync(string code)
+    {
+        code = code.Trim().ToUpperInvariant();
+        var c = await db.Recalls.FirstOrDefaultAsync(r => r.OrgId == Org && r.Code == code);
+        if (c is null) return null;
+        var lines = await db.VehicleRecalls.Where(x => x.OrgId == Org && x.CampaignId == c.Id)
+            .Select(x => new { x.Vin, x.Status, x.DoneAt, x.DoneBy }).ToListAsync();
+        return new { c.Code, c.Title, c.Status, affected = lines.Count, done = lines.Count(l => l.Status == "Done"), vehicles = lines };
+    }
+
+    public async Task<object?> MarkRecallDoneAsync(string code, RecallDoneDto dto)
+    {
+        code = code.Trim().ToUpperInvariant();
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var c = await db.Recalls.FirstOrDefaultAsync(r => r.OrgId == Org && r.Code == code);
+        if (c is null) return null;
+        var vr = await db.VehicleRecalls.FirstOrDefaultAsync(x => x.OrgId == Org && x.CampaignId == c.Id && x.Vin == vin);
+        if (vr is null) return null;
+        if (vr.Status != "Done")
+        {
+            vr.Status = "Done"; vr.DoneAt = DateTime.Now; vr.DoneBy = dto.DoneBy;
+            Log(vin, "RecallDone", $"Campaign={code} By={dto.DoneBy}");
+            await db.SaveChangesAsync();   // lưu trước rồi mới đếm để đóng campaign chính xác
+            var remaining = await db.VehicleRecalls.CountAsync(x => x.OrgId == Org && x.CampaignId == c.Id && x.Status == "Open");
+            if (remaining == 0 && c.Status != "Closed") { c.Status = "Closed"; await db.SaveChangesAsync(); }
+        }
+        return new { code, vin, status = vr.Status, campaignStatus = c.Status };
     }
 }
