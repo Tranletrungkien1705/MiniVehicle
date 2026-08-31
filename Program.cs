@@ -191,6 +191,26 @@ app.MapPost("/api/recalls/{code}/done", async (string code, RecallDoneDto dto, I
     return r is null ? Results.NotFound(new { code, dto.Vin, error = "Không thấy campaign/xe trong campaign." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Chuyển kho / điều chuyển xe ----
+app.MapPost("/api/transfers", async (CreateTransferDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Vin) || string.IsNullOrWhiteSpace(dto.ToDealer))
+        return Results.BadRequest(new { error = "Cần Vin và ToDealer." });
+    try { return Results.Ok(await svc.CreateTransferAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/transfers", async (IVehicleService svc, string? status) =>
+    Results.Ok(await svc.ListTransfersAsync(status))).RequireAuthorization();
+
+app.MapPost("/api/transfers/{code}/{action}", async (string code, string action, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "reject" or "receive"))
+        return Results.BadRequest(new { error = "action = approve|reject|receive" });
+    var r = await svc.TransferTransitionAsync(code, action);
+    return r is null ? Results.NotFound(new { code, error = "Không thấy hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Đề nghị giao tài liệu xe (CarDocReq/ĐNGT) ----
 app.MapPost("/api/docreqs", async (CreateDocReqDto dto, IVehicleService svc) =>
 {

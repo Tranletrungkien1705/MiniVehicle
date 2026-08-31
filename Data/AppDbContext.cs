@@ -14,6 +14,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<VehicleRecall> VehicleRecalls => Set<VehicleRecall>();
     public DbSet<WarrantyClaim> Claims => Set<WarrantyClaim>();
     public DbSet<DocRequest> DocRequests => Set<DocRequest>();
+    public DbSet<StockTransfer> Transfers => Set<StockTransfer>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {

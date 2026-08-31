@@ -117,6 +117,22 @@ public sealed class DocRequest
     public DateTime? ReceivedAt { get; set; }
 }
 
+/// <summary>Điều chuyển xe giữa đại lý/kho (chuyển kho DMS): xe CHƯA giao mới được chuyển.</summary>
+public sealed class StockTransfer
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Code { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? FromDealer { get; set; }
+    public string ToDealer { get; set; } = "";
+    public string Status { get; set; } = "Requested";   // Requested → Approved → InTransit → Received (hoặc Rejected)
+    public string? Note { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? ReceivedAt { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

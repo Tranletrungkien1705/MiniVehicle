@@ -15,6 +15,7 @@ public record CreateClaimDto(string Vin, string DealerCode, string Issue, decima
 public record ClaimDecisionDto(string? Note);
 public record CreateDocReqDto(string Vin, string DealerCode, string? DocType, string? Note);
 public record ShipDocDto(string? TrackingNo);
+public record CreateTransferDto(string Vin, string ToDealer, string? Note);
 
 public interface IVehicleService
 {
@@ -39,6 +40,9 @@ public interface IVehicleService
     Task<object> CreateDocReqAsync(CreateDocReqDto dto);
     Task<object> ListDocReqAsync(string? status, string? dealer, string? vin);
     Task<object?> DocReqTransitionAsync(string code, string action, string? trackingNo);
+    Task<object> CreateTransferAsync(CreateTransferDto dto);
+    Task<object> ListTransfersAsync(string? status);
+    Task<object?> TransferTransitionAsync(string code, string action);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -277,6 +281,57 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         Log(c.Vin, "WarrantyClaimSettled", $"{claimNo} {c.PartsCost + c.LaborCost}");
         await db.SaveChangesAsync();
         return new { c.ClaimNo, c.Vin, status = c.Status, total = c.PartsCost + c.LaborCost, c.SettledAt };
+    }
+
+    // ===== Chuyển kho / điều chuyển xe =====
+    public async Task<object> CreateTransferAsync(CreateTransferDto dto)
+    {
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin)
+            ?? throw new InvalidOperationException($"Không thấy xe {vin}.");
+        if (v.Status == VehicleStatus.Delivered)
+            throw new InvalidOperationException("Xe đã giao — không điều chuyển được.");
+        var code = "TF" + DateTime.Now.ToString("yyMMddHHmmss");
+        var t = new StockTransfer { OrgId = Org, Code = code, Vin = vin, FromDealer = v.DealerCode, ToDealer = dto.ToDealer.Trim(), Note = dto.Note, Status = "Requested" };
+        db.Transfers.Add(t);
+        Log(vin, "TransferRequest", $"{code} {t.FromDealer}->{t.ToDealer}");
+        await db.SaveChangesAsync();
+        return new { t.Code, t.Vin, t.FromDealer, t.ToDealer, status = t.Status };
+    }
+
+    public async Task<object> ListTransfersAsync(string? status)
+    {
+        var q = db.Transfers.Where(t => t.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(t => t.Status == status);
+        var items = await q.OrderByDescending(t => t.Id).Take(500).Select(t => new
+        {
+            t.Code, t.Vin, t.FromDealer, t.ToDealer, t.Status, t.CreatedAt, t.ApprovedAt, t.ReceivedAt
+        }).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    // approve (Requested→Approved→InTransit), receive (InTransit→Received: cập nhật DealerCode xe), reject
+    public async Task<object?> TransferTransitionAsync(string code, string action)
+    {
+        code = code.Trim().ToUpperInvariant();
+        var t = await db.Transfers.FirstOrDefaultAsync(x => x.OrgId == Org && x.Code == code);
+        if (t is null) return null;
+        var now = DateTime.Now;
+        switch (action)
+        {
+            case "approve": if (t.Status != "Requested") return null; t.Status = "InTransit"; t.ApprovedAt = now; break;
+            case "reject": if (t.Status != "Requested") return null; t.Status = "Rejected"; t.ApprovedAt = now; break;
+            case "receive":
+                if (t.Status != "InTransit") return null;
+                t.Status = "Received"; t.ReceivedAt = now;
+                var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == t.Vin);
+                if (v != null && v.Status != VehicleStatus.Delivered) { v.DealerCode = t.ToDealer; if (v.Status == VehicleStatus.InStock) v.Status = VehicleStatus.Allocated; }
+                break;
+            default: return null;
+        }
+        Log(t.Vin, "Transfer" + t.Status, code);
+        await db.SaveChangesAsync();
+        return new { t.Code, t.Vin, status = t.Status, t.ToDealer };
     }
 
     // ===== Đề nghị giao tài liệu (CarDocReq/ĐNGT) =====
