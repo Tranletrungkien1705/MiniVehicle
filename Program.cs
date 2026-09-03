@@ -90,6 +90,27 @@ app.MapPost("/api/vehicles", async (RegisterVehicleDto dto, IVehicleService svc)
 app.MapGet("/api/vehicles", async (IVehicleService svc, string? status, string? model, string? dealer) =>
     Results.Ok(await svc.ListAsync(status, model, dealer))).RequireAuthorization();
 
+// Import hàng loạt data thật từ Car_VIN (SQL nguồn 2010.HTC) — dedupe theo VIN, bỏ qua VIN đã tồn tại (không throw như RegisterAsync).
+app.MapPost("/api/import/vehicles", async (List<ImportVehicleRowDto> rows, AppDbContext db, ITenantContext tenant) =>
+{
+    if (rows is null || rows.Count == 0) return Results.BadRequest(new { error = "Không có dữ liệu import." });
+    int added = 0, skipped = 0;
+    foreach (var r in rows)
+    {
+        if (string.IsNullOrWhiteSpace(r.VIN) || string.IsNullOrWhiteSpace(r.ModelCode)) { skipped++; continue; }
+        var vin = r.VIN.Trim().ToUpperInvariant();
+        if (await db.Vehicles.AnyAsync(v => v.OrgId == tenant.OrgId && v.Vin == vin)) { skipped++; continue; }
+        db.Vehicles.Add(new Vehicle
+        {
+            OrgId = tenant.OrgId, Vin = vin, Model = r.ModelCode.Trim(), EngineNo = r.EngineNo, Color = r.ColorCode,
+            ModelYear = r.ProductionYearActual, Status = VehicleStatus.InStock
+        });
+        added++;
+    }
+    await db.SaveChangesAsync();
+    return Results.Ok(new { added, skipped, total = rows.Count });
+}).RequireAuthorization();
+
 // Phân bổ xe cho đại lý (InStock → Allocated)
 app.MapPost("/api/vehicles/{vin}/allocate", async (string vin, AllocateDto dto, IVehicleService svc) =>
 {
@@ -248,5 +269,6 @@ app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
 
 app.Run();
 
+record ImportVehicleRowDto(string? VIN, string? ModelCode, string? SpecCode, string? ColorCode, string? EngineNo, int? ProductionYearActual, string? StorageCodeCurrent);
 record RegisterOrgDto(string Name);
 record AllocateDto(string DealerCode);
