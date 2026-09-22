@@ -315,6 +315,32 @@ app.MapPost("/api/retrieves/{retrieveNo}/{action}", async (string retrieveNo, st
     return r is null ? Results.NotFound(new { retrieveNo, error = "Không thấy lệnh thu hồi hoặc sai trạng thái." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Yêu cầu / Kế hoạch vận chuyển xe (BizHTC.Car.TransportReq / Car_TransportReq) ----
+app.MapPost("/api/transport-requests", async (CreateTransportRequestDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || dto.Vins is null || dto.Vins.Count == 0)
+        return Results.BadRequest(new { error = "Cần DealerCode và danh sách Vins." });
+    try { return Results.Ok(await svc.CreateTransportRequestAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/transport-requests", async (IVehicleService svc, string? status, string? dealer, string? transporter, string? vin) =>
+    Results.Ok(await svc.ListTransportRequestsAsync(status, dealer, transporter, vin))).RequireAuthorization();
+
+app.MapGet("/api/transport-requests/{transportReqNo}", async (string transportReqNo, IVehicleService svc) =>
+{
+    var r = await svc.GetTransportRequestAsync(transportReqNo);
+    return r is null ? Results.NotFound(new { transportReqNo, error = "Không tìm thấy yêu cầu vận chuyển." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-requests/{transportReqNo}/{action}", async (string transportReqNo, string action, TransportRequestTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "dispatch" or "ship" or "complete" or "receive" or "deliver" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|dispatch|ship|complete|receive|deliver|reject|cancel" });
+    var r = await svc.TransportRequestTransitionAsync(transportReqNo, action, dto);
+    return r is null ? Results.NotFound(new { transportReqNo, error = "Không thấy yêu cầu vận chuyển hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

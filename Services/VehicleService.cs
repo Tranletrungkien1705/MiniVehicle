@@ -22,6 +22,8 @@ public record ConfirmDeliveryMinutesDto(string? ConfirmedBy, string? Remark);
 public record RejectDeliveryMinutesDto(string? Reason);
 public record CreateCarRetrieveDto(string DealerCode, List<string> Vins, string? ToStorage, string? Reason, string? RetrieveNo);
 public record CarRetrieveTransitionDto(string? Note);
+public record CreateTransportRequestDto(string DealerCode, List<string> Vins, string? TransporterCode, string? TransportContractNo, string? TruckPlateNo, string? DriverName, string? DriverPhone, string? FromStorage, string? ToStorage, string? DeliveryOrderNo, DateTime? EstimatedDeparture, DateTime? EstimatedArrival, string? Remark, string? TransportReqNo);
+public record TransportRequestTransitionDto(string? Note, string? TruckPlateNo, string? DriverName, string? DriverPhone);
 
 public interface IVehicleService
 {
@@ -59,6 +61,10 @@ public interface IVehicleService
     Task<object> ListCarRetrievesAsync(string? status, string? dealer, string? vin);
     Task<object?> GetCarRetrieveAsync(string retrieveNo);
     Task<object?> CarRetrieveTransitionAsync(string retrieveNo, string action, string? note);
+    Task<object> CreateTransportRequestAsync(CreateTransportRequestDto dto);
+    Task<object> ListTransportRequestsAsync(string? status, string? dealer, string? transporter, string? vin);
+    Task<object?> GetTransportRequestAsync(string transportReqNo);
+    Task<object?> TransportRequestTransitionAsync(string transportReqNo, string action, TransportRequestTransitionDto? dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -774,5 +780,233 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
 
         await db.SaveChangesAsync();
         return new { ret.RetrieveNo, ret.DealerCode, status = ret.Status, ret.ApprovedAt, ret.ReceivedAt };
+    }
+
+    // ===== Yêu cầu / Kế hoạch vận chuyển xe (BizHTC.Car.TransportReq / Car_TransportReq) =====
+    public async Task<object> CreateTransportRequestAsync(CreateTransportRequestDto dto)
+    {
+        if (dto.Vins is null || dto.Vins.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 VIN để tạo yêu cầu vận chuyển.");
+
+        var dealer = dto.DealerCode.Trim();
+        var vins = dto.Vins.Select(s => s.Trim().ToUpperInvariant()).Distinct().ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        // Không cho phép vận chuyển xe đã giao cho khách cuối (Delivered)
+        var invalidDelivered = vehicles.Where(v => v.Status == VehicleStatus.Delivered).Select(v => v.Vin).ToList();
+        if (invalidDelivered.Count > 0)
+            throw new InvalidOperationException("Xe đã giao cho khách hàng cuối (Delivered) không thể lập lệnh vận chuyển: " + string.Join(", ", invalidDelivered));
+
+        var reqNo = string.IsNullOrWhiteSpace(dto.TransportReqNo) ? "TR" + DateTime.Now.ToString("yyMMddHHmmss") : dto.TransportReqNo!.Trim().ToUpperInvariant();
+        if (await db.TransportRequests.AnyAsync(r => r.OrgId == Org && r.TransportReqNo == reqNo))
+            throw new InvalidOperationException($"Mã lệnh vận chuyển {reqNo} đã tồn tại.");
+
+        var tr = new TransportRequest
+        {
+            OrgId = Org,
+            TransportReqNo = reqNo,
+            DealerCode = dealer,
+            TransporterCode = dto.TransporterCode?.Trim(),
+            TransportContractNo = dto.TransportContractNo?.Trim(),
+            TruckPlateNo = dto.TruckPlateNo?.Trim(),
+            DriverName = dto.DriverName?.Trim(),
+            DriverPhone = dto.DriverPhone?.Trim(),
+            FromStorage = dto.FromStorage?.Trim(),
+            ToStorage = dto.ToStorage?.Trim(),
+            EstimatedDeparture = dto.EstimatedDeparture,
+            EstimatedArrival = dto.EstimatedArrival,
+            Status = "Pending",
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.TransportRequests.Add(tr);
+        await db.SaveChangesAsync();
+
+        foreach (var v in vehicles)
+        {
+            db.TransportRequestLines.Add(new TransportRequestLine
+            {
+                OrgId = Org,
+                TransportRequestId = tr.Id,
+                TransportReqNo = reqNo,
+                Vin = v.Vin,
+                DeliveryOrderNo = dto.DeliveryOrderNo?.Trim(),
+                StorageCode = dto.FromStorage?.Trim(),
+                Status = "Pending",
+                Remark = dto.Remark?.Trim()
+            });
+            Log(v.Vin, "TransportReqCreated", $"{reqNo} ĐL:{dealer} Nhà xe:{tr.TransporterCode ?? "N/A"} Xe tải:{tr.TruckPlateNo ?? "N/A"}");
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            tr.TransportReqNo,
+            tr.DealerCode,
+            tr.TransporterCode,
+            tr.TruckPlateNo,
+            tr.Status,
+            totalVins = vins.Count,
+            vins
+        };
+    }
+
+    public async Task<object> ListTransportRequestsAsync(string? status, string? dealer, string? transporter, string? vin)
+    {
+        var q = db.TransportRequests.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(r => r.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(transporter)) q = q.Where(r => r.TransporterCode == transporter);
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.TransportRequestLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.TransportReqNo).Distinct().ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.TransportReqNo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.TransportReqNo,
+            r.DealerCode,
+            r.TransporterCode,
+            r.TransportContractNo,
+            r.TruckPlateNo,
+            r.DriverName,
+            r.DriverPhone,
+            r.FromStorage,
+            r.ToStorage,
+            r.EstimatedDeparture,
+            r.EstimatedArrival,
+            r.Status,
+            r.Remark,
+            r.CreatedAt,
+            r.ApprovedAt,
+            r.DispatchedAt,
+            r.CompletedAt,
+            vinCount = db.TransportRequestLines.Count(l => l.OrgId == Org && l.TransportRequestId == r.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetTransportRequestAsync(string transportReqNo)
+    {
+        transportReqNo = transportReqNo.Trim().ToUpperInvariant();
+        var tr = await db.TransportRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.TransportReqNo == transportReqNo);
+        if (tr is null) return null;
+
+        var lines = await db.TransportRequestLines.Where(l => l.OrgId == Org && l.TransportRequestId == tr.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.DeliveryOrderNo,
+            l.StorageCode,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), v.DealerCode } : null
+        }).ToList();
+
+        return new
+        {
+            tr.TransportReqNo,
+            tr.DealerCode,
+            tr.TransporterCode,
+            tr.TransportContractNo,
+            tr.TruckPlateNo,
+            tr.DriverName,
+            tr.DriverPhone,
+            tr.FromStorage,
+            tr.ToStorage,
+            tr.EstimatedDeparture,
+            tr.EstimatedArrival,
+            tr.Status,
+            tr.Remark,
+            tr.CreatedAt,
+            tr.ApprovedAt,
+            tr.DispatchedAt,
+            tr.CompletedAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> TransportRequestTransitionAsync(string transportReqNo, string action, TransportRequestTransitionDto? dto)
+    {
+        transportReqNo = transportReqNo.Trim().ToUpperInvariant();
+        var tr = await db.TransportRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.TransportReqNo == transportReqNo);
+        if (tr is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.TransportRequestLines.Where(l => l.OrgId == Org && l.TransportRequestId == tr.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (tr.Status != "Pending") return null;
+                tr.Status = "Approved";
+                tr.ApprovedAt = now;
+                foreach (var l in lines) l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "TransportReqApproved", transportReqNo);
+                break;
+
+            case "dispatch":
+            case "ship":
+                if (tr.Status != "Approved") return null;
+                tr.Status = "InTransit";
+                tr.DispatchedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.TruckPlateNo)) tr.TruckPlateNo = dto.TruckPlateNo.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.DriverName)) tr.DriverName = dto.DriverName.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.DriverPhone)) tr.DriverPhone = dto.DriverPhone.Trim();
+                foreach (var l in lines) l.Status = "InTransit";
+                foreach (var v in vehicles)
+                {
+                    if (v.Status == VehicleStatus.Allocated || v.Status == VehicleStatus.InStock)
+                        v.Status = VehicleStatus.OnDelivery;
+                    Log(v.Vin, "TransportReqInTransit", $"{transportReqNo} Xe:{tr.TruckPlateNo ?? "N/A"}");
+                }
+                break;
+
+            case "complete":
+            case "receive":
+            case "deliver":
+                if (tr.Status is not ("Approved" or "InTransit")) return null;
+                tr.Status = "Completed";
+                tr.CompletedAt = now;
+                foreach (var l in lines) l.Status = "Delivered";
+                foreach (var v in vehicles) Log(v.Vin, "TransportReqCompleted", $"{transportReqNo} Hạ tải tại: {tr.ToStorage ?? tr.DealerCode}");
+                break;
+
+            case "reject":
+                if (tr.Status != "Pending") return null;
+                tr.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    tr.Remark = string.IsNullOrWhiteSpace(tr.Remark) ? dto.Note : $"{tr.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "TransportReqRejected", $"{transportReqNo} Lý do: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (tr.Status is not ("Pending" or "Approved")) return null;
+                tr.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    tr.Remark = string.IsNullOrWhiteSpace(tr.Remark) ? dto.Note : $"{tr.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "TransportReqCancelled", $"{transportReqNo} Lý do: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { tr.TransportReqNo, tr.DealerCode, status = tr.Status, tr.ApprovedAt, tr.DispatchedAt, tr.CompletedAt };
     }
 }

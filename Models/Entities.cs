@@ -193,6 +193,44 @@ public sealed class CarRetrieveLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Yêu cầu / Kế hoạch vận chuyển xe ô tô (BizHTC.Car.TransportReq / Car_TransportReq): điều phối nhà xe lồng / vận tải chở ô tô từ kho OEM đến đại lý.</summary>
+public sealed class TransportRequest
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string TransportReqNo { get; set; } = "";        // Mã lệnh vận chuyển (TR... / CTR...)
+    public string DealerCode { get; set; } = "";            // Đại lý nhận xe
+    public string? TransporterCode { get; set; }          // Đơn vị / Nhà xe vận chuyển (NYK, Traco...)
+    public string? TransportContractNo { get; set; }      // Số hợp đồng vận chuyển
+    public string? TruckPlateNo { get; set; }             // Biển số xe tải / xe lồng chuyên dụng
+    public string? DriverName { get; set; }               // Tên lái xe lồng
+    public string? DriverPhone { get; set; }              // SĐT lái xe
+    public string? FromStorage { get; set; }              // Kho bãi xuất phát
+    public string? ToStorage { get; set; }                // Kho / Điểm hạ tải đại lý
+    public DateTime? EstimatedDeparture { get; set; }     // Ngày dự kiến xuất bến
+    public DateTime? EstimatedArrival { get; set; }       // Ngày dự kiến đến nơi
+    public string Status { get; set; } = "Pending";       // Pending → Approved → InTransit → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú điều vận
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? DispatchedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong lệnh vận chuyển (Car_TransportReqDetail): danh sách VIN và liên kết lệnh giao xe.</summary>
+public sealed class TransportRequestLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long TransportRequestId { get; set; }
+    public string TransportReqNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? DeliveryOrderNo { get; set; }          // Liên kết Lệnh giao xe (nếu có)
+    public string? StorageCode { get; set; }              // Kho xuất phát của xe
+    public string Status { get; set; } = "Pending";       // Pending → Approved → InTransit → Delivered
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

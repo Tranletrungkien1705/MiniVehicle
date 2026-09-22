@@ -12,6 +12,8 @@
 <li><code>POST /api/vehicles/{vin}/allocate</code> — phân bổ đại lý</li>
 <li><code>POST /api/delivery-orders</code> — tạo lệnh giao (nhiều VIN)</li>
 <li><code>POST /api/delivery-orders/{doNo}/deliver</code> — giao + kích hoạt bảo hành</li>
+<li><code>POST /api/transport-requests</code> &amp; <code>/api/transport-requests/{no}/{action}</code> — yêu cầu/lệnh vận chuyển xe tải lồng (Car_TransportReq)</li>
+<li><code>GET /api/transport-requests?status=&dealer=&transporter=&vin=</code> — tra cứu danh sách lệnh vận chuyển</li>
 <li><code>POST /api/delivery-minutes</code> — tạo biên bản giao nhận xe (Sto_DlvMinutes)</li>
 <li><code>GET /api/delivery-minutes?status=&dealer=&vin=</code> — tra cứu danh sách biên bản giao nhận</li>
 <li><code>POST /api/delivery-minutes/{no}/inspect</code> — kiểm tra tình trạng xe, ODO, phụ kiện &amp; giấy tờ</li>
