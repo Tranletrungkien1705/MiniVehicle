@@ -1188,6 +1188,49 @@ public sealed class ContractCancelLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Đề nghị & Lệnh thay đổi màu sơn xe ô tô (BizHTC.WH &amp; BizHTC.Car.Car_ColorChange / CarColorChange): quản lý đề nghị đổi màu sơn xe ô tô từ đại lý hoặc kế hoạch OEM trước khi xuất kho / bàn giao xe.</summary>
+public sealed class CarColorChange
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ChangeNo { get; set; } = "";             // Mã đề nghị đổi màu xe (CCC...)
+    public string DealerCode { get; set; } = "";           // Đại lý đề nghị đổi màu hoặc "OEM"
+    public string ChangeType { get; set; } = "DealerRequest"; // DealerRequest (Đại lý yêu cầu), OEMPlan (Kế hoạch sản xuất/bãi OEM), CustomerRequest (Khách hàng đổi ý)
+    public string? Reason { get; set; }                    // Lý do đổi màu (Đổi theo hợp đồng bán lẻ, Khách chọn màu phong thủy, Điều chuyển tồn kho...)
+    public int TotalVehicleCount { get; set; } = 0;        // Tổng số lượng xe đổi màu
+    public string Status { get; set; } = "Draft";          // Draft → Submitted → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Ghi chú điều hành
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                // Lãnh đạo kinh doanh / Kỹ thuật phê duyệt
+    public DateTime? ApprovedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong đề nghị đổi màu sơn (BizHTC.WH.Rpt_CarColorChangeHistory / CarColorChangeLine): danh sách VIN, thông tin màu cũ, màu mới, mã màu và trạng thái cập nhật.</summary>
+public sealed class CarColorChangeLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long CarColorChangeId { get; set; }
+    public string ChangeNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string Model { get; set; } = "";                // Dòng xe
+    public string? SpecCode { get; set; }                  // Phiên bản xe
+    public string OldColor { get; set; } = "";             // Màu sơn cũ của xe
+    public string NewColor { get; set; } = "";             // Màu sơn mới yêu cầu thay đổi
+    public string? OldColorCode { get; set; }              // Mã màu cũ (NWAC, T2X, R4R...)
+    public string? NewColorCode { get; set; }              // Mã màu mới (WW2, SAW, R2P...)
+    public string? OldColorName { get; set; }              // Tên chi tiết màu cũ (Trắng ngọc trai / Đen...)
+    public string? NewColorName { get; set; }              // Tên chi tiết màu mới (Đỏ đô / Xanh lục bảo...)
+    public string Status { get; set; } = "Pending";        // Pending → Submitted → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

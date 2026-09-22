@@ -479,6 +479,41 @@ public record UpdateContractCancelLineDto(
     string? Remark = null
 );
 
+public record CarColorChangeItemInputDto(
+    string Vin,
+    string NewColor,
+    string? NewColorCode = null,
+    string? NewColorName = null,
+    string? SpecCode = null,
+    string? Remark = null
+);
+
+public record CreateCarColorChangeDto(
+    string DealerCode,
+    List<CarColorChangeItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? DefaultNewColor = null,
+    string? ChangeType = "DealerRequest",
+    string? Reason = null,
+    string? Remark = null,
+    string? ChangeNo = null,
+    string? CreatedBy = null
+);
+
+public record CarColorChangeTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? Reason = null
+);
+
+public record UpdateCarColorChangeLineDto(
+    string? NewColor = null,
+    string? NewColorCode = null,
+    string? NewColorName = null,
+    string? SpecCode = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -647,6 +682,15 @@ public interface IVehicleService
     Task<object?> AddContractCancelLinesAsync(string contractCNo, List<ContractCancelItemInputDto> items);
     Task<object?> RemoveContractCancelLineAsync(string contractCNo, string vin);
     Task<object?> GetVehicleContractCancelInfoAsync(string vin);
+    Task<object> CreateCarColorChangeAsync(CreateCarColorChangeDto dto);
+    Task<object> ListCarColorChangesAsync(string? status, string? dealer, string? changeNo, string? vin);
+    Task<object?> GetCarColorChangeAsync(string changeNo);
+    Task<object?> CarColorChangeTransitionAsync(string changeNo, string action, CarColorChangeTransitionDto? dto);
+    Task<object?> UpdateCarColorChangeLineAsync(string changeNo, string vin, UpdateCarColorChangeLineDto dto);
+    Task<object?> AddCarColorChangeLinesAsync(string changeNo, List<CarColorChangeItemInputDto> items);
+    Task<object?> RemoveCarColorChangeLineAsync(string changeNo, string vin);
+    Task<object?> GetVehicleColorChangeHistoryAsync(string vin);
+    Task<object?> GetVehicleColorChangeInfoAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -10849,5 +10893,550 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 c.Remark
             })
         };
+    }
+
+    // ===== Đề nghị & Quản lý Thay đổi màu sơn xe ô tô (BizHTC.WH & BizHTC.Car.Car_ColorChange / CarColorChange) =====
+
+    public async Task<object> CreateCarColorChangeAsync(CreateCarColorChangeDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode đề nghị đổi màu xe.");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+
+        var inputItems = new List<CarColorChangeItemInputDto>();
+        if (dto.Items is { Count: > 0 })
+        {
+            inputItems.AddRange(dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin) && !string.IsNullOrWhiteSpace(i.NewColor)));
+        }
+        else if (dto.Vins is { Count: > 0 } && !string.IsNullOrWhiteSpace(dto.DefaultNewColor))
+        {
+            var defColor = dto.DefaultNewColor.Trim();
+            inputItems.AddRange(dto.Vins.Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(v => new CarColorChangeItemInputDto(v.Trim().ToUpperInvariant(), defColor)));
+        }
+
+        if (inputItems.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe VIN và màu sơn mới yêu cầu thay đổi.");
+
+        // Khử trùng lặp VIN trong cùng 1 phiếu
+        var distinctItems = inputItems.DistinctBy(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+        var missing = vins.Except(vehicles.Keys).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        // Kiểm tra xe không được ở trạng thái đã giao cho khách (Delivered)
+        var invalidDelivered = vehicles.Values.Where(v => v.Status == VehicleStatus.Delivered).Select(v => v.Vin).ToList();
+        if (invalidDelivered.Count > 0)
+            throw new InvalidOperationException("Xe đã bàn giao cho khách hàng (Delivered) không thể đổi màu sơn xuất xưởng: " + string.Join(", ", invalidDelivered));
+
+        // Kiểm tra màu mới không được trùng màu hiện tại
+        foreach (var it in distinctItems)
+        {
+            var v = vehicles[it.Vin.Trim().ToUpperInvariant()];
+            var oldCol = (v.Color ?? "").Trim();
+            var newCol = it.NewColor.Trim();
+            if (string.Equals(oldCol, newCol, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Số khung {v.Vin}: Màu mới '{newCol}' trùng với màu sơn hiện tại của xe.");
+        }
+
+        var today = DateTime.Today;
+        var changeNo = string.IsNullOrWhiteSpace(dto.ChangeNo)
+            ? $"CCC{today:yyyyMMdd}-{(await db.CarColorChanges.CountAsync(c => c.OrgId == Org && c.CreatedAt.Date == today) + 1):000}"
+            : dto.ChangeNo!.Trim().ToUpperInvariant();
+
+        if (await db.CarColorChanges.AnyAsync(c => c.OrgId == Org && c.ChangeNo == changeNo))
+            throw new InvalidOperationException($"Mã đề nghị đổi màu {changeNo} đã tồn tại.");
+
+        var change = new CarColorChange
+        {
+            OrgId = Org,
+            ChangeNo = changeNo,
+            DealerCode = dealer,
+            ChangeType = string.IsNullOrWhiteSpace(dto.ChangeType) ? "DealerRequest" : dto.ChangeType.Trim(),
+            Reason = dto.Reason?.Trim(),
+            TotalVehicleCount = distinctItems.Count,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "DealerSalesRepresentative",
+            CreatedAt = DateTime.Now
+        };
+
+        db.CarColorChanges.Add(change);
+        await db.SaveChangesAsync();
+
+        foreach (var it in distinctItems)
+        {
+            var vin = it.Vin.Trim().ToUpperInvariant();
+            var v = vehicles[vin];
+            var oldColor = v.Color ?? "N/A";
+            var newColor = it.NewColor.Trim();
+
+            var line = new CarColorChangeLine
+            {
+                OrgId = Org,
+                CarColorChangeId = change.Id,
+                ChangeNo = changeNo,
+                Vin = vin,
+                Model = v.Model,
+                SpecCode = it.SpecCode?.Trim(),
+                OldColor = oldColor,
+                NewColor = newColor,
+                OldColorCode = it.NewColorCode != null ? it.NewColorCode : null,
+                NewColorCode = it.NewColorCode?.Trim(),
+                OldColorName = it.NewColorName != null ? it.NewColorName : null,
+                NewColorName = it.NewColorName?.Trim(),
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            db.CarColorChangeLines.Add(line);
+
+            Log(vin, "CarColorChangeDraftCreated",
+                $"{changeNo} Lập đề nghị đổi màu sơn xe từ '{oldColor}' sang '{newColor}'. Lý do: {change.Reason ?? "N/A"}. ĐL: {dealer}");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            change.ChangeNo,
+            change.DealerCode,
+            change.ChangeType,
+            change.Reason,
+            change.TotalVehicleCount,
+            change.Status,
+            change.Remark,
+            linesCount = distinctItems.Count
+        };
+    }
+
+    public async Task<object> ListCarColorChangesAsync(string? status, string? dealer, string? changeNo, string? vin)
+    {
+        var q = db.CarColorChanges.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim(); q = q.Where(c => c.DealerCode.Contains(d)); }
+        if (!string.IsNullOrWhiteSpace(changeNo)) { var code = changeNo.Trim(); q = q.Where(c => c.ChangeNo.Contains(code)); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.CarColorChangeLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.ChangeNo).Distinct().ToListAsync();
+            q = q.Where(c => matchedNos.Contains(c.ChangeNo));
+        }
+
+        var items = await q.OrderByDescending(c => c.Id).Take(500).Select(c => new
+        {
+            c.Id,
+            c.ChangeNo,
+            c.DealerCode,
+            c.ChangeType,
+            c.Reason,
+            c.TotalVehicleCount,
+            c.Status,
+            c.CreatedBy,
+            c.CreatedAt,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            c.RejectedBy,
+            c.RejectedAt,
+            c.RejectReason,
+            c.CancelledBy,
+            c.CancelledAt,
+            c.Remark,
+            lineCount = db.CarColorChangeLines.Count(l => l.OrgId == Org && l.CarColorChangeId == c.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCarColorChangeAsync(string changeNo)
+    {
+        changeNo = changeNo.Trim().ToUpperInvariant();
+        var change = await db.CarColorChanges.FirstOrDefaultAsync(c => c.OrgId == Org && c.ChangeNo == changeNo);
+        if (change is null) return null;
+
+        var lines = await db.CarColorChangeLines.Where(l => l.OrgId == Org && l.CarColorChangeId == change.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.ChangeNo,
+            l.Vin,
+            l.Model,
+            l.SpecCode,
+            l.OldColor,
+            l.NewColor,
+            l.OldColorCode,
+            l.NewColorCode,
+            l.OldColorName,
+            l.NewColorName,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.EngineNo,
+                v.Color,
+                v.ModelYear,
+                v.StorageCode,
+                v.DealerCode,
+                v.TypeCB,
+                v.LoaiThung,
+                status = v.Status.ToString()
+            } : null
+        }).ToList();
+
+        return new
+        {
+            change.Id,
+            change.ChangeNo,
+            change.DealerCode,
+            change.ChangeType,
+            change.Reason,
+            change.TotalVehicleCount,
+            change.Status,
+            change.CreatedBy,
+            change.CreatedAt,
+            change.ApprovedBy,
+            change.ApprovedAt,
+            change.RejectedBy,
+            change.RejectedAt,
+            change.RejectReason,
+            change.CancelledBy,
+            change.CancelledAt,
+            change.Remark,
+            lines = details
+        };
+    }
+
+    public async Task<object?> CarColorChangeTransitionAsync(string changeNo, string action, CarColorChangeTransitionDto? dto)
+    {
+        changeNo = changeNo.Trim().ToUpperInvariant();
+        var change = await db.CarColorChanges.FirstOrDefaultAsync(c => c.OrgId == Org && c.ChangeNo == changeNo);
+        if (change is null) return null;
+
+        var now = DateTime.Now;
+        var act = action.Trim().ToLowerInvariant();
+        var lines = await db.CarColorChangeLines.Where(l => l.OrgId == Org && l.CarColorChangeId == change.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        switch (act)
+        {
+            case "submit":
+                if (change.Status != "Draft") return null;
+
+                change.Status = "Submitted";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    change.Remark = (change.Remark + " | Trình duyệt: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Submitted";
+                    Log(line.Vin, "CarColorChangeSubmitted",
+                        $"{changeNo} Trình duyệt đề nghị đổi màu xe từ '{line.OldColor}' sang '{line.NewColor}'. Lý do: {change.Reason ?? "N/A"}");
+                }
+                break;
+
+            case "approve":
+                if (change.Status is "Approved" or "Cancelled") return null;
+
+                change.Status = "Approved";
+                change.ApprovedBy = dto?.User ?? "ProductionManager";
+                change.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    change.Remark = (change.Remark + " | Duyệt: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Approved";
+
+                    // Cập nhật màu sơn mới vào hồ sơ xe VIN
+                    if (vehicles.TryGetValue(line.Vin, out var v))
+                    {
+                        var oldColor = v.Color;
+                        v.Color = line.NewColor;
+
+                        Log(line.Vin, "ColorChanged",
+                            $"{changeNo} Phê duyệt đổi màu sơn xe từ '{oldColor}' sang '{line.NewColor}'. Lý do: {change.Reason ?? "N/A"}. Người duyệt: {change.ApprovedBy}");
+                    }
+                }
+                break;
+
+            case "reject":
+                if (change.Status is "Approved" or "Cancelled") return null;
+
+                change.Status = "Rejected";
+                change.RejectedBy = dto?.User ?? "Approver";
+                change.RejectedAt = now;
+                change.RejectReason = dto?.Reason ?? dto?.Note;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    change.Remark = (change.Remark + " | Từ chối: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Rejected";
+                    Log(line.Vin, "CarColorChangeRejected",
+                        $"{changeNo} Từ chối đề nghị đổi màu xe. Lý do: {change.RejectReason ?? "N/A"}");
+                }
+                break;
+
+            case "cancel":
+                if (change.Status == "Cancelled") return null;
+
+                change.Status = "Cancelled";
+                change.CancelledBy = dto?.User ?? "SystemAdmin";
+                change.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    change.Remark = (change.Remark + " | Hủy: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Cancelled";
+                    Log(line.Vin, "CarColorChangeCancelled",
+                        $"{changeNo} Hủy bỏ đề nghị đổi màu xe. Lý do: {dto?.Note ?? "N/A"}");
+                }
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            change.ChangeNo,
+            change.DealerCode,
+            change.Status,
+            change.TotalVehicleCount,
+            change.ApprovedBy,
+            change.ApprovedAt,
+            change.RejectedBy,
+            change.RejectedAt,
+            change.RejectReason,
+            change.CancelledBy,
+            change.CancelledAt,
+            action = act
+        };
+    }
+
+    public async Task<object?> UpdateCarColorChangeLineAsync(string changeNo, string vin, UpdateCarColorChangeLineDto dto)
+    {
+        changeNo = changeNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var change = await db.CarColorChanges.FirstOrDefaultAsync(c => c.OrgId == Org && c.ChangeNo == changeNo);
+        if (change is null || change.Status is "Approved" or "Cancelled") return null;
+
+        var line = await db.CarColorChangeLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.CarColorChangeId == change.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.NewColor))
+        {
+            var newCol = dto.NewColor.Trim();
+            if (string.Equals(line.OldColor, newCol, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Màu mới '{newCol}' trùng với màu sơn cũ của xe.");
+            line.NewColor = newCol;
+        }
+        if (!string.IsNullOrWhiteSpace(dto.NewColorCode)) line.NewColorCode = dto.NewColorCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.NewColorName)) line.NewColorName = dto.NewColorName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SpecCode)) line.SpecCode = dto.SpecCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            change.ChangeNo,
+            line.Vin,
+            line.Model,
+            line.OldColor,
+            line.NewColor,
+            line.NewColorCode,
+            line.NewColorName,
+            line.Remark
+        };
+    }
+
+    public async Task<object?> AddCarColorChangeLinesAsync(string changeNo, List<CarColorChangeItemInputDto> items)
+    {
+        var code = changeNo.Trim().ToUpperInvariant();
+        var change = await db.CarColorChanges.FirstOrDefaultAsync(c => c.OrgId == Org && c.ChangeNo == code);
+        if (change is null || change.Status is "Approved" or "Cancelled") return null;
+
+        var distinctItems = new List<CarColorChangeItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Vin) && !string.IsNullOrWhiteSpace(i.NewColor)))
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+            if (seenVins.Add(cleanVin))
+            {
+                distinctItems.Add(it with { Vin = cleanVin, NewColor = it.NewColor.Trim() });
+            }
+        }
+
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.CarColorChangeLines
+            .Where(l => l.OrgId == Org && l.CarColorChangeId == change.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin)).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var missing = newVins.Except(vehicles.Keys).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var invalidDelivered = vehicles.Values.Where(v => v.Status == VehicleStatus.Delivered).Select(v => v.Vin).ToList();
+        if (invalidDelivered.Count > 0)
+            throw new InvalidOperationException("Xe đã bàn giao cho khách (Delivered) không thể đổi màu sơn: " + string.Join(", ", invalidDelivered));
+
+        foreach (var it in newItems)
+        {
+            var v = vehicles[it.Vin];
+            var oldCol = v.Color ?? "N/A";
+            var newCol = it.NewColor.Trim();
+
+            if (string.Equals(oldCol, newCol, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Số khung {v.Vin}: Màu mới '{newCol}' trùng với màu sơn hiện tại.");
+
+            var line = new CarColorChangeLine
+            {
+                OrgId = Org,
+                CarColorChangeId = change.Id,
+                ChangeNo = change.ChangeNo,
+                Vin = it.Vin,
+                Model = v.Model,
+                SpecCode = it.SpecCode?.Trim(),
+                OldColor = oldCol,
+                NewColor = newCol,
+                OldColorCode = it.NewColorCode != null ? it.NewColorCode : null,
+                NewColorCode = it.NewColorCode?.Trim(),
+                OldColorName = it.NewColorName != null ? it.NewColorName : null,
+                NewColorName = it.NewColorName?.Trim(),
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            db.CarColorChangeLines.Add(line);
+            Log(it.Vin, "CarColorChangeLineAdded", $"{code} Bổ sung xe vào đề nghị đổi màu từ '{oldCol}' sang '{newCol}'");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.CarColorChangeLines.Where(l => l.OrgId == Org && l.CarColorChangeId == change.Id).ToListAsync();
+        change.TotalVehicleCount = allLines.Count;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            change.ChangeNo,
+            addedCount = newItems.Count,
+            change.TotalVehicleCount
+        };
+    }
+
+    public async Task<object?> RemoveCarColorChangeLineAsync(string changeNo, string vin)
+    {
+        changeNo = changeNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var change = await db.CarColorChanges.FirstOrDefaultAsync(c => c.OrgId == Org && c.ChangeNo == changeNo);
+        if (change is null || change.Status is "Approved" or "Cancelled") return null;
+
+        var line = await db.CarColorChangeLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.CarColorChangeId == change.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.CarColorChangeLines.Remove(line);
+        Log(vin, "CarColorChangeLineRemoved", $"{changeNo} Rút xe khỏi đề nghị đổi màu");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.CarColorChangeLines.Where(l => l.OrgId == Org && l.CarColorChangeId == change.Id).ToListAsync();
+        change.TotalVehicleCount = allLines.Count;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            change.ChangeNo,
+            vin,
+            change.TotalVehicleCount
+        };
+    }
+
+    public async Task<object?> GetVehicleColorChangeHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var changeLines = await db.CarColorChangeLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var changeNos = changeLines.Select(l => l.ChangeNo).Distinct().ToList();
+        var changes = await db.CarColorChanges
+            .Where(c => c.OrgId == Org && changeNos.Contains(c.ChangeNo))
+            .ToDictionaryAsync(c => c.ChangeNo);
+
+        var colorEvents = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind == "ColorChanged" || e.Kind.StartsWith("CarColorChange")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            currentColor = v.Color,
+            v.EngineNo,
+            status = v.Status.ToString(),
+            v.DealerCode,
+            v.StorageCode,
+            history = changeLines.Select(l => new
+            {
+                l.Id,
+                l.ChangeNo,
+                dealerCode = changes.TryGetValue(l.ChangeNo, out var ch) ? ch.DealerCode : "",
+                changeType = ch?.ChangeType,
+                reason = ch?.Reason,
+                l.OldColor,
+                l.NewColor,
+                l.OldColorCode,
+                l.NewColorCode,
+                l.OldColorName,
+                l.NewColorName,
+                l.Status,
+                headerStatus = ch?.Status,
+                approvedBy = ch?.ApprovedBy,
+                approvedAt = ch?.ApprovedAt,
+                l.Remark
+            }),
+            events = colorEvents.Select(e => new
+            {
+                e.Kind,
+                e.Note,
+                e.At
+            })
+        };
+    }
+
+    public async Task<object?> GetVehicleColorChangeInfoAsync(string vin)
+    {
+        return await GetVehicleColorChangeHistoryAsync(vin);
     }
 }

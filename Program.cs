@@ -1222,6 +1222,74 @@ app.MapGet("/api/vehicles/{vin}/contract-cancel-info", async (string vin, IVehic
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Đề nghị & Quản lý Thay đổi màu sơn xe ô tô (BizHTC.WH & BizHTC.Car.Car_ColorChange / CarColorChange) ----
+app.MapPost("/api/color-changes", async (CreateCarColorChangeDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode đề nghị đổi màu xe." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong đề nghị đổi màu xe." });
+    try { return Results.Ok(await svc.CreateCarColorChangeAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/color-changes", async (IVehicleService svc, string? status, string? dealer, string? changeNo, string? vin) =>
+    Results.Ok(await svc.ListCarColorChangesAsync(status, dealer, changeNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/color-changes/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.GetCarColorChangeAsync(code);
+    return r is null ? Results.NotFound(new { code, error = "Không tìm thấy đề nghị đổi màu xe." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/color-changes/{code}/{action}", async (string code, string action, CarColorChangeTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|reject|cancel" });
+    var r = await svc.CarColorChangeTransitionAsync(code, action, dto);
+    return r is null ? Results.NotFound(new { code, error = "Không thấy đề nghị đổi màu xe hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/color-changes/{code}/lines/{vin}/update", async (string code, string vin, UpdateCarColorChangeLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateCarColorChangeLineAsync(code, vin, dto);
+        return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong đề nghị đổi màu hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/color-changes/{code}/lines", async (string code, List<CarColorChangeItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào đề nghị đổi màu." });
+    try
+    {
+        var r = await svc.AddCarColorChangeLinesAsync(code, items);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy đề nghị đổi màu hoặc hồ sơ đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/color-changes/{code}/lines/{vin}", async (string code, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveCarColorChangeLineAsync(code, vin);
+    return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong đề nghị đổi màu hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/color-changes/history/{vin}", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleColorChangeHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/color-changes/vehicle-info/{vin}", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleColorChangeInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

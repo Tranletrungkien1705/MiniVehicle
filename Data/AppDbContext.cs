@@ -60,6 +60,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<GuaranteeExtensionLine> GuaranteeExtensionLines => Set<GuaranteeExtensionLine>();
     public DbSet<ContractCancel> ContractCancels => Set<ContractCancel>();
     public DbSet<ContractCancelLine> ContractCancelLines => Set<ContractCancelLine>();
+    public DbSet<CarColorChange> CarColorChanges => Set<CarColorChange>();
+    public DbSet<CarColorChangeLine> CarColorChangeLines => Set<CarColorChangeLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -90,5 +92,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<CarInvoice>().HasIndex(x => new { x.OrgId, x.InvoiceListCode }).IsUnique();
         b.Entity<GuaranteeExtension>().HasIndex(x => new { x.OrgId, x.GrtClaimExtNo }).IsUnique();
         b.Entity<ContractCancel>().HasIndex(x => new { x.OrgId, x.ContractCNo }).IsUnique();
+        b.Entity<CarColorChange>().HasIndex(x => new { x.OrgId, x.ChangeNo }).IsUnique();
     }
 }

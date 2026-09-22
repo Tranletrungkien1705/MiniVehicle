@@ -97,6 +97,11 @@
 <li><code>POST /api/contract-cancels/{code}/lines/{vin}/update</code> — cập nhật phân loại lý do hủy (CANCEL_VIN, REDUCE_QTY, CUSTOMER_CANCEL...), số lượng hủy, đơn giá và tiền hoàn trả theo từng xe VIN</li>
 <li><code>POST /api/contract-cancels/{code}/lines</code> &amp; <code>DELETE /api/contract-cancels/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong đề nghị hủy hợp đồng</li>
 <li><code>GET /api/vehicles/{vin}/contract-cancel-info</code> — tra cứu lịch sử các lần xin hủy / rút xe khỏi hợp đồng mua bán của số khung VIN</li>
+<li><code>POST /api/color-changes</code> &amp; <code>/api/color-changes/{code}/{action}</code> — tạo, nộp, phê duyệt &amp; hủy/từ chối Đề nghị &amp; Lệnh thay đổi màu sơn xe ô tô (BizHTC.WH &amp; BizHTC.Car.Car_ColorChange / CarColorChange: submit, approve, reject, cancel)</li>
+<li><code>GET /api/color-changes?status=&amp;dealer=&amp;changeNo=&amp;vin=</code> — tra cứu danh sách đề nghị thay đổi màu sơn xe ô tô</li>
+<li><code>POST /api/color-changes/{code}/lines/{vin}/update</code> — điều chỉnh màu sơn mới, mã màu và ghi chú theo từng xe VIN</li>
+<li><code>POST /api/color-changes/{code}/lines</code> &amp; <code>DELETE /api/color-changes/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong đề nghị thay đổi màu sơn</li>
+<li><code>GET /api/color-changes/history/{vin}</code> — tra cứu toàn bộ lịch sử các lần đổi màu sơn và sự kiện đổi màu của số khung VIN (Rpt_CarColorChangeHistory)</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>
