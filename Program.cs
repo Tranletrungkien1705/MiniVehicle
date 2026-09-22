@@ -611,6 +611,40 @@ app.MapPut("/api/guarantees/{guaranteeNo}", async (string guaranteeNo, UpdatePay
     return r is null ? Results.NotFound(new { guaranteeNo, error = "Không thấy chứng thư bảo lãnh hoặc bảo lãnh đã đóng." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Hợp đồng mua bán xe ô tô giữa Hãng OEM và Đại lý phân phối (BizHTC.Contract.DealerContract / CT_DealerContract) ----
+app.MapPost("/api/contracts", async (CreateDealerContractDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode." });
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách xe Items trong hợp đồng mua bán." });
+    try { return Results.Ok(await svc.CreateDealerContractAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/contracts", async (IVehicleService svc, string? status, string? dealer, string? contractNo, string? soCode, string? vin) =>
+    Results.Ok(await svc.ListDealerContractsAsync(status, dealer, contractNo, soCode, vin))).RequireAuthorization();
+
+app.MapGet("/api/contracts/{contractNo}", async (string contractNo, IVehicleService svc) =>
+{
+    var r = await svc.GetDealerContractAsync(contractNo);
+    return r is null ? Results.NotFound(new { contractNo, error = "Không tìm thấy hợp đồng mua bán xe." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/contracts/{contractNo}/{action}", async (string contractNo, string action, DealerContractTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|complete|reject|cancel" });
+    var r = await svc.DealerContractTransitionAsync(contractNo, action, dto);
+    return r is null ? Results.NotFound(new { contractNo, error = "Không thấy hợp đồng mua bán hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/contracts/{contractNo}/lines/{vin}/update", async (string contractNo, string vin, UpdateDealerContractLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateDealerContractLineAsync(contractNo, vin, dto);
+    return r is null ? Results.NotFound(new { contractNo, vin, error = "Không tìm thấy dòng xe trong hợp đồng hoặc hợp đồng đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

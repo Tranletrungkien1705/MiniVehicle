@@ -43,6 +43,9 @@
 <li><code>GET /api/guarantees?status=&dealer=&bank=&vin=</code> — tra cứu danh sách chứng thư bảo lãnh thanh toán ngân hàng (ngày đáo hạn, cảnh báo hết hạn)</li>
 <li><code>POST /api/guarantees/{no}/lines/{vin}/cancel</code> — hủy / giải tỏa bảo lãnh từng dòng xe VIN khi thanh toán hoặc hoàn trả xe</li>
 <li><code>PUT /api/guarantees/{no}</code> — điều chỉnh số thư bảo lãnh, ngân hàng, gia hạn ngày hết hạn &amp; hạn mức</li>
+<li><code>POST /api/contracts</code> &amp; <code>/api/contracts/{no}/{action}</code> — tạo &amp; phê duyệt hợp đồng mua bán xe ô tô giữa Hãng OEM và Đại lý (BizHTC.Contract.DealerContract / CT_DealerContract: submit, approve, complete, reject, cancel)</li>
+<li><code>GET /api/contracts?status=&dealer=&contractNo=&soCode=&vin=</code> — tra cứu danh sách hợp đồng mua bán xe ô tô đại lý (hạn chót giao xe, cảnh báo quá hạn)</li>
+<li><code>POST /api/contracts/{no}/lines/{vin}/update</code> — cập nhật đơn giá, chiết khấu và ghi chú theo từng xe VIN trong hợp đồng</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

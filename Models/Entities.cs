@@ -549,6 +549,52 @@ public sealed class PaymentGuaranteeLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Hợp đồng mua bán xe ô tô giữa Hãng OEM và Đại lý phân phối (BizHTC.Contract.DealerContract / CT_DealerContract): hợp đồng bán buôn xe ô tô, cam kết thời hạn giao hàng, hạn mức thanh toán và danh mục VIN xe giao dịch.</summary>
+public sealed class DealerContract
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ContractNo { get; set; } = "";             // Mã hợp đồng OEM (CTR...)
+    public string? ContractNoUser { get; set; }            // Số hợp đồng nội bộ đại lý (HĐMB-...)
+    public string DealerCode { get; set; } = "";           // Mã đại lý ký kết mua xe
+    public string? SOCode { get; set; }                    // Mã đơn đặt hàng xe liên quan (Ord_SalesOrder)
+    public string ContractType { get; set; } = "Wholesale"; // Wholesale (Bán buôn tiêu chuẩn), Project (Dự án/Lô), Spot (Đột xuất), Principle (Nguyên tắc)
+    public DateTime ContractDate { get; set; } = DateTime.Now; // Ngày ký kết hợp đồng
+    public DateTime? DeliveryDeadline { get; set; }        // Hạn chót hoàn tất bàn giao toàn bộ xe
+    public int PaymentTermDays { get; set; } = 30;         // Thời hạn thanh toán hợp đồng (ngày)
+    public int TotalQuantity { get; set; } = 0;            // Tổng số lượng xe trong hợp đồng
+    public decimal TotalAmount { get; set; } = 0;          // Tổng giá trị xe niêm yết (VNĐ)
+    public decimal DiscountAmount { get; set; } = 0;       // Tổng chiết khấu thương mại / khuyến mãi
+    public decimal FinalAmount { get; set; } = 0;          // Tổng giá trị thực tế sau chiết khấu = TotalAmount - DiscountAmount
+    public decimal DepositAmount { get; set; } = 0;        // Tiền đặt cọc hợp đồng
+    public string Status { get; set; } = "Draft";          // Draft → Submitted → Approved → Completed (hoặc Rejected / Cancelled)
+    public string? CreatedBy { get; set; }
+    public string? ApprovedBy { get; set; }
+    public string? Remark { get; set; }                    // Điều khoản / ghi chú hợp đồng
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong hợp đồng mua bán đại lý (BizHTC.Contract / CT_DealerContractDetail): thông tin xe VIN, model, màu sắc, đơn giá xuất buôn, chiết khấu và giá bán thực tế.</summary>
+public sealed class DealerContractLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long DealerContractId { get; set; }
+    public string ContractNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string? SpecCode { get; set; }
+    public string? Color { get; set; }
+    public decimal UnitPrice { get; set; } = 0;            // Giá niêm yết xuất buôn
+    public decimal Discount { get; set; } = 0;             // Chiết khấu dòng xe
+    public decimal ActualPrice { get; set; } = 0;          // Giá bán thực tế = UnitPrice - Discount
+    public string Status { get; set; } = "Pending";        // Pending → Approved → Delivered (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {
