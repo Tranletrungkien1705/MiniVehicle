@@ -1,0 +1,1 @@
+- Port nghiệp vụ Biên bản giao nhận xe (DeliveryMinutes / Sto_DlvMinutes) từ 2010.HTC (BizHTC.Storage.DlvMinutes): quản lý giao nhận xe, kiểm tra ODO, ngoại thất, nội thất, phụ kiện, hồ sơ xuất xưởng và ký nhận/từ chối biên bản.

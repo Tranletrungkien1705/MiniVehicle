@@ -16,6 +16,10 @@ public record ClaimDecisionDto(string? Note);
 public record CreateDocReqDto(string Vin, string DealerCode, string? DocType, string? Note);
 public record ShipDocDto(string? TrackingNo);
 public record CreateTransferDto(string Vin, string ToDealer, string? Note);
+public record CreateDeliveryMinutesDto(string Vin, string DealerCode, string? DoNo, string? TransporterCode, string? DriverName, string? DriverPhone, string? TruckPlateNo, string? FromStorage, string? ToStorage, string? DeliveredBy);
+public record InspectDeliveryMinutesDto(int? OdoKm, string? ExteriorCondition, string? InteriorCondition, bool? HasSpareWheel, bool? HasToolKit, int? KeyCount, bool? HasGuarantyBooklet, bool? HasUserManual, bool? HasOriginalCertificate, string? ReceivedBy, string? Remark);
+public record ConfirmDeliveryMinutesDto(string? ConfirmedBy, string? Remark);
+public record RejectDeliveryMinutesDto(string? Reason);
 
 public interface IVehicleService
 {
@@ -43,6 +47,12 @@ public interface IVehicleService
     Task<object> CreateTransferAsync(CreateTransferDto dto);
     Task<object> ListTransfersAsync(string? status);
     Task<object?> TransferTransitionAsync(string code, string action);
+    Task<object> CreateDeliveryMinutesAsync(CreateDeliveryMinutesDto dto);
+    Task<object> ListDeliveryMinutesAsync(string? status, string? dealer, string? vin);
+    Task<object?> GetDeliveryMinutesAsync(string dlvMnNo);
+    Task<object?> InspectDeliveryMinutesAsync(string dlvMnNo, InspectDeliveryMinutesDto dto);
+    Task<object?> ConfirmDeliveryMinutesAsync(string dlvMnNo, ConfirmDeliveryMinutesDto dto);
+    Task<object?> RejectDeliveryMinutesAsync(string dlvMnNo, string? reason);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -459,5 +469,129 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             if (remaining == 0 && c.Status != "Closed") { c.Status = "Closed"; await db.SaveChangesAsync(); }
         }
         return new { code, vin, status = vr.Status, campaignStatus = c.Status };
+    }
+
+    // ===== Biên bản giao nhận xe (BizHTC.Storage.DlvMinutes / Sto_DlvMinutes) =====
+    public async Task<object> CreateDeliveryMinutesAsync(CreateDeliveryMinutesDto dto)
+    {
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin)
+            ?? throw new InvalidOperationException($"Không thấy xe {vin}.");
+
+        var dlvMnNo = "DMN" + DateTime.Now.ToString("yyMMddHHmmss");
+        var m = new DeliveryMinutes
+        {
+            OrgId = Org,
+            DlvMnNo = dlvMnNo,
+            Vin = vin,
+            DealerCode = dto.DealerCode.Trim(),
+            DoNo = dto.DoNo?.Trim(),
+            TransporterCode = dto.TransporterCode?.Trim(),
+            DriverName = dto.DriverName?.Trim(),
+            DriverPhone = dto.DriverPhone?.Trim(),
+            TruckPlateNo = dto.TruckPlateNo?.Trim(),
+            FromStorage = dto.FromStorage?.Trim(),
+            ToStorage = dto.ToStorage?.Trim(),
+            DeliveredBy = dto.DeliveredBy?.Trim(),
+            Status = "Draft",
+            CreatedAt = DateTime.Now
+        };
+        db.DeliveryMinutes.Add(m);
+        Log(vin, "DeliveryMinutesCreated", $"{dlvMnNo} ĐL:{m.DealerCode} Nhà xe:{m.TransporterCode ?? "N/A"}");
+        await db.SaveChangesAsync();
+        return new { m.DlvMnNo, m.Vin, m.DealerCode, m.TransporterCode, m.TruckPlateNo, status = m.Status };
+    }
+
+    public async Task<object> ListDeliveryMinutesAsync(string? status, string? dealer, string? vin)
+    {
+        var q = db.DeliveryMinutes.Where(m => m.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(m => m.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(m => m.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(vin)) { var vv = vin.Trim().ToUpperInvariant(); q = q.Where(m => m.Vin == vv); }
+        var items = await q.OrderByDescending(m => m.Id).Take(500).Select(m => new
+        {
+            m.DlvMnNo, m.Vin, m.DealerCode, m.DoNo, m.TransporterCode, m.DriverName, m.TruckPlateNo,
+            m.OdoKm, m.Status, m.CreatedAt, m.HandoverDate, m.ConfirmedAt, m.DeliveredBy, m.ReceivedBy
+        }).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetDeliveryMinutesAsync(string dlvMnNo)
+    {
+        dlvMnNo = dlvMnNo.Trim().ToUpperInvariant();
+        var m = await db.DeliveryMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.DlvMnNo == dlvMnNo);
+        if (m is null) return null;
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == m.Vin);
+        return new
+        {
+            m.DlvMnNo, m.Vin,
+            vehicle = v == null ? null : new { v.Model, v.Color, v.EngineNo, v.ModelYear, status = v.Status.ToString(), v.OwnerName, v.PlateNo },
+            m.DealerCode, m.DoNo, m.TransporterCode, m.DriverName, m.DriverPhone, m.TruckPlateNo,
+            m.FromStorage, m.ToStorage, m.OdoKm,
+            m.ExteriorCondition, m.InteriorCondition,
+            m.HasSpareWheel, m.HasToolKit, m.KeyCount,
+            m.HasGuarantyBooklet, m.HasUserManual, m.HasOriginalCertificate,
+            m.DeliveredBy, m.ReceivedBy, m.Status, m.Remark,
+            m.CreatedAt, m.HandoverDate, m.ConfirmedAt
+        };
+    }
+
+    public async Task<object?> InspectDeliveryMinutesAsync(string dlvMnNo, InspectDeliveryMinutesDto dto)
+    {
+        dlvMnNo = dlvMnNo.Trim().ToUpperInvariant();
+        var m = await db.DeliveryMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.DlvMnNo == dlvMnNo);
+        if (m is null || m.Status is "Confirmed" or "Rejected") return null;
+
+        if (dto.OdoKm.HasValue) m.OdoKm = dto.OdoKm.Value;
+        if (dto.ExteriorCondition != null) m.ExteriorCondition = dto.ExteriorCondition;
+        if (dto.InteriorCondition != null) m.InteriorCondition = dto.InteriorCondition;
+        if (dto.HasSpareWheel.HasValue) m.HasSpareWheel = dto.HasSpareWheel.Value;
+        if (dto.HasToolKit.HasValue) m.HasToolKit = dto.HasToolKit.Value;
+        if (dto.KeyCount.HasValue) m.KeyCount = dto.KeyCount.Value;
+        if (dto.HasGuarantyBooklet.HasValue) m.HasGuarantyBooklet = dto.HasGuarantyBooklet.Value;
+        if (dto.HasUserManual.HasValue) m.HasUserManual = dto.HasUserManual.Value;
+        if (dto.HasOriginalCertificate.HasValue) m.HasOriginalCertificate = dto.HasOriginalCertificate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.ReceivedBy)) m.ReceivedBy = dto.ReceivedBy.Trim();
+        if (dto.Remark != null) m.Remark = dto.Remark;
+
+        m.Status = "Inspected";
+        Log(m.Vin, "DeliveryMinutesInspected", $"{dlvMnNo} ODO={m.OdoKm}km Ngoại thất={m.ExteriorCondition ?? "OK"}");
+        await db.SaveChangesAsync();
+        return new { m.DlvMnNo, m.Vin, m.Status, m.OdoKm, m.ExteriorCondition, m.ReceivedBy };
+    }
+
+    public async Task<object?> ConfirmDeliveryMinutesAsync(string dlvMnNo, ConfirmDeliveryMinutesDto dto)
+    {
+        dlvMnNo = dlvMnNo.Trim().ToUpperInvariant();
+        var m = await db.DeliveryMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.DlvMnNo == dlvMnNo);
+        if (m is null || m.Status is "Confirmed" or "Rejected") return null;
+
+        var now = DateTime.Now;
+        m.Status = "Confirmed";
+        m.ConfirmedAt = now;
+        m.HandoverDate ??= now;
+        if (!string.IsNullOrWhiteSpace(dto.ConfirmedBy) && string.IsNullOrWhiteSpace(m.ReceivedBy))
+            m.ReceivedBy = dto.ConfirmedBy.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark))
+            m.Remark = string.IsNullOrWhiteSpace(m.Remark) ? dto.Remark : $"{m.Remark} | {dto.Remark}";
+
+        Log(m.Vin, "DeliveryMinutesConfirmed", $"{dlvMnNo} Ký nhận: {m.ReceivedBy ?? dto.ConfirmedBy}");
+        await db.SaveChangesAsync();
+        return new { m.DlvMnNo, m.Vin, m.DealerCode, status = m.Status, m.ConfirmedAt, m.ReceivedBy };
+    }
+
+    public async Task<object?> RejectDeliveryMinutesAsync(string dlvMnNo, string? reason)
+    {
+        dlvMnNo = dlvMnNo.Trim().ToUpperInvariant();
+        var m = await db.DeliveryMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.DlvMnNo == dlvMnNo);
+        if (m is null || m.Status is "Confirmed" or "Rejected") return null;
+
+        m.Status = "Rejected";
+        if (!string.IsNullOrWhiteSpace(reason))
+            m.Remark = string.IsNullOrWhiteSpace(m.Remark) ? reason : $"{m.Remark} | Từ chối: {reason}";
+
+        Log(m.Vin, "DeliveryMinutesRejected", $"{dlvMnNo} Lý do: {reason ?? "Không đạt tiêu chuẩn bàn giao"}");
+        await db.SaveChangesAsync();
+        return new { m.DlvMnNo, m.Vin, status = m.Status, m.Remark };
     }
 }

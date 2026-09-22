@@ -133,6 +133,39 @@ public sealed class StockTransfer
     public DateTime? ReceivedAt { get; set; }
 }
 
+/// <summary>Biên bản giao nhận bàn giao xe (BizHTC.Storage.DlvMinutes / Sto_DlvMinutes): kiểm tra tình trạng ngoại thất, phụ kiện, giấy tờ, km ODO khi bàn giao xe.</summary>
+public sealed class DeliveryMinutes
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string DlvMnNo { get; set; } = "";             // Số biên bản (DMN...)
+    public string Vin { get; set; } = "";                 // Số khung bàn giao
+    public string DealerCode { get; set; } = "";          // Đại lý nhận xe
+    public string? DoNo { get; set; }                     // Lệnh giao xe liên quan (nếu có)
+    public string? TransporterCode { get; set; }          // Đơn vị vận chuyển / nhà xe
+    public string? DriverName { get; set; }               // Lái xe chuyên dụng chở xe
+    public string? DriverPhone { get; set; }              // SĐT lái xe
+    public string? TruckPlateNo { get; set; }             // Biển số xe lồng chở xe
+    public string? FromStorage { get; set; }              // Kho xuất phát
+    public string? ToStorage { get; set; }                // Kho/Điểm đến
+    public int OdoKm { get; set; }                        // Số km ODO lúc giao nhận
+    public string? ExteriorCondition { get; set; }        // Tình trạng ngoại thất, thân vỏ, sơn, kính, đèn (OK / Xước...)
+    public string? InteriorCondition { get; set; }        // Tình trạng nội thất, ghế, táp-lô, điều hòa (OK / ...)
+    public bool HasSpareWheel { get; set; } = true;       // Có lốp sơ cua
+    public bool HasToolKit { get; set; } = true;          // Có bộ đồ nghề kích lốp
+    public int KeyCount { get; set; } = 2;                // Số lượng chìa khóa (thường là 2 chìa)
+    public bool HasGuarantyBooklet { get; set; } = true;  // Sổ bảo hành
+    public bool HasUserManual { get; set; } = true;       // Sách hướng dẫn sử dụng
+    public bool HasOriginalCertificate { get; set; } = true; // Giấy chứng nhận chất lượng XK
+    public string? DeliveredBy { get; set; }              // Đại diện bên giao (thủ kho / lái xe)
+    public string? ReceivedBy { get; set; }               // Đại diện bên nhận (KTV / Cố vấn ĐL)
+    public string Status { get; set; } = "Draft";         // Draft → Inspected → Confirmed (hoặc Rejected)
+    public string? Remark { get; set; }                   // Ghi chú chi tiết khi giao nhận
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? HandoverDate { get; set; }
+    public DateTime? ConfirmedAt { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

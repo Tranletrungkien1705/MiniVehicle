@@ -12,6 +12,14 @@
 <li><code>POST /api/vehicles/{vin}/allocate</code> — phân bổ đại lý</li>
 <li><code>POST /api/delivery-orders</code> — tạo lệnh giao (nhiều VIN)</li>
 <li><code>POST /api/delivery-orders/{doNo}/deliver</code> — giao + kích hoạt bảo hành</li>
+<li><code>POST /api/delivery-minutes</code> — tạo biên bản giao nhận xe (Sto_DlvMinutes)</li>
+<li><code>GET /api/delivery-minutes?status=&dealer=&vin=</code> — tra cứu danh sách biên bản giao nhận</li>
+<li><code>POST /api/delivery-minutes/{no}/inspect</code> — kiểm tra tình trạng xe, ODO, phụ kiện &amp; giấy tờ</li>
+<li><code>POST /api/delivery-minutes/{no}/confirm</code> — ký nhận hoàn tất biên bản giao nhận</li>
+<li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
+<li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
+<li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>
+<li><code>POST /api/docreqs</code> &amp; <code>/api/docreqs/{code}/{action}</code> — đề nghị giao tài liệu xe</li>
 <li><code>GET /api/vehicles/{vin}/history</code> — lịch sử vòng đời</li>
 <li><code>GET /api/stats</code> — thống kê</li>
 </ul>
