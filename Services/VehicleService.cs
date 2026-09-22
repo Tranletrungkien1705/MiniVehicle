@@ -396,6 +396,49 @@ public record UpdateCarInvoiceLineDto(
     string? Remark = null
 );
 
+public record GuaranteeExtensionItemInputDto(
+    string Vin,
+    string? GuaranteeNo = null,
+    DateTime? CurrentDateExpired = null,
+    DateTime? NewDateExpired = null,
+    int ExtensionDays = 30,
+    decimal? GuaranteeValue = null,
+    decimal FeeRate = 0,
+    decimal? ExtensionFee = null,
+    string? Remark = null
+);
+
+public record CreateGuaranteeExtensionDto(
+    string DealerCode,
+    List<GuaranteeExtensionItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? BankCode = null,
+    string? GuaranteeNo = null,
+    int ExtensionDays = 30,
+    decimal FeeRate = 0,
+    string? FileSigned = null,
+    string? Remark = null,
+    string? GrtClaimExtNo = null,
+    string? CreatedBy = null
+);
+
+public record GuaranteeExtensionTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? FileSigned = null
+);
+
+public record UpdateGuaranteeExtensionLineDto(
+    DateTime? CurrentDateExpired = null,
+    DateTime? NewDateExpired = null,
+    int? ExtensionDays = null,
+    decimal? GuaranteeValue = null,
+    decimal? FeeRate = null,
+    decimal? ExtensionFee = null,
+    string? GuaranteeNo = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -548,6 +591,14 @@ public interface IVehicleService
     Task<object?> AddCarInvoiceLinesAsync(string invoiceListCode, List<CarInvoiceItemInputDto> items);
     Task<object?> RemoveCarInvoiceLineAsync(string invoiceListCode, string vin);
     Task<object?> GetVehicleInvoiceInfoAsync(string vin);
+    Task<object> CreateGuaranteeExtensionAsync(CreateGuaranteeExtensionDto dto);
+    Task<object> ListGuaranteeExtensionsAsync(string? status, string? dealer, string? bank, string? guaranteeNo, string? grtClaimExtNo, string? vin);
+    Task<object?> GetGuaranteeExtensionAsync(string grtClaimExtNo);
+    Task<object?> GuaranteeExtensionTransitionAsync(string grtClaimExtNo, string action, GuaranteeExtensionTransitionDto? dto);
+    Task<object?> UpdateGuaranteeExtensionLineAsync(string grtClaimExtNo, string vin, UpdateGuaranteeExtensionLineDto dto);
+    Task<object?> AddGuaranteeExtensionLinesAsync(string grtClaimExtNo, List<GuaranteeExtensionItemInputDto> items);
+    Task<object?> RemoveGuaranteeExtensionLineAsync(string grtClaimExtNo, string vin);
+    Task<object?> GetVehicleGuaranteeExtensionInfoAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -9492,6 +9543,663 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 l.TotalAmount,
                 l.Status,
                 l.Remark
+            })
+        };
+    }
+
+    // ===== Đề nghị & Quyết định gia hạn bảo lãnh thanh toán ngân hàng cho Đại lý (BizHTC.PaymentGrtExt / Pmt_GrtClaimExt) =====
+    public async Task<object> CreateGuaranteeExtensionAsync(CreateGuaranteeExtensionDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode đề nghị gia hạn bảo lãnh.");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+        var inputItems = new List<GuaranteeExtensionItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            foreach (var it in dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+            {
+                var cleanVin = it.Vin.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+                if (seenVins.Add(cleanVin))
+                    inputItems.Add(it with { Vin = cleanVin });
+            }
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            foreach (var v in dto.Vins.Where(s => !string.IsNullOrWhiteSpace(s)))
+            {
+                var cleanVin = v.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+                if (seenVins.Add(cleanVin))
+                    inputItems.Add(new GuaranteeExtensionItemInputDto(cleanVin));
+            }
+        }
+
+        if (inputItems.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 số khung VIN để lập đề nghị gia hạn bảo lãnh.");
+
+        var vins = inputItems.Select(i => i.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var missing = vins.Where(v => !vehicles.ContainsKey(v)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException($"Không tìm thấy xe với số khung: {string.Join(", ", missing)}");
+
+        // Tìm các dòng bảo lãnh hiện có của các xe này để lấy ngày hết hạn cũ và giá trị bảo lãnh
+        var existingGrtLines = await db.GuaranteeLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status != "Cancelled")
+            .ToDictionaryAsync(l => l.Vin);
+
+        // Kiểm tra xem xe có đang trong đề nghị gia hạn khác chưa hoàn tất/hủy hay không
+        var pendingExtLines = await db.GuaranteeExtensionLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status != "Cancelled" && l.Status != "Completed" && l.Status != "Rejected")
+            .ToListAsync();
+        if (pendingExtLines.Count > 0)
+        {
+            var busyInfo = string.Join("; ", pendingExtLines.Select(l => $"{l.Vin} ({l.GrtClaimExtNo})"));
+            throw new InvalidOperationException($"Các xe sau đang có đề nghị gia hạn khác đang xử lý: {busyInfo}");
+        }
+
+        var today = DateTime.Today;
+        var seq = await db.GuaranteeExtensions.CountAsync(e => e.OrgId == Org && e.CreatedAt.Date == today) + 1;
+        var grtClaimExtNo = string.IsNullOrWhiteSpace(dto.GrtClaimExtNo)
+            ? $"GEXT{today:yyyyMMdd}-{seq:000}"
+            : dto.GrtClaimExtNo!.Trim().ToUpperInvariant();
+
+        if (await db.GuaranteeExtensions.AnyAsync(e => e.OrgId == Org && e.GrtClaimExtNo == grtClaimExtNo))
+            throw new InvalidOperationException($"Mã đề nghị gia hạn {grtClaimExtNo} đã tồn tại.");
+
+        var defaultExtDays = dto.ExtensionDays > 0 ? dto.ExtensionDays : 30;
+        var defaultFeeRate = dto.FeeRate >= 0 ? dto.FeeRate : 0;
+
+        var ext = new GuaranteeExtension
+        {
+            OrgId = Org,
+            GrtClaimExtNo = grtClaimExtNo,
+            DealerCode = dealer,
+            BankCode = dto.BankCode?.Trim().ToUpperInvariant(),
+            GuaranteeNo = dto.GuaranteeNo?.Trim().ToUpperInvariant(),
+            ExtensionDays = defaultExtDays,
+            FeeRate = defaultFeeRate,
+            FileSigned = dto.FileSigned?.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "DealerSalesDept",
+            CreatedAt = DateTime.Now
+        };
+
+        db.GuaranteeExtensions.Add(ext);
+        await db.SaveChangesAsync();
+
+        decimal totalGuaranteeAmount = 0;
+        decimal totalFeeAmount = 0;
+
+        foreach (var it in inputItems)
+        {
+            var v = vehicles[it.Vin];
+            existingGrtLines.TryGetValue(it.Vin, out var grtLine);
+
+            var grtNo = !string.IsNullOrWhiteSpace(it.GuaranteeNo)
+                ? it.GuaranteeNo.Trim().ToUpperInvariant()
+                : grtLine?.GuaranteeNo ?? dto.GuaranteeNo?.Trim().ToUpperInvariant();
+
+            var curExpired = it.CurrentDateExpired ?? grtLine?.DateExpired ?? DateTime.Today.AddDays(15);
+            var extDays = it.ExtensionDays > 0 ? it.ExtensionDays : defaultExtDays;
+            var newExpired = it.NewDateExpired ?? curExpired.AddDays(extDays);
+
+            var grtValue = it.GuaranteeValue.HasValue && it.GuaranteeValue.Value > 0
+                ? it.GuaranteeValue.Value
+                : (grtLine != null && grtLine.GuaranteeValue > 0 ? grtLine.GuaranteeValue : GetDefaultCarPrice(v.Model));
+
+            var lineFeeRate = it.FeeRate > 0 ? it.FeeRate : defaultFeeRate;
+            var feeAmount = it.ExtensionFee.HasValue && it.ExtensionFee.Value >= 0
+                ? it.ExtensionFee.Value
+                : Math.Round(grtValue * lineFeeRate / 100m, 0);
+
+            totalGuaranteeAmount += grtValue;
+            totalFeeAmount += feeAmount;
+
+            db.GuaranteeExtensionLines.Add(new GuaranteeExtensionLine
+            {
+                OrgId = Org,
+                GuaranteeExtensionId = ext.Id,
+                GrtClaimExtNo = grtClaimExtNo,
+                Vin = it.Vin,
+                Model = v.Model,
+                GuaranteeNo = grtNo,
+                CurrentDateExpired = curExpired,
+                NewDateExpired = newExpired,
+                ExtensionDays = extDays,
+                GuaranteeValue = grtValue,
+                FeeRate = lineFeeRate,
+                ExtensionFee = feeAmount,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            });
+
+            Log(it.Vin, "GrtClaimExtDraftCreated",
+                $"{grtClaimExtNo} Lập dự thảo đề nghị gia hạn bảo lãnh ngân hàng thêm {extDays} ngày đến {newExpired:yyyy-MM-dd} (hạn cũ: {curExpired:yyyy-MM-dd}) cho đại lý {dealer}. Giá trị bảo lãnh: {grtValue:N0} VNĐ, Phí gia hạn: {feeAmount:N0} VNĐ.");
+        }
+
+        ext.TotalVehicleCount = inputItems.Count;
+        ext.TotalGuaranteeAmount = totalGuaranteeAmount;
+        ext.TotalFeeAmount = totalFeeAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ext.GrtClaimExtNo,
+            ext.DealerCode,
+            ext.BankCode,
+            ext.GuaranteeNo,
+            ext.ExtensionDays,
+            ext.FeeRate,
+            ext.TotalVehicleCount,
+            ext.TotalGuaranteeAmount,
+            ext.TotalFeeAmount,
+            ext.Status,
+            ext.Remark,
+            linesCount = inputItems.Count
+        };
+    }
+
+    public async Task<object> ListGuaranteeExtensionsAsync(string? status, string? dealer, string? bank, string? guaranteeNo, string? grtClaimExtNo, string? vin)
+    {
+        var q = db.GuaranteeExtensions.Where(e => e.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(e => e.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim(); q = q.Where(e => e.DealerCode.Contains(d)); }
+        if (!string.IsNullOrWhiteSpace(bank)) { var b = bank.Trim(); q = q.Where(e => e.BankCode != null && e.BankCode.Contains(b)); }
+        if (!string.IsNullOrWhiteSpace(guaranteeNo)) { var g = guaranteeNo.Trim(); q = q.Where(e => e.GuaranteeNo != null && e.GuaranteeNo.Contains(g)); }
+        if (!string.IsNullOrWhiteSpace(grtClaimExtNo)) { var code = grtClaimExtNo.Trim(); q = q.Where(e => e.GrtClaimExtNo.Contains(code)); }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedCodes = await db.GuaranteeExtensionLines
+                .Where(l => l.OrgId == Org && l.Vin == vv)
+                .Select(l => l.GrtClaimExtNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(e => matchedCodes.Contains(e.GrtClaimExtNo));
+        }
+
+        var items = await q.OrderByDescending(e => e.Id).Take(500).Select(e => new
+        {
+            e.GrtClaimExtNo,
+            e.DealerCode,
+            e.BankCode,
+            e.GuaranteeNo,
+            e.ExtensionDays,
+            e.FeeRate,
+            e.TotalVehicleCount,
+            e.TotalGuaranteeAmount,
+            e.TotalFeeAmount,
+            e.FileSigned,
+            e.Status,
+            e.CreatedBy,
+            e.CreatedAt,
+            e.ApprovedBy,
+            e.ApprovedAt,
+            e.SignedBy,
+            e.SignedAt,
+            e.RejectedBy,
+            e.RejectedAt,
+            e.CancelledBy,
+            e.CancelledAt,
+            e.Remark,
+            linesCount = db.GuaranteeExtensionLines.Count(l => l.OrgId == Org && l.GuaranteeExtensionId == e.Id),
+            completedLinesCount = db.GuaranteeExtensionLines.Count(l => l.OrgId == Org && l.GuaranteeExtensionId == e.Id && l.Status == "Completed")
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetGuaranteeExtensionAsync(string grtClaimExtNo)
+    {
+        grtClaimExtNo = grtClaimExtNo.Trim().ToUpperInvariant();
+        var ext = await db.GuaranteeExtensions.FirstOrDefaultAsync(e => e.OrgId == Org && e.GrtClaimExtNo == grtClaimExtNo);
+        if (ext is null) return null;
+
+        var lines = await db.GuaranteeExtensionLines.Where(l => l.OrgId == Org && l.GuaranteeExtensionId == ext.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.GuaranteeNo,
+            l.CurrentDateExpired,
+            l.NewDateExpired,
+            l.ExtensionDays,
+            l.GuaranteeValue,
+            l.FeeRate,
+            l.ExtensionFee,
+            l.Status,
+            l.Remark,
+            color = vehicles.TryGetValue(l.Vin, out var v) ? v.Color : null,
+            modelYear = vehicles.TryGetValue(l.Vin, out var vy) ? vy.ModelYear : null,
+            vehicleStatus = vehicles.TryGetValue(l.Vin, out var vs) ? vs.Status.ToString() : null,
+            dealerCode = vehicles.TryGetValue(l.Vin, out var vd) ? vd.DealerCode : null
+        }).ToList();
+
+        return new
+        {
+            ext.GrtClaimExtNo,
+            ext.DealerCode,
+            ext.BankCode,
+            ext.GuaranteeNo,
+            ext.ExtensionDays,
+            ext.FeeRate,
+            ext.TotalVehicleCount,
+            ext.TotalGuaranteeAmount,
+            ext.TotalFeeAmount,
+            ext.FileSigned,
+            ext.Status,
+            ext.CreatedBy,
+            ext.CreatedAt,
+            ext.ApprovedBy,
+            ext.ApprovedAt,
+            ext.SignedBy,
+            ext.SignedAt,
+            ext.RejectedBy,
+            ext.RejectedAt,
+            ext.CancelledBy,
+            ext.CancelledAt,
+            ext.Remark,
+            vins = details
+        };
+    }
+
+    public async Task<object?> GuaranteeExtensionTransitionAsync(string grtClaimExtNo, string action, GuaranteeExtensionTransitionDto? dto)
+    {
+        grtClaimExtNo = grtClaimExtNo.Trim().ToUpperInvariant();
+        var act = action.Trim().ToLowerInvariant();
+
+        var ext = await db.GuaranteeExtensions.FirstOrDefaultAsync(e => e.OrgId == Org && e.GrtClaimExtNo == grtClaimExtNo);
+        if (ext is null) return null;
+
+        var lines = await db.GuaranteeExtensionLines.Where(l => l.OrgId == Org && l.GuaranteeExtensionId == ext.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var grtLines = await db.GuaranteeLines.Where(l => l.OrgId == Org && lineVins.Contains(l.Vin)).ToListAsync();
+
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "submit":
+                if (ext.Status != "Draft") return null;
+                ext.Status = "Submitted";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    ext.Remark = (ext.Remark + " | Gửi đề nghị: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Submitted";
+                    Log(line.Vin, "GrtClaimExtSubmitted",
+                        $"{grtClaimExtNo} Đại lý {ext.DealerCode} nộp đề nghị xin gia hạn bảo lãnh thêm {line.ExtensionDays} ngày đến {line.NewDateExpired:yyyy-MM-dd}.");
+                }
+                break;
+
+            case "approve":
+                if (ext.Status is not ("Draft" or "Submitted")) return null;
+                ext.Status = "Approved";
+                ext.ApprovedBy = dto?.User ?? "RiskManagementLead";
+                ext.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    ext.Remark = (ext.Remark + " | Phê duyệt: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Approved";
+                    Log(line.Vin, "GrtClaimExtApproved",
+                        $"{grtClaimExtNo} Hãng OEM phê duyệt đề nghị gia hạn bảo lãnh thanh toán. Người duyệt: {ext.ApprovedBy}");
+                }
+                break;
+
+            case "complete" or "sign" or "finish":
+                if (ext.Status is not ("Approved" or "Submitted" or "Draft")) return null;
+                ext.Status = "Completed";
+                ext.SignedBy = dto?.User ?? "GeneralDirector";
+                ext.SignedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.FileSigned))
+                    ext.FileSigned = dto.FileSigned.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    ext.Remark = (ext.Remark + " | Ký hoàn tất: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Completed";
+
+                    // Cập nhật hạn bảo lãnh mới trên dòng bảo lãnh thanh toán tương ứng
+                    var matchGrtLine = grtLines.FirstOrDefault(gl => gl.Vin == line.Vin && (string.IsNullOrWhiteSpace(line.GuaranteeNo) || gl.GuaranteeNo == line.GuaranteeNo));
+                    if (matchGrtLine != null)
+                    {
+                        matchGrtLine.DateExpired = line.NewDateExpired;
+                        matchGrtLine.LastGrtExtNo = ext.GrtClaimExtNo;
+                        matchGrtLine.ExtensionTimes += 1;
+                        if (matchGrtLine.DateWarning.HasValue && line.NewDateExpired.HasValue)
+                        {
+                            matchGrtLine.DateWarning = line.NewDateExpired.Value.AddDays(-7);
+                        }
+                    }
+
+                    Log(line.Vin, "GuaranteeExtended",
+                        $"{grtClaimExtNo} Ký số thỏa thuận gia hạn bảo lãnh ngân hàng ({ext.BankCode ?? "N/A"}) thêm {line.ExtensionDays} ngày đến {line.NewDateExpired:yyyy-MM-dd} thành công. Phí gia hạn: {line.ExtensionFee:N0} VNĐ. Hạn bảo lãnh mới chính thức kích hoạt.");
+                }
+                break;
+
+            case "reject":
+                if (ext.Status is "Completed" or "Cancelled") return null;
+                ext.Status = "Rejected";
+                ext.RejectedBy = dto?.User ?? "RiskManagementLead";
+                ext.RejectedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    ext.Remark = (ext.Remark + " | Từ chối: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Rejected";
+                    Log(line.Vin, "GrtClaimExtRejected",
+                        $"{grtClaimExtNo} Từ chối gia hạn bảo lãnh thanh toán. Lý do: {dto?.Note ?? "N/A"}");
+                }
+                break;
+
+            case "cancel":
+                if (ext.Status == "Cancelled") return null;
+                ext.Status = "Cancelled";
+                ext.CancelledBy = dto?.User ?? "SystemAdmin";
+                ext.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    ext.Remark = (ext.Remark + " | Hủy: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Cancelled";
+                    Log(line.Vin, "GrtClaimExtCancelled",
+                        $"{grtClaimExtNo} Hủy bỏ đề nghị gia hạn bảo lãnh thanh toán. Lý do: {dto?.Note ?? "N/A"}");
+                }
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ext.GrtClaimExtNo,
+            ext.DealerCode,
+            ext.Status,
+            ext.TotalVehicleCount,
+            ext.TotalGuaranteeAmount,
+            ext.TotalFeeAmount,
+            ext.ApprovedBy,
+            ext.ApprovedAt,
+            ext.SignedBy,
+            ext.SignedAt,
+            ext.RejectedBy,
+            ext.RejectedAt,
+            ext.CancelledBy,
+            ext.CancelledAt,
+            action = act
+        };
+    }
+
+    public async Task<object?> UpdateGuaranteeExtensionLineAsync(string grtClaimExtNo, string vin, UpdateGuaranteeExtensionLineDto dto)
+    {
+        grtClaimExtNo = grtClaimExtNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var ext = await db.GuaranteeExtensions.FirstOrDefaultAsync(e => e.OrgId == Org && e.GrtClaimExtNo == grtClaimExtNo);
+        if (ext is null || ext.Status is "Completed" or "Cancelled") return null;
+
+        var line = await db.GuaranteeExtensionLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.GuaranteeExtensionId == ext.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.CurrentDateExpired.HasValue) line.CurrentDateExpired = dto.CurrentDateExpired.Value;
+        if (dto.ExtensionDays.HasValue && dto.ExtensionDays.Value > 0) line.ExtensionDays = dto.ExtensionDays.Value;
+        if (dto.NewDateExpired.HasValue)
+        {
+            line.NewDateExpired = dto.NewDateExpired.Value;
+        }
+        else if (dto.ExtensionDays.HasValue && line.CurrentDateExpired.HasValue)
+        {
+            line.NewDateExpired = line.CurrentDateExpired.Value.AddDays(line.ExtensionDays);
+        }
+
+        if (dto.GuaranteeValue.HasValue && dto.GuaranteeValue.Value >= 0) line.GuaranteeValue = dto.GuaranteeValue.Value;
+        if (dto.FeeRate.HasValue && dto.FeeRate.Value >= 0) line.FeeRate = dto.FeeRate.Value;
+
+        if (dto.ExtensionFee.HasValue && dto.ExtensionFee.Value >= 0)
+        {
+            line.ExtensionFee = dto.ExtensionFee.Value;
+        }
+        else
+        {
+            line.ExtensionFee = Math.Round(line.GuaranteeValue * line.FeeRate / 100m, 0);
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.GuaranteeNo)) line.GuaranteeNo = dto.GuaranteeNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.GuaranteeExtensionLines.Where(l => l.OrgId == Org && l.GuaranteeExtensionId == ext.Id).ToListAsync();
+        ext.TotalGuaranteeAmount = allLines.Sum(l => l.GuaranteeValue);
+        ext.TotalFeeAmount = allLines.Sum(l => l.ExtensionFee);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ext.GrtClaimExtNo,
+            line.Vin,
+            line.Model,
+            line.GuaranteeNo,
+            line.CurrentDateExpired,
+            line.NewDateExpired,
+            line.ExtensionDays,
+            line.GuaranteeValue,
+            line.FeeRate,
+            line.ExtensionFee,
+            line.Remark,
+            extensionTotalAmount = ext.TotalGuaranteeAmount,
+            extensionTotalFee = ext.TotalFeeAmount
+        };
+    }
+
+    public async Task<object?> AddGuaranteeExtensionLinesAsync(string grtClaimExtNo, List<GuaranteeExtensionItemInputDto> items)
+    {
+        grtClaimExtNo = grtClaimExtNo.Trim().ToUpperInvariant();
+        var ext = await db.GuaranteeExtensions.FirstOrDefaultAsync(e => e.OrgId == Org && e.GrtClaimExtNo == grtClaimExtNo);
+        if (ext is null || ext.Status is "Completed" or "Cancelled") return null;
+
+        var distinctItems = new List<GuaranteeExtensionItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+            if (seenVins.Add(cleanVin))
+                distinctItems.Add(it with { Vin = cleanVin });
+        }
+
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.GuaranteeExtensionLines
+            .Where(l => l.OrgId == Org && l.GuaranteeExtensionId == ext.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin)).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var missing = newVins.Where(v => !vehicles.ContainsKey(v)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException($"Không tìm thấy xe với số khung: {string.Join(", ", missing)}");
+
+        // Tìm các dòng bảo lãnh hiện có
+        var existingGrtLines = await db.GuaranteeLines
+            .Where(l => l.OrgId == Org && newVins.Contains(l.Vin) && l.Status != "Cancelled")
+            .ToDictionaryAsync(l => l.Vin);
+
+        foreach (var it in newItems)
+        {
+            var v = vehicles[it.Vin];
+            existingGrtLines.TryGetValue(it.Vin, out var grtLine);
+
+            var grtNo = !string.IsNullOrWhiteSpace(it.GuaranteeNo)
+                ? it.GuaranteeNo.Trim().ToUpperInvariant()
+                : grtLine?.GuaranteeNo ?? ext.GuaranteeNo;
+
+            var curExpired = it.CurrentDateExpired ?? grtLine?.DateExpired ?? DateTime.Today.AddDays(15);
+            var extDays = it.ExtensionDays > 0 ? it.ExtensionDays : ext.ExtensionDays;
+            var newExpired = it.NewDateExpired ?? curExpired.AddDays(extDays);
+
+            var grtValue = it.GuaranteeValue.HasValue && it.GuaranteeValue.Value > 0
+                ? it.GuaranteeValue.Value
+                : (grtLine != null && grtLine.GuaranteeValue > 0 ? grtLine.GuaranteeValue : GetDefaultCarPrice(v.Model));
+
+            var lineFeeRate = it.FeeRate > 0 ? it.FeeRate : ext.FeeRate;
+            var feeAmount = it.ExtensionFee.HasValue && it.ExtensionFee.Value >= 0
+                ? it.ExtensionFee.Value
+                : Math.Round(grtValue * lineFeeRate / 100m, 0);
+
+            db.GuaranteeExtensionLines.Add(new GuaranteeExtensionLine
+            {
+                OrgId = Org,
+                GuaranteeExtensionId = ext.Id,
+                GrtClaimExtNo = ext.GrtClaimExtNo,
+                Vin = it.Vin,
+                Model = v.Model,
+                GuaranteeNo = grtNo,
+                CurrentDateExpired = curExpired,
+                NewDateExpired = newExpired,
+                ExtensionDays = extDays,
+                GuaranteeValue = grtValue,
+                FeeRate = lineFeeRate,
+                ExtensionFee = feeAmount,
+                Status = ext.Status == "Submitted" ? "Submitted" : (ext.Status == "Approved" ? "Approved" : "Pending"),
+                Remark = it.Remark?.Trim()
+            });
+
+            Log(it.Vin, "GrtClaimExtLineAdded",
+                $"{grtClaimExtNo} Bổ sung xe vào đề nghị gia hạn bảo lãnh thanh toán (+{extDays} ngày đến {newExpired:yyyy-MM-dd}) cho đại lý {ext.DealerCode}");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.GuaranteeExtensionLines.Where(l => l.OrgId == Org && l.GuaranteeExtensionId == ext.Id).ToListAsync();
+        ext.TotalVehicleCount = allLines.Count;
+        ext.TotalGuaranteeAmount = allLines.Sum(l => l.GuaranteeValue);
+        ext.TotalFeeAmount = allLines.Sum(l => l.ExtensionFee);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ext.GrtClaimExtNo,
+            addedCount = newItems.Count,
+            ext.TotalVehicleCount,
+            ext.TotalGuaranteeAmount,
+            ext.TotalFeeAmount
+        };
+    }
+
+    public async Task<object?> RemoveGuaranteeExtensionLineAsync(string grtClaimExtNo, string vin)
+    {
+        grtClaimExtNo = grtClaimExtNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var ext = await db.GuaranteeExtensions.FirstOrDefaultAsync(e => e.OrgId == Org && e.GrtClaimExtNo == grtClaimExtNo);
+        if (ext is null || ext.Status is "Completed" or "Cancelled") return null;
+
+        var line = await db.GuaranteeExtensionLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.GuaranteeExtensionId == ext.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.GuaranteeExtensionLines.Remove(line);
+        Log(vin, "GrtClaimExtLineRemoved", $"{grtClaimExtNo} Rút xe khỏi đề nghị gia hạn bảo lãnh thanh toán");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.GuaranteeExtensionLines.Where(l => l.OrgId == Org && l.GuaranteeExtensionId == ext.Id).ToListAsync();
+        ext.TotalVehicleCount = allLines.Count;
+        ext.TotalGuaranteeAmount = allLines.Sum(l => l.GuaranteeValue);
+        ext.TotalFeeAmount = allLines.Sum(l => l.ExtensionFee);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ext.GrtClaimExtNo,
+            vin,
+            ext.TotalVehicleCount,
+            ext.TotalGuaranteeAmount,
+            ext.TotalFeeAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleGuaranteeExtensionInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var grtLines = await db.GuaranteeLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var extLines = await db.GuaranteeExtensionLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.Color,
+            v.EngineNo,
+            v.Status,
+            v.DealerCode,
+            currentGuarantees = grtLines.Select(g => new
+            {
+                g.Id,
+                g.GuaranteeNo,
+                g.GuaranteeValue,
+                g.GuaranteePercent,
+                g.DateStart,
+                g.DateWarning,
+                g.DateExpired,
+                g.LastGrtExtNo,
+                g.ExtensionTimes,
+                g.Status
+            }),
+            extensionHistory = extLines.Select(e => new
+            {
+                e.Id,
+                e.GrtClaimExtNo,
+                e.GuaranteeNo,
+                e.CurrentDateExpired,
+                e.NewDateExpired,
+                e.ExtensionDays,
+                e.GuaranteeValue,
+                e.FeeRate,
+                e.ExtensionFee,
+                e.Status,
+                e.Remark
             })
         };
     }

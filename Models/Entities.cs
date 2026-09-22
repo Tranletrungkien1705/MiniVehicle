@@ -563,6 +563,8 @@ public sealed class PaymentGuaranteeLine
     public DateTime? DateStart { get; set; }             // Ngày bắt đầu tính bảo lãnh cho xe
     public DateTime? DateWarning { get; set; }           // Ngày cảnh báo hạn bảo lãnh
     public DateTime? DateExpired { get; set; }           // Ngày hết hạn bảo lãnh xe này
+    public string? LastGrtExtNo { get; set; }            // Mã đơn đề nghị/quyết định gia hạn bảo lãnh gần nhất (Pmt_GrtClaimExt)
+    public int ExtensionTimes { get; set; } = 0;         // Số lần xe đã được gia hạn thời hạn bảo lãnh
     public string Status { get; set; } = "Pending";      // Pending → Approved → Settled (hoặc Cancelled)
     public string? Remark { get; set; }
 }
@@ -1088,6 +1090,55 @@ public sealed class CarInvoiceLine
     public decimal VatAmount { get; set; } = 0;           // Tiền thuế VAT = TaxValue * VatRate / 100
     public decimal TotalAmount { get; set; } = 0;         // Tổng tiền xe bao gồm thuế = TaxValue + VatAmount
     public string Status { get; set; } = "Pending";       // Pending → Issued (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Đề nghị & Quyết định gia hạn bảo lãnh thanh toán ngân hàng mua xe ô tô cho Đại lý (BizHTC.PaymentGrtExt / Pmt_GrtClaimExt): quản lý đề nghị gia hạn thời hạn bảo lãnh khi xe lưu bãi đại lý sắp đến hạn nộp tiền.</summary>
+public sealed class GuaranteeExtension
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string GrtClaimExtNo { get; set; } = "";        // Mã đề nghị / Quyết định gia hạn bảo lãnh (GEXT...)
+    public string DealerCode { get; set; } = "";           // Đại lý đề nghị gia hạn
+    public string? BankCode { get; set; }                  // Ngân hàng phát hành chứng thư bảo lãnh (VCB, TCB, VPB, BIDV...)
+    public string? GuaranteeNo { get; set; }               // Mã chứng thư bảo lãnh ngân hàng gốc liên quan (Pmt_Guarantee)
+    public int ExtensionDays { get; set; } = 30;           // Số ngày xin gia hạn thêm (15, 30, 45, 60 ngày...)
+    public decimal FeeRate { get; set; } = 0;              // Tỷ lệ phí gia hạn (%) (nếu có)
+    public decimal TotalFeeAmount { get; set; } = 0;       // Tổng phí gia hạn bảo lãnh (VNĐ)
+    public int TotalVehicleCount { get; set; } = 0;        // Tổng số lượng xe xin gia hạn trong đợt
+    public decimal TotalGuaranteeAmount { get; set; } = 0; // Tổng giá trị bảo lãnh các xe xin gia hạn (VNĐ)
+    public string? FileSigned { get; set; }                // Đường dẫn / tệp văn bản thỏa thuận gia hạn ký số điện tử
+    public string Status { get; set; } = "Draft";          // Draft → Submitted → Approved → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Lý do đề nghị & diễn giải gia hạn
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                // Lãnh đạo kinh doanh / Kế toán OEM sơ duyệt
+    public DateTime? ApprovedAt { get; set; }
+    public string? SignedBy { get; set; }                  // Người ký số xác nhận hoàn tất thỏa thuận gia hạn
+    public DateTime? SignedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong đề nghị gia hạn bảo lãnh (BizHTC.PaymentGrtExt / Pmt_GrtClaimExtDtl): danh sách VIN, hạn bảo lãnh cũ, hạn bảo lãnh mới, số ngày gia hạn và phí gia hạn từng xe.</summary>
+public sealed class GuaranteeExtensionLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long GuaranteeExtensionId { get; set; }
+    public string GrtClaimExtNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? GuaranteeNo { get; set; }               // Mã chứng thư bảo lãnh gốc (Pmt_Guarantee)
+    public DateTime? CurrentDateExpired { get; set; }      // Hạn bảo lãnh hiện tại trước khi gia hạn
+    public DateTime? NewDateExpired { get; set; }          // Hạn bảo lãnh mới sau gia hạn (= CurrentDateExpired + ExtensionDays)
+    public int ExtensionDays { get; set; } = 30;           // Số ngày gia hạn cho xe này
+    public decimal GuaranteeValue { get; set; } = 0;       // Giá trị bảo lãnh xe này (VNĐ)
+    public decimal FeeRate { get; set; } = 0;              // % phí gia hạn cho xe này
+    public decimal ExtensionFee { get; set; } = 0;         // Tiền phí gia hạn xe này (VNĐ)
+    public string Status { get; set; } = "Pending";        // Pending → Submitted → Approved → Completed (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
 }
 

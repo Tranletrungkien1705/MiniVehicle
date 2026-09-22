@@ -56,6 +56,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<CarBoxRequestLine> CarBoxRequestLines => Set<CarBoxRequestLine>();
     public DbSet<CarInvoice> CarInvoices => Set<CarInvoice>();
     public DbSet<CarInvoiceLine> CarInvoiceLines => Set<CarInvoiceLine>();
+    public DbSet<GuaranteeExtension> GuaranteeExtensions => Set<GuaranteeExtension>();
+    public DbSet<GuaranteeExtensionLine> GuaranteeExtensionLines => Set<GuaranteeExtensionLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -84,5 +86,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<CustomsDeclaration>().HasIndex(x => new { x.OrgId, x.DeclarationNo }).IsUnique();
         b.Entity<CarBoxRequest>().HasIndex(x => new { x.OrgId, x.CBReqNo }).IsUnique();
         b.Entity<CarInvoice>().HasIndex(x => new { x.OrgId, x.InvoiceListCode }).IsUnique();
+        b.Entity<GuaranteeExtension>().HasIndex(x => new { x.OrgId, x.GrtClaimExtNo }).IsUnique();
     }
 }

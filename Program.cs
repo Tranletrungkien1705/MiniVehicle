@@ -1106,6 +1106,64 @@ app.MapGet("/api/vehicles/{vin}/invoice-info", async (string vin, IVehicleServic
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Đề nghị & Quyết định gia hạn bảo lãnh thanh toán ngân hàng cho Đại lý (BizHTC.PaymentGrtExt / Pmt_GrtClaimExt) ----
+app.MapPost("/api/guarantee-extensions", async (CreateGuaranteeExtensionDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode đề nghị gia hạn bảo lãnh." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong đề nghị gia hạn bảo lãnh." });
+    try { return Results.Ok(await svc.CreateGuaranteeExtensionAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/guarantee-extensions", async (IVehicleService svc, string? status, string? dealer, string? bank, string? guaranteeNo, string? grtClaimExtNo, string? vin) =>
+    Results.Ok(await svc.ListGuaranteeExtensionsAsync(status, dealer, bank, guaranteeNo, grtClaimExtNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/guarantee-extensions/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.GetGuaranteeExtensionAsync(code);
+    return r is null ? Results.NotFound(new { code, error = "Không tìm thấy đề nghị gia hạn bảo lãnh." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/guarantee-extensions/{code}/{action}", async (string code, string action, GuaranteeExtensionTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "sign" or "complete" or "finish" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|sign|complete|reject|cancel" });
+    var r = await svc.GuaranteeExtensionTransitionAsync(code, action, dto);
+    return r is null ? Results.NotFound(new { code, error = "Không thấy đề nghị gia hạn bảo lãnh hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/guarantee-extensions/{code}/lines/{vin}/update", async (string code, string vin, UpdateGuaranteeExtensionLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateGuaranteeExtensionLineAsync(code, vin, dto);
+    return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong đề nghị gia hạn hoặc hồ sơ đã hoàn tất/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/guarantee-extensions/{code}/lines", async (string code, List<GuaranteeExtensionItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào đề nghị gia hạn." });
+    try
+    {
+        var r = await svc.AddGuaranteeExtensionLinesAsync(code, items);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy đề nghị gia hạn hoặc hồ sơ đã hoàn tất/hủy/xe đã tồn tại." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/guarantee-extensions/{code}/lines/{vin}", async (string code, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveGuaranteeExtensionLineAsync(code, vin);
+    return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong đề nghị gia hạn hoặc hồ sơ đã hoàn tất/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/guarantee-extension-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleGuaranteeExtensionInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

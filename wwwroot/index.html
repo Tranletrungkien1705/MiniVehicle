@@ -87,6 +87,11 @@
 <li><code>POST /api/car-invoices/{code}/lines/{vin}/update</code> — điều chỉnh số hóa đơn VAT, ngày hóa đơn, đơn giá tính thuế &amp; tiền thuế VAT theo từng xe VIN</li>
 <li><code>POST /api/car-invoices/{code}/lines</code> &amp; <code>DELETE /api/car-invoices/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong bảng kê hóa đơn GTGT</li>
 <li><code>GET /api/vehicles/{vin}/invoice-info</code> — tra cứu thông tin trạng thái và lịch sử phát hành hóa đơn GTGT của số khung VIN</li>
+<li><code>POST /api/guarantee-extensions</code> &amp; <code>/api/guarantee-extensions/{code}/{action}</code> — tạo, nộp, phê duyệt &amp; ký số quyết định gia hạn bảo lãnh thanh toán mua xe ô tô cho Đại lý (BizHTC.PaymentGrtExt / Pmt_GrtClaimExt: submit, approve, sign/complete, reject, cancel)</li>
+<li><code>GET /api/guarantee-extensions?status=&amp;dealer=&amp;bank=&amp;guaranteeNo=&amp;grtClaimExtNo=&amp;vin=</code> — tra cứu danh sách đề nghị gia hạn bảo lãnh thanh toán ngân hàng</li>
+<li><code>POST /api/guarantee-extensions/{code}/lines/{vin}/update</code> — cập nhật số ngày gia hạn, hạn bảo lãnh mới, phí gia hạn theo từng xe VIN</li>
+<li><code>POST /api/guarantee-extensions/{code}/lines</code> &amp; <code>DELETE /api/guarantee-extensions/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong đề nghị gia hạn bảo lãnh</li>
+<li><code>GET /api/vehicles/{vin}/guarantee-extension-info</code> — tra cứu toàn bộ hồ sơ bảo lãnh và lịch sử gia hạn bảo lãnh thanh toán của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>
