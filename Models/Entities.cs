@@ -40,6 +40,9 @@ public sealed class Vehicle
     public DateTime? LastStorageMtnDate { get; set; } // Ngày bảo dưỡng lưu kho gần nhất (VIN_MaintainPeriod.MtnLastDate)
     public DateTime? NextStorageMtnDate { get; set; } // Hạn bảo dưỡng lưu kho tiếp theo (VIN_MaintainPeriod.MtnNextDate)
     public int StorageMtnTimes { get; set; } = 0;     // Số lần bảo dưỡng lưu kho đã thực hiện (VIN_MaintainPeriod.MtnTimes)
+    public string TypeCB { get; set; } = "0";       // Tình trạng đóng thùng xe thương mại: "0" - Chassis chưa đóng thùng, "1" - Đã đóng thùng (BizHTC.Car.TypeCB)
+    public string? LoaiThung { get; set; }          // Loại thùng hiện tại (ThungBat, ThungKin, ThungLanh, ThungLung, ThungComposite, ThungChuyenDung)
+    public string? CBReqNo { get; set; }            // Mã yêu cầu đóng thùng gần nhất (Sto_CBReq)
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -984,6 +987,59 @@ public sealed class CustomsDeclarationLine
     public DateTime? TaxPaymentDate { get; set; }               // Ngày nộp thuế của xe này
     public DateTime? ClearanceDate { get; set; }                // Ngày thông quan xe này
     public string Status { get; set; } = "Pending";             // Pending → Registered → TaxPaid → Cleared (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Yêu cầu & Lệnh đóng thùng xe thương mại / xe tải (BizHTC.Storage.Sto_CBReq / CarBoxRequest): quản lý quy trình chuyển đổi đóng thùng xe chassis sắt xi sang thùng mui bạt, thùng kín, thùng đông lạnh, thùng lửng, thùng composite, thùng chuyên dụng.</summary>
+public sealed class CarBoxRequest
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string CBReqNo { get; set; } = "";             // Mã yêu cầu đóng thùng (CBR...)
+    public string? DealerCode { get; set; }               // Đại lý / Bộ phận kinh doanh xe thương mại yêu cầu
+    public string? BodyBuilder { get; set; }              // Cơ sở / Nhà xưởng đóng thùng ủy quyền (Body Builder)
+    public DateTime RequestDate { get; set; } = DateTime.Now; // Ngày lập đề nghị đóng thùng
+    public DateTime? ExpectedStartDate { get; set; }     // Ngày dự kiến bắt đầu thi công
+    public DateTime? ExpectedEndDate { get; set; }       // Ngày dự kiến hoàn tất đóng thùng
+    public int TotalVehicleCount { get; set; } = 0;       // Tổng số lượng xe đóng thùng trong đợt
+    public decimal TotalAmount { get; set; } = 0;         // Tổng chi phí gia công đóng thùng (VNĐ)
+    public string Status { get; set; } = "Draft";         // Draft → Submitted → Approved → InProgress → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú yêu cầu kỹ thuật đóng thùng
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }               // Kỹ sư trưởng / Quản đốc xưởng đóng thùng duyệt
+    public DateTime? ApprovedAt { get; set; }
+    public string? CompletedBy { get; set; }              // KTV nghiệm thu xuất xưởng đóng thùng
+    public DateTime? CompletedAt { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong yêu cầu đóng thùng (BizHTC.Storage.Sto_CBReqDetail / CarBoxRequestLine): thông tin xe VIN, loại thùng, quy cách kích thước lọt lòng, tải trọng cho phép, chi phí đóng thùng, nghiệm thu kỹ thuật và phiếu xuất xưởng thùng xe.</summary>
+public sealed class CarBoxRequestLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long CarBoxRequestId { get; set; }
+    public string CBReqNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? StorageCodeFrom { get; set; }          // Vị trí bãi xe sắt xi xuất phát (YARD-CHASSIS...)
+    public string StorageCodeTo { get; set; } = "";       // Xưởng / Bãi đóng thùng tiếp nhận (BODY-SHOP-01...)
+    public string LoaiThung { get; set; } = "ThungBat";   // Loại thùng: ThungBat (Thùng mui bạt), ThungKin (Thùng kín), ThungLanh (Thùng đông lạnh), ThungLung (Thùng lửng), ThungComposite (Thùng composite), ThungChuyenDung (Thùng chuyên dụng)
+    public string? TenLoaiThung { get; set; }             // Tên diễn giải loại thùng
+    public double? BoxLengthMm { get; set; }              // Chiều dài lọt lòng thùng (mm)
+    public double? BoxWidthMm { get; set; }               // Chiều rộng lọt lòng thùng (mm)
+    public double? BoxHeightMm { get; set; }              // Chiều cao lọt lòng thùng (mm)
+    public double? PayloadKg { get; set; }                // Tải trọng chở hàng cho phép (kg)
+    public decimal BodyPrice { get; set; } = 0;           // Chi phí gia công đóng thùng (VNĐ)
+    public string? BodyBuilder { get; set; }              // Cơ sở / Nhà xưởng đóng thùng cho xe này
+    public string? InspectionNo { get; set; }             // Số phiếu kiểm tra xuất xưởng / GCN chất lượng thùng xe
+    public string InspectionResult { get; set; } = "Pending"; // Pending → Passed / Failed
+    public DateTime? InspectionDate { get; set; }         // Ngày nghiệm thu kỹ thuật
+    public string? InspectorName { get; set; }            // Kỹ sư kiểm định / Nghiệm thu
+    public string? DefectNotes { get; set; }              // Ghi chú khiếm khuyết kỹ thuật nếu chưa đạt
+    public string Status { get; set; } = "Pending";       // Pending → Approved → InProgress → Completed (hoặc Rejected / Cancelled)
+    public DateTime? CompletedDate { get; set; }          // Ngày hoàn tất đóng thùng cho xe này
     public string? Remark { get; set; }
 }
 

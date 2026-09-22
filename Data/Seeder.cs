@@ -16,7 +16,9 @@ public static class Seeder
             var org = TenantContext.DefaultOrgId;
             db.Vehicles.AddRange(
                 new Vehicle { OrgId = org, Vin = "DEMOVIN00000001", Model = "Accent 1.4 AT", Color = "Trắng", ModelYear = 2026, EngineNo = "G4LC0001", StorageCode = "YARD-A1", Status = VehicleStatus.InStock },
-                new Vehicle { OrgId = org, Vin = "DEMOVIN00000002", Model = "Creta 1.5 Cao cấp", Color = "Đen", ModelYear = 2026, EngineNo = "G4FL0002", StorageCode = "YARD-B2", Status = VehicleStatus.InStock }
+                new Vehicle { OrgId = org, Vin = "DEMOVIN00000002", Model = "Creta 1.5 Cao cấp", Color = "Đen", ModelYear = 2026, EngineNo = "G4FL0002", StorageCode = "YARD-B2", Status = VehicleStatus.InStock },
+                new Vehicle { OrgId = org, Vin = "DEMOVIN00000003", Model = "Hyundai New Porter H150", Color = "Trắng", ModelYear = 2026, EngineNo = "D4CB0003", StorageCode = "BODY-SHOP-01", Status = VehicleStatus.InStock, TypeCB = "1", LoaiThung = "ThungBat", CBReqNo = "CBR-202603-001" },
+                new Vehicle { OrgId = org, Vin = "DEMOVIN00000004", Model = "Hyundai Mighty EX8 GTL", Color = "Xanh", ModelYear = 2026, EngineNo = "D4GA0004", StorageCode = "BODY-SHOP-01", Status = VehicleStatus.InStock, TypeCB = "1", LoaiThung = "ThungLanh", CBReqNo = "CBR-202603-001" }
             );
         }
         if (!await db.SalesOrders.AnyAsync())
@@ -654,6 +656,102 @@ public static class Seeder
                 v2.CustomsClearanceDate = cd.ClearanceDate;
             }
         }
+
+        if (!await db.CarBoxRequests.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var cbr = new CarBoxRequest
+            {
+                OrgId = org,
+                CBReqNo = "CBR-202603-001",
+                DealerCode = "DLR-HN01",
+                BodyBuilder = "Hyundai Commercial Body Center Ninh Bình",
+                RequestDate = DateTime.Now.AddDays(-5),
+                ExpectedStartDate = DateTime.Now.AddDays(-5),
+                ExpectedEndDate = DateTime.Now.AddDays(-1),
+                TotalVehicleCount = 2,
+                TotalAmount = 155000000m,
+                Status = "Completed",
+                Remark = "Lệnh đóng thùng xe tải đợt 1 tháng 03/2026 cho đại lý Hà Nội 01 (01 Thùng mui bạt H150 + 01 Thùng đông lạnh EX8)",
+                CreatedBy = "cv.sales",
+                ApprovedBy = "Kỹ Sư Trưởng Đỗ Văn Cường",
+                ApprovedAt = DateTime.Now.AddDays(-5),
+                CompletedBy = "Quản Đốc QC Lê Thanh Tùng",
+                CompletedAt = DateTime.Now.AddDays(-1)
+            };
+            db.CarBoxRequests.Add(cbr);
+            await db.SaveChangesAsync();
+
+            db.CarBoxRequestLines.AddRange(
+                new CarBoxRequestLine
+                {
+                    OrgId = org,
+                    CarBoxRequestId = cbr.Id,
+                    CBReqNo = cbr.CBReqNo,
+                    Vin = "DEMOVIN00000003",
+                    Model = "Hyundai New Porter H150",
+                    StorageCodeFrom = "YARD-CHASSIS-01",
+                    StorageCodeTo = "BODY-SHOP-01",
+                    LoaiThung = "ThungBat",
+                    TenLoaiThung = "Thùng mui bạt tiêu chuẩn (bửng nhôm/inox)",
+                    BoxLengthMm = 3130,
+                    BoxWidthMm = 1630,
+                    BoxHeightMm = 1770,
+                    PayloadKg = 1490,
+                    BodyPrice = 35000000m,
+                    BodyBuilder = "Hyundai Commercial Body Center Ninh Bình",
+                    InspectionNo = "QC-BODY-202603-000003",
+                    InspectionResult = "Passed",
+                    InspectionDate = DateTime.Now.AddDays(-1),
+                    InspectorName = "Quản Đốc QC Lê Thanh Tùng",
+                    Status = "Completed",
+                    CompletedDate = DateTime.Now.AddDays(-1),
+                    Remark = "Kích thước lọt lòng và tải trọng đạt chuẩn Cục Đăng Kiểm"
+                },
+                new CarBoxRequestLine
+                {
+                    OrgId = org,
+                    CarBoxRequestId = cbr.Id,
+                    CBReqNo = cbr.CBReqNo,
+                    Vin = "DEMOVIN00000004",
+                    Model = "Hyundai Mighty EX8 GTL",
+                    StorageCodeFrom = "YARD-CHASSIS-02",
+                    StorageCodeTo = "BODY-SHOP-01",
+                    LoaiThung = "ThungLanh",
+                    TenLoaiThung = "Thùng đông lạnh Panel XPS máy lạnh Thermal Master -18°C",
+                    BoxLengthMm = 5700,
+                    BoxWidthMm = 2060,
+                    BoxHeightMm = 2050,
+                    PayloadKg = 6800,
+                    BodyPrice = 120000000m,
+                    BodyBuilder = "Hyundai Commercial Body Center Ninh Bình",
+                    InspectionNo = "QC-BODY-202603-000004",
+                    InspectionResult = "Passed",
+                    InspectionDate = DateTime.Now.AddDays(-1),
+                    InspectorName = "Quản Đốc QC Lê Thanh Tùng",
+                    Status = "Completed",
+                    CompletedDate = DateTime.Now.AddDays(-1),
+                    Remark = "Đã test nhiệt độ thùng đạt -18.5°C sau 45 phút nổ máy, form panel cách nhiệt chuẩn"
+                }
+            );
+
+            var v3 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000003");
+            if (v3 != null)
+            {
+                v3.TypeCB = "1";
+                v3.LoaiThung = "ThungBat";
+                v3.CBReqNo = cbr.CBReqNo;
+                v3.StorageCode = "BODY-SHOP-01";
+            }
+            var v4 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000004");
+            if (v4 != null)
+            {
+                v4.TypeCB = "1";
+                v4.LoaiThung = "ThungLanh";
+                v4.CBReqNo = cbr.CBReqNo;
+                v4.StorageCode = "BODY-SHOP-01";
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -721,6 +819,11 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"PaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"DealerPaymentId\" bigint NOT NULL, \"PaymentNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"GuaranteeNo\" text NULL, \"Amount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"StorageMaintenances\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MtnNo\" text NOT NULL DEFAULT '', \"StorageCode\" text NOT NULL DEFAULT '', \"MtnType\" text NOT NULL DEFAULT 'Periodic', \"PlanDate\" timestamp NOT NULL DEFAULT now(), \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"PassedVehicleCount\" integer NOT NULL DEFAULT 0, \"FailedVehicleCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"TechnicianCode\" text NULL, \"TechnicianName\" text NULL, \"SupervisorCode\" text NULL, \"SupervisorName\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CompletedAt\" timestamp NULL, \"CancelledAt\" timestamp NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"StorageMaintenanceLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"StorageMaintenanceId\" bigint NOT NULL, \"MtnNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"StorageCode\" text NULL, \"MtnTimes\" integer NOT NULL DEFAULT 0, \"BatteryVoltage\" double precision NULL DEFAULT 12.6, \"ChargeBatteryOk\" boolean NOT NULL DEFAULT true, \"EngineStartCheckOk\" boolean NOT NULL DEFAULT true, \"TirePressureCheckOk\" boolean NOT NULL DEFAULT true, \"TireRotationOk\" boolean NOT NULL DEFAULT true, \"FluidLevelsCheckOk\" boolean NOT NULL DEFAULT true, \"ElectricalSystemsOk\" boolean NOT NULL DEFAULT true, \"BodyCleanOk\" boolean NOT NULL DEFAULT true, \"InspectionResult\" text NOT NULL DEFAULT 'Pending', \"MtnDate\" timestamp NULL, \"NextMtnDate\" timestamp NULL, \"Technician\" text NULL, \"DefectNotes\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"TypeCB\" text NOT NULL DEFAULT '0'",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LoaiThung\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"CBReqNo\" text NULL",
+            "CREATE TABLE IF NOT EXISTS public.\"CarBoxRequests\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CBReqNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NULL, \"BodyBuilder\" text NULL, \"RequestDate\" timestamp NOT NULL DEFAULT now(), \"ExpectedStartDate\" timestamp NULL, \"ExpectedEndDate\" timestamp NULL, \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledAt\" timestamp NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"CarBoxRequestLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CarBoxRequestId\" bigint NOT NULL, \"CBReqNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"StorageCodeFrom\" text NULL, \"StorageCodeTo\" text NOT NULL DEFAULT '', \"LoaiThung\" text NOT NULL DEFAULT 'ThungBat', \"TenLoaiThung\" text NULL, \"BoxLengthMm\" double precision NULL, \"BoxWidthMm\" double precision NULL, \"BoxHeightMm\" double precision NULL, \"PayloadKg\" double precision NULL, \"BodyPrice\" numeric NOT NULL DEFAULT 0, \"BodyBuilder\" text NULL, \"InspectionNo\" text NULL, \"InspectionResult\" text NOT NULL DEFAULT 'Pending', \"InspectionDate\" timestamp NULL, \"InspectorName\" text NULL, \"DefectNotes\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"CompletedDate\" timestamp NULL, \"Remark\" text NULL)",
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

@@ -298,6 +298,71 @@ public record UpdateCustomsDeclarationTaxPaymentDto(
     string? User = null
 );
 
+public record CarBoxItemInputDto(
+    string Vin,
+    string? LoaiThung = "ThungBat",
+    string? TenLoaiThung = null,
+    string? StorageCodeFrom = null,
+    string? StorageCodeTo = "BODY-SHOP-01",
+    double? BoxLengthMm = null,
+    double? BoxWidthMm = null,
+    double? BoxHeightMm = null,
+    double? PayloadKg = null,
+    decimal BodyPrice = 0,
+    string? BodyBuilder = null,
+    string? Remark = null
+);
+
+public record CreateCarBoxRequestDto(
+    string? DealerCode = null,
+    string? BodyBuilder = null,
+    List<CarBoxItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? DefaultLoaiThung = "ThungBat",
+    string? StorageCodeTo = "BODY-SHOP-01",
+    DateTime? RequestDate = null,
+    DateTime? ExpectedStartDate = null,
+    DateTime? ExpectedEndDate = null,
+    string? Remark = null,
+    string? CBReqNo = null,
+    string? CreatedBy = null
+);
+
+public record CarBoxRequestTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? BodyBuilder = null,
+    DateTime? ExpectedStartDate = null,
+    DateTime? ExpectedEndDate = null
+);
+
+public record InspectCarBoxLineDto(
+    double? BoxLengthMm = null,
+    double? BoxWidthMm = null,
+    double? BoxHeightMm = null,
+    double? PayloadKg = null,
+    string? InspectionNo = null,
+    bool? Passed = true,
+    string? InspectorName = null,
+    string? DefectNotes = null,
+    string? Remark = null,
+    DateTime? InspectionDate = null
+);
+
+public record UpdateCarBoxRequestLineDto(
+    string? LoaiThung = null,
+    string? TenLoaiThung = null,
+    string? StorageCodeFrom = null,
+    string? StorageCodeTo = null,
+    double? BoxLengthMm = null,
+    double? BoxWidthMm = null,
+    double? BoxHeightMm = null,
+    double? PayloadKg = null,
+    decimal? BodyPrice = null,
+    string? BodyBuilder = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -434,6 +499,14 @@ public interface IVehicleService
     Task<object?> AddCustomsDeclarationLinesAsync(string declarationNo, List<CustomsDeclarationItemInputDto> items);
     Task<object?> RemoveCustomsDeclarationLineAsync(string declarationNo, string vin);
     Task<object?> UpdateCustomsDeclarationTaxPaymentAsync(string declarationNo, UpdateCustomsDeclarationTaxPaymentDto dto);
+    Task<object> CreateCarBoxRequestAsync(CreateCarBoxRequestDto dto);
+    Task<object> ListCarBoxRequestsAsync(string? status, string? dealer, string? loaiThung, string? bodyBuilder, string? vin);
+    Task<object?> GetCarBoxRequestAsync(string cbReqNo);
+    Task<object?> CarBoxRequestTransitionAsync(string cbReqNo, string action, CarBoxRequestTransitionDto? dto);
+    Task<object?> InspectCarBoxLineAsync(string cbReqNo, string vin, InspectCarBoxLineDto dto);
+    Task<object?> UpdateCarBoxRequestLineAsync(string cbReqNo, string vin, UpdateCarBoxRequestLineDto dto);
+    Task<object?> AddCarBoxRequestLinesAsync(string cbReqNo, List<CarBoxItemInputDto> items);
+    Task<object?> RemoveCarBoxRequestLineAsync(string cbReqNo, string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -8104,6 +8177,693 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             cd.TaxPaymentDate,
             updatedVehiclesCount = vehicles.Count,
             cd.TotalTaxAmount
+        };
+    }
+
+    private static string GetDefaultTenLoaiThung(string loaiThung) => loaiThung switch
+    {
+        "ThungBat" or "KhungMuiPhuBat" => "Thùng mui bạt tiêu chuẩn",
+        "ThungKin" => "Thùng kín Inox tiêu chuẩn",
+        "ThungLanh" or "ThungDongLanh" => "Thùng đông lạnh panel -18°C",
+        "ThungLung" => "Thùng lửng chở hàng",
+        "ThungComposite" => "Thùng composite cao cấp",
+        "ThungChuyenDung" => "Thùng chuyên dụng (ben tự đổ / gắn cẩu / xitec)",
+        _ => "Thùng xe thương mại"
+    };
+
+    public async Task<object> CreateCarBoxRequestAsync(CreateCarBoxRequestDto dto)
+    {
+        var inputItems = new List<CarBoxItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            foreach (var it in dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+            {
+                var cleanVin = it.Vin.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+                if (seenVins.Add(cleanVin))
+                {
+                    inputItems.Add(it with { Vin = cleanVin });
+                }
+            }
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            foreach (var v in dto.Vins.Where(x => !string.IsNullOrWhiteSpace(x)))
+            {
+                var cleanVin = v.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+                if (seenVins.Add(cleanVin))
+                {
+                    inputItems.Add(new CarBoxItemInputDto(
+                        Vin: cleanVin,
+                        LoaiThung: dto.DefaultLoaiThung ?? "ThungBat",
+                        StorageCodeTo: dto.StorageCodeTo ?? "BODY-SHOP-01",
+                        BodyBuilder: dto.BodyBuilder
+                    ));
+                }
+            }
+        }
+
+        if (inputItems.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất một số khung xe VIN để tạo yêu cầu đóng thùng.");
+
+        var allVins = inputItems.Select(i => i.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && allVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var missingVins = allVins.Where(v => !vehicles.ContainsKey(v)).ToList();
+        if (missingVins.Count > 0)
+            throw new InvalidOperationException($"Không tìm thấy xe trong hệ thống với các số khung: {string.Join(", ", missingVins)}");
+
+        // Kiểm tra VIN đang ở trạng thái InStock hoặc Allocated
+        var invalidStatusVins = vehicles.Values.Where(v => v.Status is not (VehicleStatus.InStock or VehicleStatus.Allocated)).Select(v => v.Vin).ToList();
+        if (invalidStatusVins.Count > 0)
+            throw new InvalidOperationException($"Các xe sau không ở trạng thái kho/phân bổ hợp lệ để đóng thùng: {string.Join(", ", invalidStatusVins)}");
+
+        // Kiểm tra VIN đã thuộc yêu cầu đóng thùng khác đang xử lý (Pending / Approved / InProgress)
+        var busyLines = await db.CarBoxRequestLines
+            .Where(l => l.OrgId == Org && allVins.Contains(l.Vin) && l.Status != "Completed" && l.Status != "Cancelled" && l.Status != "Rejected")
+            .ToListAsync();
+        if (busyLines.Count > 0)
+        {
+            var busyInfo = string.Join("; ", busyLines.Select(l => $"{l.Vin} (Đang trong yêu cầu {l.CBReqNo}, TT: {l.Status})"));
+            throw new InvalidOperationException($"Các xe sau đã có yêu cầu đóng thùng đang hoạt động: {busyInfo}");
+        }
+
+        var reqNo = string.IsNullOrWhiteSpace(dto.CBReqNo)
+            ? "CBR-" + DateTime.Now.ToString("yyyyMMdd") + "-" + (await db.CarBoxRequests.CountAsync(r => r.OrgId == Org && r.CreatedAt.Date == DateTime.Today) + 1).ToString("D3")
+            : dto.CBReqNo.Trim().ToUpperInvariant();
+
+        if (await db.CarBoxRequests.AnyAsync(r => r.OrgId == Org && r.CBReqNo == reqNo))
+            throw new InvalidOperationException($"Mã yêu cầu đóng thùng {reqNo} đã tồn tại trong hệ thống.");
+
+        var now = DateTime.Now;
+        var defaultBuilder = dto.BodyBuilder?.Trim() ?? "Hyundai Body Center";
+
+        var cbr = new CarBoxRequest
+        {
+            OrgId = Org,
+            CBReqNo = reqNo,
+            DealerCode = dto.DealerCode?.Trim(),
+            BodyBuilder = defaultBuilder,
+            RequestDate = dto.RequestDate ?? now,
+            ExpectedStartDate = dto.ExpectedStartDate ?? now.AddDays(1),
+            ExpectedEndDate = dto.ExpectedEndDate ?? now.AddDays(7),
+            TotalVehicleCount = inputItems.Count,
+            TotalAmount = inputItems.Sum(i => i.BodyPrice > 0 ? i.BodyPrice : 35000000m),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "SystemUser",
+            CreatedAt = now
+        };
+
+        db.CarBoxRequests.Add(cbr);
+        await db.SaveChangesAsync();
+
+        foreach (var it in inputItems)
+        {
+            var v = vehicles[it.Vin];
+            var loaiThung = !string.IsNullOrWhiteSpace(it.LoaiThung) ? it.LoaiThung.Trim() : (dto.DefaultLoaiThung ?? "ThungBat");
+            var tenLoaiThung = !string.IsNullOrWhiteSpace(it.TenLoaiThung) ? it.TenLoaiThung.Trim() : GetDefaultTenLoaiThung(loaiThung);
+            var fromStorage = !string.IsNullOrWhiteSpace(it.StorageCodeFrom) ? it.StorageCodeFrom.Trim() : (v.StorageCode ?? "YARD-CHASSIS");
+            var toStorage = !string.IsNullOrWhiteSpace(it.StorageCodeTo) ? it.StorageCodeTo.Trim() : (dto.StorageCodeTo ?? "BODY-SHOP-01");
+            var bodyBuilder = !string.IsNullOrWhiteSpace(it.BodyBuilder) ? it.BodyBuilder.Trim() : defaultBuilder;
+            var bodyPrice = it.BodyPrice > 0 ? it.BodyPrice : (loaiThung == "ThungLanh" ? 120000000m : 35000000m);
+
+            db.CarBoxRequestLines.Add(new CarBoxRequestLine
+            {
+                OrgId = Org,
+                CarBoxRequestId = cbr.Id,
+                CBReqNo = reqNo,
+                Vin = it.Vin,
+                Model = v.Model,
+                StorageCodeFrom = fromStorage,
+                StorageCodeTo = toStorage,
+                LoaiThung = loaiThung,
+                TenLoaiThung = tenLoaiThung,
+                BoxLengthMm = it.BoxLengthMm ?? (v.Model.Contains("H150") ? 3130 : 5050),
+                BoxWidthMm = it.BoxWidthMm ?? (v.Model.Contains("H150") ? 1630 : 2060),
+                BoxHeightMm = it.BoxHeightMm ?? (v.Model.Contains("H150") ? 1770 : 1880),
+                PayloadKg = it.PayloadKg ?? (v.Model.Contains("H150") ? 1490 : 7000),
+                BodyPrice = bodyPrice,
+                BodyBuilder = bodyBuilder,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            });
+
+            Log(it.Vin, "CarBoxRequested",
+                $"{reqNo} Lập yêu cầu đóng thùng '{tenLoaiThung}' ({loaiThung}) tại xưởng {bodyBuilder}. Chuyển từ {fromStorage} sang {toStorage}");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cbr.CBReqNo,
+            cbr.DealerCode,
+            cbr.BodyBuilder,
+            cbr.RequestDate,
+            cbr.ExpectedStartDate,
+            cbr.ExpectedEndDate,
+            cbr.TotalVehicleCount,
+            cbr.TotalAmount,
+            cbr.Status,
+            cbr.Remark,
+            linesCount = inputItems.Count
+        };
+    }
+
+    public async Task<object> ListCarBoxRequestsAsync(string? status, string? dealer, string? loaiThung, string? bodyBuilder, string? vin)
+    {
+        var q = db.CarBoxRequests.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim(); q = q.Where(r => r.DealerCode != null && r.DealerCode.Contains(d)); }
+        if (!string.IsNullOrWhiteSpace(bodyBuilder)) { var b = bodyBuilder.Trim(); q = q.Where(r => r.BodyBuilder != null && r.BodyBuilder.Contains(b)); }
+
+        if (!string.IsNullOrWhiteSpace(loaiThung))
+        {
+            var lt = loaiThung.Trim();
+            var matchedNos = await db.CarBoxRequestLines
+                .Where(l => l.OrgId == Org && (l.LoaiThung == lt || (l.TenLoaiThung != null && l.TenLoaiThung.Contains(lt))))
+                .Select(l => l.CBReqNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.CBReqNo));
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.CarBoxRequestLines
+                .Where(l => l.OrgId == Org && l.Vin == vv)
+                .Select(l => l.CBReqNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.CBReqNo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.CBReqNo,
+            r.DealerCode,
+            r.BodyBuilder,
+            r.RequestDate,
+            r.ExpectedStartDate,
+            r.ExpectedEndDate,
+            r.TotalVehicleCount,
+            r.TotalAmount,
+            r.Status,
+            r.CreatedBy,
+            r.CreatedAt,
+            r.ApprovedBy,
+            r.ApprovedAt,
+            r.CompletedBy,
+            r.CompletedAt,
+            r.CancelledAt,
+            r.Remark,
+            linesCount = db.CarBoxRequestLines.Count(l => l.OrgId == Org && l.CarBoxRequestId == r.Id),
+            completedLinesCount = db.CarBoxRequestLines.Count(l => l.OrgId == Org && l.CarBoxRequestId == r.Id && l.Status == "Completed")
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCarBoxRequestAsync(string cbReqNo)
+    {
+        cbReqNo = cbReqNo.Trim().ToUpperInvariant();
+        var cbr = await db.CarBoxRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.CBReqNo == cbReqNo);
+        if (cbr is null) return null;
+
+        var lines = await db.CarBoxRequestLines.Where(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.StorageCodeFrom,
+            l.StorageCodeTo,
+            l.LoaiThung,
+            l.TenLoaiThung,
+            l.BoxLengthMm,
+            l.BoxWidthMm,
+            l.BoxHeightMm,
+            l.PayloadKg,
+            l.BodyPrice,
+            l.BodyBuilder,
+            l.InspectionNo,
+            l.InspectionResult,
+            l.InspectionDate,
+            l.InspectorName,
+            l.DefectNotes,
+            l.Status,
+            l.CompletedDate,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                status = v.Status.ToString(),
+                v.StorageCode,
+                v.DealerCode,
+                v.TypeCB,
+                v.LoaiThung,
+                v.CBReqNo,
+                v.EngineNo,
+                v.Color,
+                v.ModelYear
+            } : null
+        }).ToList();
+
+        return new
+        {
+            cbr.CBReqNo,
+            cbr.DealerCode,
+            cbr.BodyBuilder,
+            cbr.RequestDate,
+            cbr.ExpectedStartDate,
+            cbr.ExpectedEndDate,
+            cbr.TotalVehicleCount,
+            cbr.TotalAmount,
+            cbr.Status,
+            cbr.CreatedBy,
+            cbr.CreatedAt,
+            cbr.ApprovedBy,
+            cbr.ApprovedAt,
+            cbr.CompletedBy,
+            cbr.CompletedAt,
+            cbr.CancelledAt,
+            cbr.Remark,
+            completedLinesCount = lines.Count(l => l.Status == "Completed"),
+            lines = details
+        };
+    }
+
+    public async Task<object?> CarBoxRequestTransitionAsync(string cbReqNo, string action, CarBoxRequestTransitionDto? dto)
+    {
+        cbReqNo = cbReqNo.Trim().ToUpperInvariant();
+        var cbr = await db.CarBoxRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.CBReqNo == cbReqNo);
+        if (cbr is null) return null;
+
+        var now = DateTime.Now;
+        var act = action.Trim().ToLowerInvariant();
+        var lines = await db.CarBoxRequestLines.Where(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        switch (act)
+        {
+            case "submit":
+                if (cbr.Status is not "Draft") return null;
+                cbr.Status = "Submitted";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cbr.Remark = (cbr.Remark + " | Trình duyệt: " + dto.Note).Trim(' ', '|');
+                foreach (var l in lines) l.Status = "Submitted";
+                foreach (var v in vehicles.Values) Log(v.Vin, "CarBoxSubmitted", $"{cbReqNo} Trình duyệt yêu cầu đóng thùng tới Ban Quản lý Xưởng đóng thùng");
+                break;
+
+            case "approve":
+                if (cbr.Status is "Approved" or "InProgress" or "Completed" or "Cancelled") return null;
+                cbr.Status = "Approved";
+                cbr.ApprovedBy = dto?.User?.Trim() ?? "ChiefEngineer";
+                cbr.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.BodyBuilder)) cbr.BodyBuilder = dto.BodyBuilder.Trim();
+                if (dto?.ExpectedStartDate.HasValue == true) cbr.ExpectedStartDate = dto.ExpectedStartDate.Value;
+                if (dto?.ExpectedEndDate.HasValue == true) cbr.ExpectedEndDate = dto.ExpectedEndDate.Value;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cbr.Remark = (cbr.Remark + " | Duyệt: " + dto.Note).Trim(' ', '|');
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Approved";
+                    if (!string.IsNullOrWhiteSpace(dto?.BodyBuilder)) l.BodyBuilder = dto.BodyBuilder.Trim();
+                }
+
+                foreach (var v in vehicles.Values)
+                {
+                    v.CBReqNo = cbr.CBReqNo;
+                    Log(v.Vin, "CarBoxApproved", $"{cbReqNo} Phê duyệt yêu cầu đóng thùng xe. Người duyệt: {cbr.ApprovedBy}. Cơ sở thi công: {cbr.BodyBuilder}");
+                }
+                break;
+
+            case "start":
+            case "in-progress":
+            case "inprogress":
+                if (cbr.Status is "InProgress" or "Completed" or "Cancelled" or "Rejected") return null;
+                cbr.Status = "InProgress";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cbr.Remark = (cbr.Remark + " | Khởi công: " + dto.Note).Trim(' ', '|');
+
+                foreach (var l in lines)
+                {
+                    if (l.Status is "Pending" or "Submitted" or "Approved")
+                    {
+                        l.Status = "InProgress";
+                    }
+
+                    if (vehicles.TryGetValue(l.Vin, out var v))
+                    {
+                        v.StorageCode = l.StorageCodeTo; // Chuyển vị trí xe sang xưởng đóng thùng
+                        Log(v.Vin, "CarBoxInProgress", $"{cbReqNo} Xe đã đưa vào xưởng {l.StorageCodeTo} ({l.BodyBuilder}) để gia công đóng thùng {l.TenLoaiThung}");
+                    }
+                }
+                break;
+
+            case "complete":
+                if (cbr.Status is not ("Approved" or "InProgress")) return null;
+                cbr.Status = "Completed";
+                cbr.CompletedBy = dto?.User?.Trim() ?? "QcManager";
+                cbr.CompletedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cbr.Remark = (cbr.Remark + " | Nghiệm thu hoàn tất: " + dto.Note).Trim(' ', '|');
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Completed";
+                    l.CompletedDate ??= now;
+                    l.InspectionResult = "Passed";
+                    l.InspectionDate ??= now;
+                    l.InspectorName ??= cbr.CompletedBy;
+                    l.InspectionNo ??= $"QC-BODY-{now:yyyyMMdd}-{l.Vin[^6..]}";
+
+                    if (vehicles.TryGetValue(l.Vin, out var v))
+                    {
+                        v.TypeCB = "1"; // Đã đóng thùng
+                        v.LoaiThung = l.LoaiThung;
+                        v.CBReqNo = cbr.CBReqNo;
+                        v.StorageCode = l.StorageCodeTo;
+                        Log(v.Vin, "CarBoxCompleted", $"{cbReqNo} Hoàn tất nghiệm thu xuất xưởng đóng thùng {l.TenLoaiThung}. Số phiếu KĐ: {l.InspectionNo}. Cập nhật TypeCB=1");
+                    }
+                }
+                break;
+
+            case "reject":
+                if (cbr.Status is "Completed" or "Cancelled") return null;
+                cbr.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cbr.Remark = (cbr.Remark + " | Từ chối: " + dto.Note).Trim(' ', '|');
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles.Values) Log(v.Vin, "CarBoxRejected", $"{cbReqNo} Từ chối yêu cầu đóng thùng. Lý do: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (cbr.Status is "Completed" or "Cancelled") return null;
+                cbr.Status = "Cancelled";
+                cbr.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cbr.Remark = (cbr.Remark + " | Hủy bỏ: " + dto.Note).Trim(' ', '|');
+                foreach (var l in lines) l.Status = "Cancelled";
+                foreach (var v in vehicles.Values) Log(v.Vin, "CarBoxCancelled", $"{cbReqNo} Hủy bỏ yêu cầu đóng thùng");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cbr.CBReqNo,
+            cbr.Status,
+            cbr.TotalVehicleCount,
+            cbr.TotalAmount,
+            cbr.ApprovedBy,
+            cbr.ApprovedAt,
+            cbr.CompletedBy,
+            cbr.CompletedAt,
+            cbr.CancelledAt,
+            action = act
+        };
+    }
+
+    public async Task<object?> InspectCarBoxLineAsync(string cbReqNo, string vin, InspectCarBoxLineDto dto)
+    {
+        cbReqNo = cbReqNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var cbr = await db.CarBoxRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.CBReqNo == cbReqNo);
+        if (cbr is null || cbr.Status is "Cancelled" or "Rejected") return null;
+
+        var line = await db.CarBoxRequestLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        var now = DateTime.Now;
+        var passed = dto.Passed ?? true;
+        var inspector = dto.InspectorName?.Trim() ?? "QcInspector";
+        var inspDate = dto.InspectionDate ?? now;
+
+        if (dto.BoxLengthMm.HasValue && dto.BoxLengthMm.Value > 0) line.BoxLengthMm = dto.BoxLengthMm.Value;
+        if (dto.BoxWidthMm.HasValue && dto.BoxWidthMm.Value > 0) line.BoxWidthMm = dto.BoxWidthMm.Value;
+        if (dto.BoxHeightMm.HasValue && dto.BoxHeightMm.Value > 0) line.BoxHeightMm = dto.BoxHeightMm.Value;
+        if (dto.PayloadKg.HasValue && dto.PayloadKg.Value > 0) line.PayloadKg = dto.PayloadKg.Value;
+        if (!string.IsNullOrWhiteSpace(dto.InspectionNo)) line.InspectionNo = dto.InspectionNo.Trim();
+        else if (passed && string.IsNullOrWhiteSpace(line.InspectionNo)) line.InspectionNo = $"QC-BODY-{inspDate:yyyyMMdd}-{vin[^6..]}";
+
+        line.InspectorName = inspector;
+        line.InspectionDate = inspDate;
+        line.InspectionResult = passed ? "Passed" : "Failed";
+        line.DefectNotes = dto.DefectNotes?.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+
+        if (passed)
+        {
+            line.Status = "Completed";
+            line.CompletedDate = inspDate;
+
+            if (v != null)
+            {
+                v.TypeCB = "1"; // Đã hoàn thành đóng thùng
+                v.LoaiThung = line.LoaiThung;
+                v.CBReqNo = cbr.CBReqNo;
+                v.StorageCode = line.StorageCodeTo;
+            }
+
+            Log(vin, "CarBoxLinePassed",
+                $"{cbReqNo} Nghiệm thu đạt chuẩn đóng thùng '{line.TenLoaiThung}'. Phiếu KĐ: {line.InspectionNo}. Kích thước: {line.BoxLengthMm}x{line.BoxWidthMm}x{line.BoxHeightMm}mm, Tải trọng: {line.PayloadKg}kg");
+        }
+        else
+        {
+            line.Status = "Failed";
+            Log(vin, "CarBoxLineFailed",
+                $"{cbReqNo} Nghiệm thu KHÔNG đạt chuẩn đóng thùng. Khiếm khuyết: {line.DefectNotes ?? "Cần gia cố/sửa chữa lại"}");
+        }
+
+        // Tự động kiểm tra nếu tất cả các dòng đã Completed thì cập nhật trạng thái chung của CarBoxRequest
+        var allLines = await db.CarBoxRequestLines.Where(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id).ToListAsync();
+        if (allLines.All(l => l.Status == "Completed"))
+        {
+            cbr.Status = "Completed";
+            cbr.CompletedBy = inspector;
+            cbr.CompletedAt = now;
+        }
+        else if (cbr.Status == "Draft" || cbr.Status == "Approved")
+        {
+            cbr.Status = "InProgress";
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cbr.CBReqNo,
+            line.Vin,
+            line.LoaiThung,
+            line.TenLoaiThung,
+            line.BoxLengthMm,
+            line.BoxWidthMm,
+            line.BoxHeightMm,
+            line.PayloadKg,
+            line.InspectionNo,
+            line.InspectionResult,
+            line.InspectionDate,
+            line.InspectorName,
+            line.Status,
+            line.CompletedDate,
+            requestStatus = cbr.Status
+        };
+    }
+
+    public async Task<object?> UpdateCarBoxRequestLineAsync(string cbReqNo, string vin, UpdateCarBoxRequestLineDto dto)
+    {
+        cbReqNo = cbReqNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var cbr = await db.CarBoxRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.CBReqNo == cbReqNo);
+        if (cbr is null || cbr.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.CarBoxRequestLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.LoaiThung))
+        {
+            line.LoaiThung = dto.LoaiThung.Trim();
+            line.TenLoaiThung = !string.IsNullOrWhiteSpace(dto.TenLoaiThung) ? dto.TenLoaiThung.Trim() : GetDefaultTenLoaiThung(line.LoaiThung);
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.TenLoaiThung))
+        {
+            line.TenLoaiThung = dto.TenLoaiThung.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.StorageCodeFrom)) line.StorageCodeFrom = dto.StorageCodeFrom.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.StorageCodeTo)) line.StorageCodeTo = dto.StorageCodeTo.Trim();
+        if (dto.BoxLengthMm.HasValue && dto.BoxLengthMm.Value > 0) line.BoxLengthMm = dto.BoxLengthMm.Value;
+        if (dto.BoxWidthMm.HasValue && dto.BoxWidthMm.Value > 0) line.BoxWidthMm = dto.BoxWidthMm.Value;
+        if (dto.BoxHeightMm.HasValue && dto.BoxHeightMm.Value > 0) line.BoxHeightMm = dto.BoxHeightMm.Value;
+        if (dto.PayloadKg.HasValue && dto.PayloadKg.Value > 0) line.PayloadKg = dto.PayloadKg.Value;
+        if (dto.BodyPrice.HasValue && dto.BodyPrice.Value >= 0) line.BodyPrice = dto.BodyPrice.Value;
+        if (!string.IsNullOrWhiteSpace(dto.BodyBuilder)) line.BodyBuilder = dto.BodyBuilder.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.CarBoxRequestLines.Where(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id).ToListAsync();
+        cbr.TotalAmount = allLines.Sum(l => l.BodyPrice);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cbr.CBReqNo,
+            line.Vin,
+            line.LoaiThung,
+            line.TenLoaiThung,
+            line.StorageCodeFrom,
+            line.StorageCodeTo,
+            line.BoxLengthMm,
+            line.BoxWidthMm,
+            line.BoxHeightMm,
+            line.PayloadKg,
+            line.BodyPrice,
+            line.BodyBuilder,
+            line.Remark,
+            totalAmount = cbr.TotalAmount
+        };
+    }
+
+    public async Task<object?> AddCarBoxRequestLinesAsync(string cbReqNo, List<CarBoxItemInputDto> items)
+    {
+        cbReqNo = cbReqNo.Trim().ToUpperInvariant();
+        var cbr = await db.CarBoxRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.CBReqNo == cbReqNo);
+        if (cbr is null || cbr.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var distinctItems = new List<CarBoxItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+            if (seenVins.Add(cleanVin))
+            {
+                distinctItems.Add(it with { Vin = cleanVin });
+            }
+        }
+
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.CarBoxRequestLines
+            .Where(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin)).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var missingVins = newVins.Where(v => !vehicles.ContainsKey(v)).ToList();
+        if (missingVins.Count > 0)
+            throw new InvalidOperationException($"Không tìm thấy xe với số khung: {string.Join(", ", missingVins)}");
+
+        // Kiểm tra xe đang bận yêu cầu khác
+        var busyLines = await db.CarBoxRequestLines
+            .Where(l => l.OrgId == Org && newVins.Contains(l.Vin) && l.Status != "Completed" && l.Status != "Cancelled" && l.Status != "Rejected")
+            .ToListAsync();
+        if (busyLines.Count > 0)
+        {
+            var busyInfo = string.Join("; ", busyLines.Select(l => $"{l.Vin} ({l.CBReqNo})"));
+            throw new InvalidOperationException($"Các xe sau đã có yêu cầu đóng thùng đang hoạt động: {busyInfo}");
+        }
+
+        foreach (var it in newItems)
+        {
+            var v = vehicles[it.Vin];
+            var loaiThung = !string.IsNullOrWhiteSpace(it.LoaiThung) ? it.LoaiThung.Trim() : "ThungBat";
+            var tenLoaiThung = !string.IsNullOrWhiteSpace(it.TenLoaiThung) ? it.TenLoaiThung.Trim() : GetDefaultTenLoaiThung(loaiThung);
+            var fromStorage = !string.IsNullOrWhiteSpace(it.StorageCodeFrom) ? it.StorageCodeFrom.Trim() : (v.StorageCode ?? "YARD-CHASSIS");
+            var toStorage = !string.IsNullOrWhiteSpace(it.StorageCodeTo) ? it.StorageCodeTo.Trim() : "BODY-SHOP-01";
+            var bodyBuilder = !string.IsNullOrWhiteSpace(it.BodyBuilder) ? it.BodyBuilder.Trim() : (cbr.BodyBuilder ?? "Hyundai Body Center");
+            var bodyPrice = it.BodyPrice > 0 ? it.BodyPrice : (loaiThung == "ThungLanh" ? 120000000m : 35000000m);
+
+            db.CarBoxRequestLines.Add(new CarBoxRequestLine
+            {
+                OrgId = Org,
+                CarBoxRequestId = cbr.Id,
+                CBReqNo = cbr.CBReqNo,
+                Vin = it.Vin,
+                Model = v.Model,
+                StorageCodeFrom = fromStorage,
+                StorageCodeTo = toStorage,
+                LoaiThung = loaiThung,
+                TenLoaiThung = tenLoaiThung,
+                BoxLengthMm = it.BoxLengthMm ?? (v.Model.Contains("H150") ? 3130 : 5050),
+                BoxWidthMm = it.BoxWidthMm ?? (v.Model.Contains("H150") ? 1630 : 2060),
+                BoxHeightMm = it.BoxHeightMm ?? (v.Model.Contains("H150") ? 1770 : 1880),
+                PayloadKg = it.PayloadKg ?? (v.Model.Contains("H150") ? 1490 : 7000),
+                BodyPrice = bodyPrice,
+                BodyBuilder = bodyBuilder,
+                Status = cbr.Status == "Approved" ? "Approved" : (cbr.Status == "InProgress" ? "InProgress" : "Pending"),
+                Remark = it.Remark?.Trim()
+            });
+
+            Log(it.Vin, "CarBoxLineAdded", $"{cbReqNo} Bổ sung xe vào yêu cầu đóng thùng {tenLoaiThung}");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.CarBoxRequestLines.Where(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id).ToListAsync();
+        cbr.TotalVehicleCount = allLines.Count;
+        cbr.TotalAmount = allLines.Sum(l => l.BodyPrice);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cbr.CBReqNo,
+            addedCount = newItems.Count,
+            cbr.TotalVehicleCount,
+            cbr.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveCarBoxRequestLineAsync(string cbReqNo, string vin)
+    {
+        cbReqNo = cbReqNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var cbr = await db.CarBoxRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.CBReqNo == cbReqNo);
+        if (cbr is null || cbr.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.CarBoxRequestLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.CarBoxRequestLines.Remove(line);
+        Log(vin, "CarBoxLineRemoved", $"{cbReqNo} Rút xe khỏi yêu cầu đóng thùng");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.CarBoxRequestLines.Where(l => l.OrgId == Org && l.CarBoxRequestId == cbr.Id).ToListAsync();
+        cbr.TotalVehicleCount = allLines.Count;
+        cbr.TotalAmount = allLines.Sum(l => l.BodyPrice);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cbr.CBReqNo,
+            vin,
+            cbr.TotalVehicleCount,
+            cbr.TotalAmount
         };
     }
 }

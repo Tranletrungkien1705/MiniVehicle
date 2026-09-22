@@ -992,6 +992,62 @@ app.MapPost("/api/customs-declarations/{declarationNo}/update-tax-payment", asyn
     return r is null ? Results.NotFound(new { declarationNo, error = "Không tìm thấy Tờ khai hải quan hoặc tờ khai đã bị hủy." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Yêu cầu & Nghiệm thu đóng thùng xe thương mại / xe tải (BizHTC.Storage.Sto_CBReq / CarBoxRequest) ----
+app.MapPost("/api/car-box-requests", async (CreateCarBoxRequestDto dto, IVehicleService svc) =>
+{
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong yêu cầu đóng thùng." });
+    try { return Results.Ok(await svc.CreateCarBoxRequestAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/car-box-requests", async (IVehicleService svc, string? status, string? dealer, string? loaiThung, string? bodyBuilder, string? vin) =>
+    Results.Ok(await svc.ListCarBoxRequestsAsync(status, dealer, loaiThung, bodyBuilder, vin))).RequireAuthorization();
+
+app.MapGet("/api/car-box-requests/{cbReqNo}", async (string cbReqNo, IVehicleService svc) =>
+{
+    var r = await svc.GetCarBoxRequestAsync(cbReqNo);
+    return r is null ? Results.NotFound(new { cbReqNo, error = "Không tìm thấy yêu cầu đóng thùng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/car-box-requests/{cbReqNo}/{action}", async (string cbReqNo, string action, CarBoxRequestTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "start" or "in-progress" or "inprogress" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|start|complete|reject|cancel" });
+    var r = await svc.CarBoxRequestTransitionAsync(cbReqNo, action, dto);
+    return r is null ? Results.NotFound(new { cbReqNo, error = "Không thấy yêu cầu đóng thùng hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/car-box-requests/{cbReqNo}/lines/{vin}/inspect", async (string cbReqNo, string vin, InspectCarBoxLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.InspectCarBoxLineAsync(cbReqNo, vin, dto);
+    return r is null ? Results.NotFound(new { cbReqNo, vin, error = "Không tìm thấy dòng xe trong yêu cầu đóng thùng hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/car-box-requests/{cbReqNo}/lines/{vin}/update", async (string cbReqNo, string vin, UpdateCarBoxRequestLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateCarBoxRequestLineAsync(cbReqNo, vin, dto);
+    return r is null ? Results.NotFound(new { cbReqNo, vin, error = "Không tìm thấy dòng xe trong yêu cầu đóng thùng hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/car-box-requests/{cbReqNo}/lines", async (string cbReqNo, List<CarBoxItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào yêu cầu đóng thùng." });
+    try
+    {
+        var r = await svc.AddCarBoxRequestLinesAsync(cbReqNo, items);
+        return r is null ? Results.NotFound(new { cbReqNo, error = "Không tìm thấy yêu cầu đóng thùng hoặc hồ sơ đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/car-box-requests/{cbReqNo}/lines/{vin}", async (string cbReqNo, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveCarBoxRequestLineAsync(cbReqNo, vin);
+    return r is null ? Results.NotFound(new { cbReqNo, vin, error = "Không tìm thấy dòng xe trong yêu cầu đóng thùng hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

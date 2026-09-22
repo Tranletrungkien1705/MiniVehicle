@@ -77,6 +77,11 @@
 <li><code>POST /api/customs-declarations/{no}/lines/{vin}/update</code> — điều chỉnh trị giá tính thuế CIF/FOB, thuế suất &amp; tiền thuế nhập khẩu, thuế TTĐB, thuế VAT theo từng xe VIN</li>
 <li><code>POST /api/customs-declarations/{no}/lines</code> &amp; <code>DELETE /api/customs-declarations/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong tờ khai hải quan</li>
 <li><code>POST /api/customs-declarations/{no}/update-tax-payment</code> — cập nhật ngày nộp thuế hải quan cho các xe trong tờ khai</li>
+<li><code>POST /api/car-box-requests</code> &amp; <code>/api/car-box-requests/{no}/{action}</code> — yêu cầu &amp; phê duyệt đóng thùng xe thương mại / xe tải (BizHTC.Storage.Sto_CBReq / CarBoxRequest: submit, approve, start, complete, reject, cancel)</li>
+<li><code>GET /api/car-box-requests?status=&dealer=&loaiThung=&bodyBuilder=&vin=</code> — tra cứu danh sách yêu cầu đóng thùng xe tải (thùng mui bạt, thùng kín, thùng đông lạnh, thùng lửng...)</li>
+<li><code>POST /api/car-box-requests/{no}/lines/{vin}/inspect</code> — nghiệm thu kỹ thuật xuất xưởng đóng thùng xe từng VIN (kích thước lọt lòng, tải trọng cho phép, số phiếu KĐ xuất xưởng, cập nhật TypeCB=1)</li>
+<li><code>POST /api/car-box-requests/{no}/lines/{vin}/update</code> — cập nhật quy cách loại thùng, kích thước, tải trọng, giá đóng thùng theo từng xe VIN</li>
+<li><code>POST /api/car-box-requests/{no}/lines</code> &amp; <code>DELETE /api/car-box-requests/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong yêu cầu đóng thùng</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>
