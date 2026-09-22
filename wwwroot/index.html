@@ -92,6 +92,11 @@
 <li><code>POST /api/guarantee-extensions/{code}/lines/{vin}/update</code> — cập nhật số ngày gia hạn, hạn bảo lãnh mới, phí gia hạn theo từng xe VIN</li>
 <li><code>POST /api/guarantee-extensions/{code}/lines</code> &amp; <code>DELETE /api/guarantee-extensions/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong đề nghị gia hạn bảo lãnh</li>
 <li><code>GET /api/vehicles/{vin}/guarantee-extension-info</code> — tra cứu toàn bộ hồ sơ bảo lãnh và lịch sử gia hạn bảo lãnh thanh toán của số khung VIN</li>
+<li><code>POST /api/contract-cancels</code> &amp; <code>/api/contract-cancels/{code}/{action}</code> — tạo, nộp, phê duyệt &amp; hủy/từ chối Đề nghị Hủy / Rút dòng xe Hợp đồng mua bán xe Đại lý (BizHTC.Contract.Dlr_ContractCancel / ContractCancel: submit, approve, reject, cancel)</li>
+<li><code>GET /api/contract-cancels?status=&amp;dealer=&amp;dlrContractNo=&amp;contractCNo=&amp;vin=</code> — tra cứu danh sách đề nghị hủy hợp đồng mua bán xe đại lý</li>
+<li><code>POST /api/contract-cancels/{code}/lines/{vin}/update</code> — cập nhật phân loại lý do hủy (CANCEL_VIN, REDUCE_QTY, CUSTOMER_CANCEL...), số lượng hủy, đơn giá và tiền hoàn trả theo từng xe VIN</li>
+<li><code>POST /api/contract-cancels/{code}/lines</code> &amp; <code>DELETE /api/contract-cancels/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong đề nghị hủy hợp đồng</li>
+<li><code>GET /api/vehicles/{vin}/contract-cancel-info</code> — tra cứu lịch sử các lần xin hủy / rút xe khỏi hợp đồng mua bán của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

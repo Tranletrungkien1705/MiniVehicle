@@ -439,6 +439,46 @@ public record UpdateGuaranteeExtensionLineDto(
     string? Remark = null
 );
 
+public record ContractCancelItemInputDto(
+    string? Vin = null,
+    string? DlrContractNo = null,
+    string? Model = null,
+    string? SpecCode = null,
+    string? Color = null,
+    string? ContractUpdateType = "CANCEL_VIN",
+    int CancelQty = 1,
+    decimal? UnitPrice = null,
+    decimal? RefundAmount = null,
+    string? Remark = null
+);
+
+public record CreateContractCancelDto(
+    string DealerCode,
+    List<ContractCancelItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? DlrContractNo = null,
+    string? CancelType = "Partial",
+    string? CancelReason = null,
+    decimal DepositRefundAmount = 0,
+    string? Remark = null,
+    string? ContractCNo = null,
+    string? CreatedBy = null
+);
+
+public record ContractCancelTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? Reason = null
+);
+
+public record UpdateContractCancelLineDto(
+    string? ContractUpdateType = null,
+    int? CancelQty = null,
+    decimal? UnitPrice = null,
+    decimal? RefundAmount = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -599,6 +639,14 @@ public interface IVehicleService
     Task<object?> AddGuaranteeExtensionLinesAsync(string grtClaimExtNo, List<GuaranteeExtensionItemInputDto> items);
     Task<object?> RemoveGuaranteeExtensionLineAsync(string grtClaimExtNo, string vin);
     Task<object?> GetVehicleGuaranteeExtensionInfoAsync(string vin);
+    Task<object> CreateContractCancelAsync(CreateContractCancelDto dto);
+    Task<object> ListContractCancelsAsync(string? status, string? dealer, string? dlrContractNo, string? contractCNo, string? vin);
+    Task<object?> GetContractCancelAsync(string contractCNo);
+    Task<object?> ContractCancelTransitionAsync(string contractCNo, string action, ContractCancelTransitionDto? dto);
+    Task<object?> UpdateContractCancelLineAsync(string contractCNo, string vin, UpdateContractCancelLineDto dto);
+    Task<object?> AddContractCancelLinesAsync(string contractCNo, List<ContractCancelItemInputDto> items);
+    Task<object?> RemoveContractCancelLineAsync(string contractCNo, string vin);
+    Task<object?> GetVehicleContractCancelInfoAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -10200,6 +10248,605 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 e.ExtensionFee,
                 e.Status,
                 e.Remark
+            })
+        };
+    }
+
+    public async Task<object> CreateContractCancelAsync(CreateContractCancelDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode.");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+        var inputItems = new List<ContractCancelItemInputDto>();
+
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            inputItems.AddRange(dto.Items);
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            foreach (var v in dto.Vins.Where(s => !string.IsNullOrWhiteSpace(s)))
+            {
+                inputItems.Add(new ContractCancelItemInputDto(Vin: v.Trim().ToUpperInvariant(), DlrContractNo: dto.DlrContractNo));
+            }
+        }
+
+        if (inputItems.Count == 0)
+            throw new InvalidOperationException("Cần danh sách xe Items hoặc Vins trong đề nghị hủy hợp đồng.");
+
+        var vins = inputItems.Where(i => !string.IsNullOrWhiteSpace(i.Vin)).Select(i => i.Vin!.Trim().ToUpperInvariant()).Distinct().ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        foreach (var vin in vins)
+        {
+            if (!vehicles.ContainsKey(vin))
+                throw new InvalidOperationException($"Không tìm thấy số khung VIN {vin} trong hệ thống.");
+        }
+
+        var today = DateTime.Today;
+        var seq = await db.ContractCancels.CountAsync(c => c.OrgId == Org && c.CreatedAt.Date == today) + 1;
+        var contractCNo = string.IsNullOrWhiteSpace(dto.ContractCNo)
+            ? $"CCN{today:yyyyMMdd}-{seq:000}"
+            : dto.ContractCNo!.Trim().ToUpperInvariant();
+
+        if (await db.ContractCancels.AnyAsync(c => c.OrgId == Org && c.ContractCNo == contractCNo))
+            throw new InvalidOperationException($"Mã đề nghị hủy {contractCNo} đã tồn tại.");
+
+        var cancel = new ContractCancel
+        {
+            OrgId = Org,
+            ContractCNo = contractCNo,
+            DealerCode = dealer,
+            DlrContractNo = dto.DlrContractNo?.Trim().ToUpperInvariant(),
+            CancelType = string.IsNullOrWhiteSpace(dto.CancelType) ? "Partial" : dto.CancelType.Trim(),
+            CancelReason = dto.CancelReason?.Trim(),
+            DepositRefundAmount = dto.DepositRefundAmount >= 0 ? dto.DepositRefundAmount : 0,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "DealerSalesRepresentative",
+            CreatedAt = DateTime.Now
+        };
+
+        db.ContractCancels.Add(cancel);
+        await db.SaveChangesAsync();
+
+        int totalQty = 0;
+        decimal totalAmount = 0;
+
+        foreach (var it in inputItems)
+        {
+            var lineVin = it.Vin?.Trim().ToUpperInvariant();
+            var lineContractNo = !string.IsNullOrWhiteSpace(it.DlrContractNo)
+                ? it.DlrContractNo.Trim().ToUpperInvariant()
+                : cancel.DlrContractNo ?? "";
+
+            string model = it.Model ?? "";
+            string? spec = it.SpecCode;
+            string? color = it.Color;
+
+            if (!string.IsNullOrWhiteSpace(lineVin) && vehicles.TryGetValue(lineVin, out var v))
+            {
+                if (string.IsNullOrWhiteSpace(model)) model = v.Model;
+                if (string.IsNullOrWhiteSpace(color)) color = v.Color;
+            }
+
+            if (string.IsNullOrWhiteSpace(model)) model = "Hyundai Vehicle";
+
+            var qty = it.CancelQty > 0 ? it.CancelQty : 1;
+            var unitPrice = it.UnitPrice.HasValue && it.UnitPrice.Value > 0
+                ? it.UnitPrice.Value
+                : GetDefaultCarPrice(model);
+
+            var refundAmount = it.RefundAmount.HasValue && it.RefundAmount.Value >= 0
+                ? it.RefundAmount.Value
+                : qty * unitPrice;
+
+            totalQty += qty;
+            totalAmount += refundAmount;
+
+            var line = new ContractCancelLine
+            {
+                OrgId = Org,
+                ContractCancelId = cancel.Id,
+                ContractCNo = contractCNo,
+                DlrContractNo = lineContractNo,
+                Vin = lineVin,
+                Model = model,
+                SpecCode = spec,
+                Color = color,
+                ContractUpdateType = string.IsNullOrWhiteSpace(it.ContractUpdateType) ? "CANCEL_VIN" : it.ContractUpdateType.Trim().ToUpperInvariant(),
+                CancelQty = qty,
+                UnitPrice = unitPrice,
+                RefundAmount = refundAmount,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            db.ContractCancelLines.Add(line);
+
+            if (!string.IsNullOrWhiteSpace(lineVin))
+            {
+                Log(lineVin, "ContractCancelDraftCreated",
+                    $"{contractCNo} Lập đề nghị hủy/rút xe khỏi hợp đồng bán buôn {lineContractNo}. Phân loại: {line.ContractUpdateType}, Số lượng: {qty}, Tiền hoàn trả: {refundAmount:N0} VNĐ. Lý do: {cancel.CancelReason ?? "N/A"}");
+            }
+        }
+
+        cancel.TotalCancelQty = totalQty;
+        cancel.TotalCancelAmount = totalAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cancel.ContractCNo,
+            cancel.DealerCode,
+            cancel.DlrContractNo,
+            cancel.CancelType,
+            cancel.CancelReason,
+            cancel.TotalCancelQty,
+            cancel.TotalCancelAmount,
+            cancel.DepositRefundAmount,
+            cancel.Status,
+            cancel.Remark,
+            linesCount = inputItems.Count
+        };
+    }
+
+    public async Task<object> ListContractCancelsAsync(string? status, string? dealer, string? dlrContractNo, string? contractCNo, string? vin)
+    {
+        var q = db.ContractCancels.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim(); q = q.Where(c => c.DealerCode.Contains(d)); }
+        if (!string.IsNullOrWhiteSpace(dlrContractNo)) { var ctr = dlrContractNo.Trim(); q = q.Where(c => c.DlrContractNo != null && c.DlrContractNo.Contains(ctr)); }
+        if (!string.IsNullOrWhiteSpace(contractCNo)) { var code = contractCNo.Trim(); q = q.Where(c => c.ContractCNo.Contains(code)); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.ContractCancelLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.ContractCNo).Distinct().ToListAsync();
+            q = q.Where(c => matchedNos.Contains(c.ContractCNo));
+        }
+
+        var items = await q.OrderByDescending(c => c.Id).Take(500).Select(c => new
+        {
+            c.Id,
+            c.ContractCNo,
+            c.DealerCode,
+            c.DlrContractNo,
+            c.CancelType,
+            c.CancelReason,
+            c.TotalCancelQty,
+            c.TotalCancelAmount,
+            c.DepositRefundAmount,
+            c.Status,
+            c.CreatedBy,
+            c.CreatedAt,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            c.RejectedBy,
+            c.RejectedAt,
+            c.RejectReason,
+            c.CancelledBy,
+            c.CancelledAt,
+            c.Remark,
+            lineCount = db.ContractCancelLines.Count(l => l.OrgId == Org && l.ContractCancelId == c.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetContractCancelAsync(string contractCNo)
+    {
+        contractCNo = contractCNo.Trim().ToUpperInvariant();
+        var cancel = await db.ContractCancels.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractCNo == contractCNo);
+        if (cancel is null) return null;
+
+        var lines = await db.ContractCancelLines.Where(l => l.OrgId == Org && l.ContractCancelId == cancel.Id).ToListAsync();
+        var lineVins = lines.Where(l => !string.IsNullOrWhiteSpace(l.Vin)).Select(l => l.Vin!).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.ContractCNo,
+            l.DlrContractNo,
+            l.Vin,
+            l.Model,
+            l.SpecCode,
+            l.Color,
+            l.ContractUpdateType,
+            l.CancelQty,
+            l.UnitPrice,
+            l.RefundAmount,
+            l.Status,
+            l.Remark,
+            vehicle = l.Vin != null && vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.Model,
+                v.Color,
+                v.EngineNo,
+                status = v.Status.ToString(),
+                v.DealerCode,
+                v.StorageCode,
+                v.IsInvoiced,
+                v.IsMortgaged
+            } : null
+        }).ToList();
+
+        return new
+        {
+            cancel.ContractCNo,
+            cancel.DealerCode,
+            cancel.DlrContractNo,
+            cancel.CancelType,
+            cancel.CancelReason,
+            cancel.TotalCancelQty,
+            cancel.TotalCancelAmount,
+            cancel.DepositRefundAmount,
+            cancel.Status,
+            cancel.CreatedBy,
+            cancel.CreatedAt,
+            cancel.ApprovedBy,
+            cancel.ApprovedAt,
+            cancel.RejectedBy,
+            cancel.RejectedAt,
+            cancel.RejectReason,
+            cancel.CancelledBy,
+            cancel.CancelledAt,
+            cancel.Remark,
+            lines = details
+        };
+    }
+
+    public async Task<object?> ContractCancelTransitionAsync(string contractCNo, string action, ContractCancelTransitionDto? dto)
+    {
+        contractCNo = contractCNo.Trim().ToUpperInvariant();
+        var act = action.Trim().ToLowerInvariant();
+
+        var cancel = await db.ContractCancels.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractCNo == contractCNo);
+        if (cancel is null) return null;
+
+        var lines = await db.ContractCancelLines.Where(l => l.OrgId == Org && l.ContractCancelId == cancel.Id).ToListAsync();
+        var lineVins = lines.Where(l => !string.IsNullOrWhiteSpace(l.Vin)).Select(l => l.Vin!).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "submit":
+                if (cancel.Status != "Draft") return null;
+
+                cancel.Status = "Submitted";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    cancel.Remark = (cancel.Remark + " | Trình duyệt: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Submitted";
+                    if (!string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        Log(line.Vin, "ContractCancelSubmitted",
+                            $"{contractCNo} Trình duyệt đề nghị hủy hợp đồng {line.DlrContractNo} tới Hãng OEM. Lý do: {cancel.CancelReason ?? "N/A"}");
+                    }
+                }
+                break;
+
+            case "approve":
+                if (cancel.Status is not ("Draft" or "Submitted")) return null;
+
+                cancel.Status = "Approved";
+                cancel.ApprovedBy = dto?.User ?? "SalesDirector";
+                cancel.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    cancel.Remark = (cancel.Remark + " | Phê duyệt: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Approved";
+
+                    if (!string.IsNullOrWhiteSpace(line.Vin) && vehicles.TryGetValue(line.Vin, out var v))
+                    {
+                        if (v.Status == VehicleStatus.Allocated)
+                        {
+                            v.Status = VehicleStatus.InStock;
+                            v.DealerCode = null;
+                            v.SOCode = null;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(line.DlrContractNo))
+                        {
+                            var ctrLine = await db.DealerContractLines
+                                .FirstOrDefaultAsync(cl => cl.OrgId == Org && cl.ContractNo == line.DlrContractNo && cl.Vin == line.Vin);
+                            if (ctrLine != null)
+                            {
+                                ctrLine.Status = "Cancelled";
+                            }
+                        }
+
+                        Log(line.Vin, "ContractCancelApproved",
+                            $"{contractCNo} Phê duyệt đề nghị hủy hợp đồng {line.DlrContractNo}. Hoàn trả xe về kho InStock. Tiền hoàn: {line.RefundAmount:N0} VNĐ. Duyệt bởi: {cancel.ApprovedBy}");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(line.DlrContractNo))
+                    {
+                        var ctr = await db.DealerContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == line.DlrContractNo);
+                        if (ctr != null)
+                        {
+                            if (cancel.CancelType == "Full")
+                            {
+                                ctr.Status = "Cancelled";
+                                ctr.CancelledAt = now;
+                            }
+                            else
+                            {
+                                ctr.TotalQuantity = Math.Max(0, ctr.TotalQuantity - line.CancelQty);
+                                ctr.FinalAmount = Math.Max(0, ctr.FinalAmount - line.RefundAmount);
+                            }
+                        }
+                    }
+                }
+                break;
+
+            case "reject":
+                if (cancel.Status is "Approved" or "Cancelled") return null;
+
+                cancel.Status = "Rejected";
+                cancel.RejectedBy = dto?.User ?? "SalesDirector";
+                cancel.RejectedAt = now;
+                cancel.RejectReason = dto?.Reason ?? dto?.Note;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    cancel.Remark = (cancel.Remark + " | Từ chối: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Rejected";
+                    if (!string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        Log(line.Vin, "ContractCancelRejected",
+                            $"{contractCNo} Từ chối đề nghị hủy hợp đồng {line.DlrContractNo}. Lý do: {cancel.RejectReason ?? "N/A"}");
+                    }
+                }
+                break;
+
+            case "cancel":
+                if (cancel.Status == "Cancelled") return null;
+
+                cancel.Status = "Cancelled";
+                cancel.CancelledBy = dto?.User ?? "SystemAdmin";
+                cancel.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    cancel.Remark = (cancel.Remark + " | Hủy: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Cancelled";
+                    if (!string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        Log(line.Vin, "ContractCancelCancelled",
+                            $"{contractCNo} Hủy bỏ đề nghị hủy hợp đồng. Lý do: {dto?.Note ?? "N/A"}");
+                    }
+                }
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cancel.ContractCNo,
+            cancel.DealerCode,
+            cancel.DlrContractNo,
+            cancel.Status,
+            cancel.TotalCancelQty,
+            cancel.TotalCancelAmount,
+            cancel.DepositRefundAmount,
+            cancel.ApprovedBy,
+            cancel.ApprovedAt,
+            cancel.RejectedBy,
+            cancel.RejectedAt,
+            cancel.CancelledBy,
+            cancel.CancelledAt,
+            action = act
+        };
+    }
+
+    public async Task<object?> UpdateContractCancelLineAsync(string contractCNo, string vin, UpdateContractCancelLineDto dto)
+    {
+        contractCNo = contractCNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var cancel = await db.ContractCancels.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractCNo == contractCNo);
+        if (cancel is null || cancel.Status is "Approved" or "Cancelled") return null;
+
+        var line = await db.ContractCancelLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ContractCancelId == cancel.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.ContractUpdateType)) line.ContractUpdateType = dto.ContractUpdateType.Trim().ToUpperInvariant();
+        if (dto.CancelQty.HasValue && dto.CancelQty.Value > 0) line.CancelQty = dto.CancelQty.Value;
+        if (dto.UnitPrice.HasValue && dto.UnitPrice.Value >= 0) line.UnitPrice = dto.UnitPrice.Value;
+        if (dto.RefundAmount.HasValue && dto.RefundAmount.Value >= 0)
+        {
+            line.RefundAmount = dto.RefundAmount.Value;
+        }
+        else if (dto.CancelQty.HasValue || dto.UnitPrice.HasValue)
+        {
+            line.RefundAmount = line.CancelQty * line.UnitPrice;
+        }
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.ContractCancelLines.Where(l => l.OrgId == Org && l.ContractCancelId == cancel.Id).ToListAsync();
+        cancel.TotalCancelQty = allLines.Sum(l => l.CancelQty);
+        cancel.TotalCancelAmount = allLines.Sum(l => l.RefundAmount);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cancel.ContractCNo,
+            line.Vin,
+            line.Model,
+            line.ContractUpdateType,
+            line.CancelQty,
+            line.UnitPrice,
+            line.RefundAmount,
+            line.Remark,
+            cancelTotalQty = cancel.TotalCancelQty,
+            cancelTotalAmount = cancel.TotalCancelAmount
+        };
+    }
+
+    public async Task<object?> AddContractCancelLinesAsync(string contractCNo, List<ContractCancelItemInputDto> items)
+    {
+        var code = contractCNo.Trim().ToUpperInvariant();
+        var cancel = await db.ContractCancels.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractCNo == code);
+        if (cancel is null || cancel.Status is "Approved" or "Cancelled") return null;
+
+        var distinctItems = new List<ContractCancelItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+        {
+            var cleanVin = it.Vin!.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+            if (seenVins.Add(cleanVin))
+            {
+                distinctItems.Add(it with { Vin = cleanVin });
+            }
+        }
+
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.ContractCancelLines
+            .Where(l => l.OrgId == Org && l.ContractCancelId == cancel.Id && l.Vin != null)
+            .Select(l => l.Vin!)
+            .ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin!)).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin!).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        foreach (var it in newItems)
+        {
+            vehicles.TryGetValue(it.Vin!, out var v);
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model : (v?.Model ?? "Hyundai Vehicle");
+            var color = !string.IsNullOrWhiteSpace(it.Color) ? it.Color : v?.Color;
+            var spec = !string.IsNullOrWhiteSpace(it.SpecCode) ? it.SpecCode : null;
+            var qty = it.CancelQty > 0 ? it.CancelQty : 1;
+            var unitPrice = it.UnitPrice.HasValue && it.UnitPrice.Value > 0
+                ? it.UnitPrice.Value
+                : GetDefaultCarPrice(model);
+            var refundAmount = it.RefundAmount.HasValue && it.RefundAmount.Value >= 0
+                ? it.RefundAmount.Value
+                : qty * unitPrice;
+
+            var line = new ContractCancelLine
+            {
+                OrgId = Org,
+                ContractCancelId = cancel.Id,
+                ContractCNo = cancel.ContractCNo,
+                DlrContractNo = !string.IsNullOrWhiteSpace(it.DlrContractNo) ? it.DlrContractNo.Trim().ToUpperInvariant() : cancel.DlrContractNo ?? "",
+                Vin = it.Vin,
+                Model = model,
+                SpecCode = spec,
+                Color = color,
+                ContractUpdateType = string.IsNullOrWhiteSpace(it.ContractUpdateType) ? "CANCEL_VIN" : it.ContractUpdateType.Trim().ToUpperInvariant(),
+                CancelQty = qty,
+                UnitPrice = unitPrice,
+                RefundAmount = refundAmount,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            db.ContractCancelLines.Add(line);
+            Log(it.Vin!, "ContractCancelLineAdded", $"{code} Bổ sung xe vào đề nghị hủy hợp đồng. Tiền hoàn: {refundAmount:N0} VNĐ");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ContractCancelLines.Where(l => l.OrgId == Org && l.ContractCancelId == cancel.Id).ToListAsync();
+        cancel.TotalCancelQty = allLines.Sum(l => l.CancelQty);
+        cancel.TotalCancelAmount = allLines.Sum(l => l.RefundAmount);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cancel.ContractCNo,
+            addedCount = newItems.Count,
+            cancel.TotalCancelQty,
+            cancel.TotalCancelAmount
+        };
+    }
+
+    public async Task<object?> RemoveContractCancelLineAsync(string contractCNo, string vin)
+    {
+        contractCNo = contractCNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var cancel = await db.ContractCancels.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractCNo == contractCNo);
+        if (cancel is null || cancel.Status is "Approved" or "Cancelled") return null;
+
+        var line = await db.ContractCancelLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ContractCancelId == cancel.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.ContractCancelLines.Remove(line);
+        Log(vin, "ContractCancelLineRemoved", $"{contractCNo} Rút xe khỏi đề nghị hủy hợp đồng");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ContractCancelLines.Where(l => l.OrgId == Org && l.ContractCancelId == cancel.Id).ToListAsync();
+        cancel.TotalCancelQty = allLines.Sum(l => l.CancelQty);
+        cancel.TotalCancelAmount = allLines.Sum(l => l.RefundAmount);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cancel.ContractCNo,
+            vin,
+            cancel.TotalCancelQty,
+            cancel.TotalCancelAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleContractCancelInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var cancelLines = await db.ContractCancelLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.Color,
+            v.EngineNo,
+            v.Status,
+            v.DealerCode,
+            cancelHistory = cancelLines.Select(c => new
+            {
+                c.Id,
+                c.ContractCNo,
+                c.DlrContractNo,
+                c.Model,
+                c.ContractUpdateType,
+                c.CancelQty,
+                c.UnitPrice,
+                c.RefundAmount,
+                c.Status,
+                c.Remark
             })
         };
     }

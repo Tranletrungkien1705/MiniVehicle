@@ -1142,6 +1142,52 @@ public sealed class GuaranteeExtensionLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Đề nghị & Quyết định Hủy / Điều chỉnh rút dòng xe Hợp đồng mua bán xe Đại lý (BizHTC.Contract.Dlr_ContractCancel / ContractCancel): quản lý đề nghị hủy toàn bộ hợp đồng hoặc rút bớt/hủy dòng xe từ đại lý gửi lên hãng OEM.</summary>
+public sealed class ContractCancel
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ContractCNo { get; set; } = "";             // Mã phiếu đề nghị hủy (CCN...)
+    public string DealerCode { get; set; } = "";               // Mã đại lý đề nghị hủy
+    public string? DlrContractNo { get; set; }                 // Mã hợp đồng mua bán gốc liên quan (CTR...)
+    public string CancelType { get; set; } = "Partial";        // Full (Hủy toàn bộ hợp đồng), Partial (Hủy rút từng dòng xe), VinCancel (Hủy chỉ định VIN)
+    public string? CancelReason { get; set; }                  // Lý do hủy (Khách hủy cọc, Đổi mẫu xe, Điều chuyển vốn...)
+    public int TotalCancelQty { get; set; } = 0;              // Tổng số lượng xe xin hủy/rút
+    public decimal TotalCancelAmount { get; set; } = 0;       // Tổng giá trị xe xin hủy (VNĐ)
+    public decimal DepositRefundAmount { get; set; } = 0;     // Tiền cọc đề nghị hoàn trả lại cho đại lý (VNĐ)
+    public string Status { get; set; } = "Draft";             // Draft → Submitted → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                       // Ghi chú điều hành
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                   // Người duyệt cấp OEM
+    public DateTime? ApprovedAt { get; set; }
+    public string? RejectedBy { get; set; }                   // Người từ chối
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }                  // Người hủy đề nghị
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe trong đề nghị hủy hợp đồng (BizHTC.Contract.Dlr_ContractCancelDtl / ContractCancelLine): danh sách VIN / model, phân loại cập nhật hợp đồng, số lượng hủy, đơn giá và tiền hoàn trả.</summary>
+public sealed class ContractCancelLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ContractCancelId { get; set; }
+    public string ContractCNo { get; set; } = "";
+    public string DlrContractNo { get; set; } = "";           // Mã hợp đồng liên quan
+    public string? Vin { get; set; }                          // Số khung VIN cụ thể (nếu có)
+    public string Model { get; set; } = "";                   // Dòng xe (SantaFe, Tucson, Accent...)
+    public string? SpecCode { get; set; }                     // Phiên bản xe
+    public string? Color { get; set; }                        // Màu sắc
+    public string ContractUpdateType { get; set; } = "CANCEL_VIN"; // Phân loại: CANCEL_VIN (Rút xe VIN), REDUCE_QTY (Giảm số lượng), CUSTOMER_CANCEL (Khách hủy cọc), MODEL_CHANGE (Đổi phiên bản), OTHER (Khác)
+    public int CancelQty { get; set; } = 1;                   // Số lượng xe xin hủy
+    public decimal UnitPrice { get; set; } = 0;               // Đơn giá xe xuất buôn (VNĐ)
+    public decimal RefundAmount { get; set; } = 0;            // Tiền hoàn trả cho xe này (VNĐ) = CancelQty * UnitPrice
+    public string Status { get; set; } = "Pending";           // Pending → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

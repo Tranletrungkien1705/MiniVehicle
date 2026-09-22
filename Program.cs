@@ -1164,6 +1164,64 @@ app.MapGet("/api/vehicles/{vin}/guarantee-extension-info", async (string vin, IV
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Đề nghị & Quyết định Hủy / Rút dòng xe Hợp đồng mua bán xe Đại lý (BizHTC.Contract.Dlr_ContractCancel / ContractCancel) ----
+app.MapPost("/api/contract-cancels", async (CreateContractCancelDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode đề nghị hủy hợp đồng." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong đề nghị hủy hợp đồng." });
+    try { return Results.Ok(await svc.CreateContractCancelAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/contract-cancels", async (IVehicleService svc, string? status, string? dealer, string? dlrContractNo, string? contractCNo, string? vin) =>
+    Results.Ok(await svc.ListContractCancelsAsync(status, dealer, dlrContractNo, contractCNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/contract-cancels/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.GetContractCancelAsync(code);
+    return r is null ? Results.NotFound(new { code, error = "Không tìm thấy đề nghị hủy hợp đồng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/contract-cancels/{code}/{action}", async (string code, string action, ContractCancelTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|reject|cancel" });
+    var r = await svc.ContractCancelTransitionAsync(code, action, dto);
+    return r is null ? Results.NotFound(new { code, error = "Không thấy đề nghị hủy hợp đồng hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/contract-cancels/{code}/lines/{vin}/update", async (string code, string vin, UpdateContractCancelLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateContractCancelLineAsync(code, vin, dto);
+    return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong đề nghị hủy hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/contract-cancels/{code}/lines", async (string code, List<ContractCancelItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào đề nghị hủy hợp đồng." });
+    try
+    {
+        var r = await svc.AddContractCancelLinesAsync(code, items);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy đề nghị hủy hợp đồng hoặc hồ sơ đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/contract-cancels/{code}/lines/{vin}", async (string code, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveContractCancelLineAsync(code, vin);
+    return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong đề nghị hủy hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/contract-cancel-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleContractCancelInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
