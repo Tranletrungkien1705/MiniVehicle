@@ -36,6 +36,9 @@
 <li><code>POST /api/sales-orders</code> &amp; <code>/api/sales-orders/{code}/{action}</code> — tạo &amp; phê duyệt đơn đặt hàng xe ô tô của đại lý (BizHTC.Order.Ord_SalesOrder: submit, approve1, approve2, reject, cancel)</li>
 <li><code>GET /api/sales-orders?status=&dealer=&orderMonth=&model=</code> — tra cứu danh sách đơn đặt hàng xe</li>
 <li><code>POST /api/sales-orders/{code}/allocate-vin</code> &amp; <code>/deallocate-vin/{vin}</code> — phân bổ VIN xe từ kho InStock vào đơn hàng SO &amp; hủy phân bổ</li>
+<li><code>POST /api/dealer-deals</code> &amp; <code>/api/dealer-deals/{no}/{action}</code> — tạo &amp; phê duyệt giao dịch bán lẻ xe của đại lý, trả góp ngân hàng, bàn giao xe kích hoạt Sổ Bảo Hành Online (BizHTC.DealerSales / DLS_Deal: submit, approve, deliver, reject, cancel)</li>
+<li><code>GET /api/dealer-deals?status=&dealer=&customer=&salesMan=&paymentType=&vin=</code> — tra cứu danh sách giao dịch bán lẻ đại lý</li>
+<li><code>POST /api/dealer-deals/{no}/lines/{vin}/update-delivery</code> — cập nhật thông tin bàn giao xe (biển số, ODO, số sổ bảo hành điện tử, hạn bảo hành)</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

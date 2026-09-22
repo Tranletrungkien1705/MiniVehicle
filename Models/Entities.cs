@@ -448,6 +448,63 @@ public sealed class SalesOrderLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Giao dịch bán lẻ xe ô tô của Đại lý cho Khách hàng (BizHTC.DealerSales / DLS_Deal): hợp đồng bán lẻ tại showroom đại lý, thông tin khách hàng, tư vấn bán hàng TVBH, phương thức trả góp ngân hàng và bàn giao kích hoạt Sổ Bảo Hành Online.</summary>
+public sealed class DealerDeal
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string DealNo { get; set; } = "";             // Mã giao dịch bán lẻ (DEAL...)
+    public string? DealNoUser { get; set; }            // Số hợp đồng bán lẻ của đại lý (HDBL...)
+    public string DealerCode { get; set; } = "";         // Đại lý bán xe
+    public string? CustomerCode { get; set; }          // Mã khách hàng
+    public string CustomerName { get; set; } = "";       // Tên khách hàng / bên mua xe
+    public string CustomerPhone { get; set; } = "";      // SĐT khách hàng
+    public string CustomerType { get; set; } = "Individual"; // Individual (Cá nhân), Corporate (Doanh nghiệp), Fleet (Dự án/Lô)
+    public string? IdNo { get; set; }                  // Số CCCD/Hộ chiếu hoặc MST doanh nghiệp
+    public string? Address { get; set; }               // Địa chỉ khách hàng
+    public string? SalesManCode { get; set; }          // Mã tư vấn bán hàng (TVBH)
+    public string? SalesManName { get; set; }          // Tên tư vấn bán hàng
+    public string SalesType { get; set; } = "Retail";  // Kiểu bán: Retail (Bán lẻ), Fleet (Bán dự án), Wholesale (Bán buôn), Staff (Nội bộ)
+    public string PaymentType { get; set; } = "Cash";  // Phương thức: Cash (Tiền mặt/Chuyển khoản), BankLoan (Trả góp ngân hàng)
+    public string? BankCode { get; set; }              // Ngân hàng tài trợ vay (VCB, TCB, VPB, BIDV, MB...)
+    public decimal LoanAmount { get; set; } = 0;       // Số tiền vay trả góp
+    public decimal TotalAmount { get; set; } = 0;      // Tổng giá niêm yết các xe
+    public decimal DiscountAmount { get; set; } = 0;   // Tổng giảm giá / chiết khấu
+    public decimal FinalAmount { get; set; } = 0;      // Tổng tiền thực tế = TotalAmount - DiscountAmount
+    public decimal DepositAmount { get; set; } = 0;    // Số tiền đặt cọc
+    public DateTime? DealDate { get; set; }            // Ngày giao dịch / ký hợp đồng
+    public string Status { get; set; } = "Draft";      // Draft → Submitted → Approved → Delivered (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                // Ghi chú giao dịch
+    public string? CreatedBy { get; set; }
+    public string? ApprovedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? DeliveredAt { get; set; }         // Ngày hoàn tất bàn giao xe cho khách
+}
+
+/// <summary>Chi tiết xe trong giao dịch bán lẻ (BizHTC.DealerSales / DLS_DealDetail): thông tin xe VIN, giá bán, biển số xe đăng ký, ODO lúc bàn giao và số sổ bảo hành điện tử (SBH Online).</summary>
+public sealed class DealerDealLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long DealerDealId { get; set; }
+    public string DealNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string? Color { get; set; }
+    public decimal UnitPrice { get; set; } = 0;        // Giá niêm yết xe
+    public decimal Discount { get; set; } = 0;         // Giảm giá cho xe
+    public decimal Price { get; set; } = 0;            // Giá bán thực tế = UnitPrice - Discount
+    public string? PlateNo { get; set; }              // Biển số xe đăng ký (30K-123.45)
+    public string? SBHOnlineNo { get; set; }          // Số Sổ bảo hành điện tử online (SBH-...)
+    public int DeliveryOdoKm { get; set; } = 10;      // Số km ODO lúc bàn giao xe cho khách
+    public DateTime? WarrantyStartDate { get; set; }   // Ngày bắt đầu bảo hành
+    public int WarrantyMonths { get; set; } = 36;      // Thời hạn bảo hành (tháng)
+    public DateTime? DeliveryDate { get; set; }        // Ngày bàn giao xe thực tế cho khách
+    public string Status { get; set; } = "Pending";    // Pending → Approved → Delivered (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

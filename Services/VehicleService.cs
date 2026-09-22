@@ -65,6 +65,11 @@ public record SalesOrderApproveItemDto(long? LineId = null, string? Model = null
 public record SalesOrderTransitionDto(string? Note = null, string? ApprovedBy = null, string? ProductionMonth = null, string? ExpectedMonth = null, List<SalesOrderApproveItemDto>? Items = null);
 public record AllocateSoVinDto(string Vin, long? LineId = null, string? Remark = null);
 
+public record DealerDealItemInputDto(string Vin, decimal? UnitPrice = null, decimal? Discount = null, string? PlateNo = null, string? SBHOnlineNo = null, int? WarrantyMonths = null, int? DeliveryOdoKm = null, string? Remark = null);
+public record CreateDealerDealDto(string DealerCode, string CustomerName, string CustomerPhone, List<DealerDealItemInputDto> Items, string? CustomerCode = null, string? CustomerType = "Individual", string? IdNo = null, string? Address = null, string? SalesManCode = null, string? SalesManName = null, string? SalesType = "Retail", string? PaymentType = "Cash", string? BankCode = null, decimal LoanAmount = 0, decimal DepositAmount = 0, DateTime? DealDate = null, string? DealNo = null, string? DealNoUser = null, string? Remark = null, string? CreatedBy = null);
+public record DealerDealTransitionDto(string? Note = null, string? ApprovedBy = null, DateTime? DeliveryDate = null);
+public record UpdateDealerDealLineDto(string? PlateNo = null, string? SBHOnlineNo = null, int? DeliveryOdoKm = null, DateTime? WarrantyStartDate = null, int? WarrantyMonths = null, DateTime? DeliveryDate = null, string? Remark = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -134,6 +139,11 @@ public interface IVehicleService
     Task<object?> SalesOrderTransitionAsync(string soCode, string action, SalesOrderTransitionDto? dto);
     Task<object?> AllocateSoVinAsync(string soCode, AllocateSoVinDto dto);
     Task<object?> DeallocateSoVinAsync(string soCode, string vin);
+    Task<object> CreateDealerDealAsync(CreateDealerDealDto dto);
+    Task<object> ListDealerDealsAsync(string? status, string? dealer, string? customer, string? salesMan, string? paymentType, string? vin);
+    Task<object?> GetDealerDealAsync(string dealNo);
+    Task<object?> DealerDealTransitionAsync(string dealNo, string action, DealerDealTransitionDto? dto);
+    Task<object?> UpdateDealerDealLineAsync(string dealNo, string vin, UpdateDealerDealLineDto dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -2856,6 +2866,417 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             status = v.Status.ToString(),
             soTotalAllocated = so.TotalAllocatedQty,
             soTotalApproved = so.TotalApprovedQty
+        };
+    }
+
+    // ===== Giao dịch bán lẻ ô tô của Đại lý cho Khách hàng & Kích hoạt Sổ Bảo Hành Online (BizHTC.DealerSales / DLS_Deal / DLS_DealDetail) =====
+    public async Task<object> CreateDealerDealAsync(CreateDealerDealDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần DealerCode để tạo giao dịch bán lẻ Deal.");
+        if (string.IsNullOrWhiteSpace(dto.CustomerName) || string.IsNullOrWhiteSpace(dto.CustomerPhone))
+            throw new InvalidOperationException("Cần tên khách hàng CustomerName và số điện thoại CustomerPhone.");
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe VIN trong giao dịch bán lẻ Deal.");
+
+        var distinctItems = dto.Items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var deliveredVins = vehicles.Where(v => v.Status == VehicleStatus.Delivered).Select(v => v.Vin).ToList();
+        if (deliveredVins.Count > 0)
+            throw new InvalidOperationException("Xe đã giao cho khách hàng (Delivered) không thể tạo deal mới: " + string.Join(", ", deliveredVins));
+
+        // Kiểm tra xe đang trong deal khác chưa hoàn tất
+        var activeLines = await db.DealerDealLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && (l.Status == "Pending" || l.Status == "Submitted" || l.Status == "Approved"))
+            .ToListAsync();
+        if (activeLines.Count > 0)
+        {
+            var conflict = activeLines.First();
+            throw new InvalidOperationException($"VIN {conflict.Vin} đang nằm trong giao dịch bán lẻ khác chưa kết thúc ({conflict.DealNo}).");
+        }
+
+        var dealNo = string.IsNullOrWhiteSpace(dto.DealNo)
+            ? "DEAL" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.DealNo!.Trim().ToUpperInvariant();
+
+        if (await db.DealerDeals.AnyAsync(d => d.OrgId == Org && d.DealNo == dealNo))
+            throw new InvalidOperationException($"Mã giao dịch {dealNo} đã tồn tại.");
+
+        var dealer = dto.DealerCode.Trim();
+        var vMap = vehicles.ToDictionary(v => v.Vin);
+
+        decimal totalAmount = 0;
+        decimal totalDiscount = 0;
+
+        foreach (var item in distinctItems)
+        {
+            var v = vMap[item.Vin.Trim().ToUpperInvariant()];
+            var unitPrice = item.UnitPrice ?? 0;
+            var discount = item.Discount ?? 0;
+            totalAmount += unitPrice;
+            totalDiscount += discount;
+        }
+
+        var finalAmount = Math.Max(0, totalAmount - totalDiscount);
+
+        var deal = new DealerDeal
+        {
+            OrgId = Org,
+            DealNo = dealNo,
+            DealNoUser = dto.DealNoUser?.Trim(),
+            DealerCode = dealer,
+            CustomerCode = dto.CustomerCode?.Trim(),
+            CustomerName = dto.CustomerName.Trim(),
+            CustomerPhone = dto.CustomerPhone.Trim(),
+            CustomerType = string.IsNullOrWhiteSpace(dto.CustomerType) ? "Individual" : dto.CustomerType.Trim(),
+            IdNo = dto.IdNo?.Trim(),
+            Address = dto.Address?.Trim(),
+            SalesManCode = dto.SalesManCode?.Trim(),
+            SalesManName = dto.SalesManName?.Trim(),
+            SalesType = string.IsNullOrWhiteSpace(dto.SalesType) ? "Retail" : dto.SalesType.Trim(),
+            PaymentType = string.IsNullOrWhiteSpace(dto.PaymentType) ? "Cash" : dto.PaymentType.Trim(),
+            BankCode = dto.BankCode?.Trim()?.ToUpperInvariant(),
+            LoanAmount = dto.LoanAmount,
+            DepositAmount = dto.DepositAmount,
+            TotalAmount = totalAmount,
+            DiscountAmount = totalDiscount,
+            FinalAmount = finalAmount,
+            DealDate = dto.DealDate ?? DateTime.Now,
+            Status = "Draft",
+            CreatedBy = dto.CreatedBy?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.DealerDeals.Add(deal);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            var v = vMap[vin];
+            var unitPrice = item.UnitPrice ?? 0;
+            var discount = item.Discount ?? 0;
+            var price = Math.Max(0, unitPrice - discount);
+
+            db.DealerDealLines.Add(new DealerDealLine
+            {
+                OrgId = Org,
+                DealerDealId = deal.Id,
+                DealNo = dealNo,
+                Vin = vin,
+                Model = v.Model,
+                Color = v.Color,
+                UnitPrice = unitPrice,
+                Discount = discount,
+                Price = price,
+                PlateNo = item.PlateNo?.Trim(),
+                SBHOnlineNo = item.SBHOnlineNo?.Trim(),
+                DeliveryOdoKm = item.DeliveryOdoKm ?? 10,
+                WarrantyMonths = item.WarrantyMonths ?? v.WarrantyMonths,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(vin, "DealerDealCreated", $"{dealNo} ĐL:{dealer} KH:{deal.CustomerName} ({deal.CustomerPhone}) Giá bán:{price:N0}đ");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            deal.DealNo,
+            deal.DealNoUser,
+            deal.DealerCode,
+            deal.CustomerName,
+            deal.CustomerPhone,
+            deal.SalesType,
+            deal.PaymentType,
+            deal.TotalAmount,
+            deal.DiscountAmount,
+            deal.FinalAmount,
+            deal.Status,
+            vinsCount = distinctItems.Count
+        };
+    }
+
+    public async Task<object> ListDealerDealsAsync(string? status, string? dealer, string? customer, string? salesMan, string? paymentType, string? vin)
+    {
+        var q = db.DealerDeals.Where(d => d.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(d => d.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(d => d.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(customer))
+        {
+            var c = customer.Trim().ToLowerInvariant();
+            q = q.Where(d => d.CustomerName.ToLower().Contains(c) || d.CustomerPhone.Contains(c));
+        }
+        if (!string.IsNullOrWhiteSpace(salesMan))
+        {
+            var sm = salesMan.Trim().ToLowerInvariant();
+            q = q.Where(d => (d.SalesManCode != null && d.SalesManCode.ToLower().Contains(sm)) || (d.SalesManName != null && d.SalesManName.ToLower().Contains(sm)));
+        }
+        if (!string.IsNullOrWhiteSpace(paymentType)) q = q.Where(d => d.PaymentType == paymentType);
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.DealerDealLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.DealNo).Distinct().ToListAsync();
+            q = q.Where(d => matchedNos.Contains(d.DealNo));
+        }
+
+        var items = await q.OrderByDescending(d => d.Id).Take(500).Select(d => new
+        {
+            d.DealNo,
+            d.DealNoUser,
+            d.DealerCode,
+            d.CustomerName,
+            d.CustomerPhone,
+            d.CustomerType,
+            d.SalesManName,
+            d.SalesType,
+            d.PaymentType,
+            d.BankCode,
+            d.TotalAmount,
+            d.DiscountAmount,
+            d.FinalAmount,
+            d.DepositAmount,
+            d.DealDate,
+            d.Status,
+            d.CreatedAt,
+            d.ApprovedAt,
+            d.DeliveredAt,
+            vinCount = db.DealerDealLines.Count(l => l.OrgId == Org && l.DealerDealId == d.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetDealerDealAsync(string dealNo)
+    {
+        dealNo = dealNo.Trim().ToUpperInvariant();
+        var deal = await db.DealerDeals.FirstOrDefaultAsync(d => d.OrgId == Org && d.DealNo == dealNo);
+        if (deal is null) return null;
+
+        var lines = await db.DealerDealLines.Where(l => l.OrgId == Org && l.DealerDealId == deal.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.Color,
+            l.UnitPrice,
+            l.Discount,
+            l.Price,
+            l.PlateNo,
+            l.SBHOnlineNo,
+            l.DeliveryOdoKm,
+            l.WarrantyStartDate,
+            l.WarrantyMonths,
+            l.DeliveryDate,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.EngineNo,
+                v.ModelYear,
+                v.StorageCode,
+                v.DealerCode,
+                status = v.Status.ToString(),
+                v.OwnerName,
+                v.OwnerPhone,
+                v.PlateNo,
+                v.WarrantyStart,
+                v.WarrantyEnd
+            } : null
+        }).ToList();
+
+        return new
+        {
+            deal.DealNo,
+            deal.DealNoUser,
+            deal.DealerCode,
+            deal.CustomerCode,
+            deal.CustomerName,
+            deal.CustomerPhone,
+            deal.CustomerType,
+            deal.IdNo,
+            deal.Address,
+            deal.SalesManCode,
+            deal.SalesManName,
+            deal.SalesType,
+            deal.PaymentType,
+            deal.BankCode,
+            deal.LoanAmount,
+            deal.DepositAmount,
+            deal.TotalAmount,
+            deal.DiscountAmount,
+            deal.FinalAmount,
+            deal.DealDate,
+            deal.Status,
+            deal.CreatedBy,
+            deal.ApprovedBy,
+            deal.Remark,
+            deal.CreatedAt,
+            deal.ApprovedAt,
+            deal.DeliveredAt,
+            lines = details
+        };
+    }
+
+    public async Task<object?> DealerDealTransitionAsync(string dealNo, string action, DealerDealTransitionDto? dto)
+    {
+        dealNo = dealNo.Trim().ToUpperInvariant();
+        var deal = await db.DealerDeals.FirstOrDefaultAsync(d => d.OrgId == Org && d.DealNo == dealNo);
+        if (deal is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.DealerDealLines.Where(l => l.OrgId == Org && l.DealerDealId == deal.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+                if (deal.Status != "Draft") return null;
+                deal.Status = "Submitted";
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Submitted";
+                foreach (var v in vehicles) Log(v.Vin, "DealSubmitted", $"{dealNo} Giao dịch bán lẻ đã nộp chờ duyệt.");
+                break;
+
+            case "approve":
+                if (deal.Status is not ("Draft" or "Submitted")) return null;
+                deal.Status = "Approved";
+                deal.ApprovedBy = dto?.ApprovedBy?.Trim() ?? "SalesManager";
+                deal.ApprovedAt = now;
+                foreach (var l in lines) if (l.Status is "Pending" or "Submitted") l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "DealApproved", $"{dealNo} Giao dịch bán lẻ được phê duyệt bởi {deal.ApprovedBy}.");
+                break;
+
+            case "deliver":
+                if (deal.Status is not ("Approved" or "Submitted")) return null;
+                deal.Status = "Delivered";
+                deal.DeliveredAt = dto?.DeliveryDate ?? now;
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Delivered";
+                    line.DeliveryDate = dto?.DeliveryDate ?? line.DeliveryDate ?? now;
+                    line.WarrantyStartDate ??= line.DeliveryDate;
+
+                    if (string.IsNullOrWhiteSpace(line.SBHOnlineNo))
+                    {
+                        var shortVin = line.Vin.Length >= 6 ? line.Vin[^6..] : line.Vin;
+                        line.SBHOnlineNo = $"SBH-{now:yyyyMMdd}-{shortVin}";
+                    }
+
+                    var vehicle = vehicles.FirstOrDefault(v => v.Vin == line.Vin);
+                    if (vehicle != null)
+                    {
+                        vehicle.Status = VehicleStatus.Delivered;
+                        vehicle.DealerCode = deal.DealerCode;
+                        vehicle.OwnerName = deal.CustomerName;
+                        vehicle.OwnerPhone = deal.CustomerPhone;
+                        if (!string.IsNullOrWhiteSpace(line.PlateNo)) vehicle.PlateNo = line.PlateNo;
+                        vehicle.DeliveredAt = line.DeliveryDate;
+                        vehicle.WarrantyStart = line.WarrantyStartDate;
+                        vehicle.WarrantyMonths = line.WarrantyMonths > 0 ? line.WarrantyMonths : (vehicle.WarrantyMonths > 0 ? vehicle.WarrantyMonths : 36);
+                        vehicle.WarrantyEnd = vehicle.WarrantyStart.Value.AddMonths(vehicle.WarrantyMonths);
+
+                        Log(vehicle.Vin, "DealDelivered", $"{dealNo} Bàn giao xe bán lẻ cho KH {deal.CustomerName} ({deal.CustomerPhone}). Biển số: {vehicle.PlateNo ?? "Chưa đăng ký"}. Sổ BH: {line.SBHOnlineNo}. BH đến: {vehicle.WarrantyEnd:yyyy-MM-dd}");
+                    }
+                }
+                break;
+
+            case "reject":
+                if (deal.Status is "Delivered" or "Cancelled") return null;
+                deal.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    deal.Remark = string.IsNullOrWhiteSpace(deal.Remark) ? dto.Note : $"{deal.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "DealRejected", $"{dealNo} Từ chối giao dịch: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (deal.Status is "Cancelled" or "Delivered") return null;
+                deal.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    deal.Remark = string.IsNullOrWhiteSpace(deal.Remark) ? dto.Note : $"{deal.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "DealCancelled", $"{dealNo} Hủy giao dịch: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            deal.DealNo,
+            deal.DealerCode,
+            status = deal.Status,
+            deal.ApprovedAt,
+            deal.DeliveredAt
+        };
+    }
+
+    public async Task<object?> UpdateDealerDealLineAsync(string dealNo, string vin, UpdateDealerDealLineDto dto)
+    {
+        dealNo = dealNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var deal = await db.DealerDeals.FirstOrDefaultAsync(d => d.OrgId == Org && d.DealNo == dealNo);
+        if (deal is null) return null;
+
+        var line = await db.DealerDealLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.DealerDealId == deal.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.PlateNo)) line.PlateNo = dto.PlateNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.SBHOnlineNo)) line.SBHOnlineNo = dto.SBHOnlineNo.Trim().ToUpperInvariant();
+        if (dto.DeliveryOdoKm.HasValue && dto.DeliveryOdoKm.Value >= 0) line.DeliveryOdoKm = dto.DeliveryOdoKm.Value;
+        if (dto.WarrantyStartDate.HasValue) line.WarrantyStartDate = dto.WarrantyStartDate.Value;
+        if (dto.WarrantyMonths.HasValue && dto.WarrantyMonths.Value > 0) line.WarrantyMonths = dto.WarrantyMonths.Value;
+        if (dto.DeliveryDate.HasValue) line.DeliveryDate = dto.DeliveryDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Remark))
+            line.Remark = string.IsNullOrWhiteSpace(line.Remark) ? dto.Remark : $"{line.Remark} | {dto.Remark}";
+
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle != null && (deal.Status == "Delivered" || line.Status == "Delivered"))
+        {
+            if (!string.IsNullOrWhiteSpace(line.PlateNo)) vehicle.PlateNo = line.PlateNo;
+            if (line.WarrantyStartDate.HasValue)
+            {
+                vehicle.WarrantyStart = line.WarrantyStartDate.Value;
+                vehicle.WarrantyMonths = line.WarrantyMonths;
+                vehicle.WarrantyEnd = vehicle.WarrantyStart.Value.AddMonths(vehicle.WarrantyMonths);
+            }
+            if (line.DeliveryDate.HasValue) vehicle.DeliveredAt = line.DeliveryDate.Value;
+            Log(vin, "DealLineUpdated", $"{dealNo} Cập nhật thông tin giao xe: Biển số={line.PlateNo ?? "N/A"}, SBH={line.SBHOnlineNo ?? "N/A"}, ODO={line.DeliveryOdoKm}km");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            deal.DealNo,
+            line.Vin,
+            line.Model,
+            line.PlateNo,
+            line.SBHOnlineNo,
+            line.DeliveryOdoKm,
+            line.WarrantyStartDate,
+            line.WarrantyMonths,
+            line.DeliveryDate,
+            line.Status,
+            line.Remark
         };
     }
 }
