@@ -74,6 +74,9 @@ public sealed class Vehicle
     public string? LastCareType { get; set; }         // Loại hình chăm sóc gần nhất (FollowUp24h, FollowUp72h, MaintenanceReminder, Birthday, SeasonalCare)
     public decimal? LastCsiScore { get; set; }        // Điểm đánh giá hài lòng CSI gần nhất (1-5 sao)
     public int CareCount { get; set; } = 0;           // Tổng số lần đã thực hiện CSKH
+    public string? LastWorkOrderNo { get; set; }      // Mã Lệnh sản xuất / Đơn đặt hàng sản xuất nhà máy đã sinh ra xe (MnfPl_Order / WorkOrder)
+    public DateTime? ManufacturedDate { get; set; }   // Ngày hoàn tất xuất xưởng KCS tại nhà máy OEM
+    public string? PlantCode { get; set; }            // Nhà máy sản xuất lắp ráp xe (HTMV_NINHBINH_1, HTMV_NINHBINH_2, TCV_PLANT)
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -2096,13 +2099,173 @@ public sealed class CustomerCare
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 }
 
+/// <summary>Lệnh sản xuất & Kế hoạch sản xuất xe ô tô tại Nhà máy OEM (BizHTC.WorkOrder & BizHTC.MMSIntergration / MnfPl_Order / ProductionOrder): quản lý kế hoạch đặt hàng sản xuất xe hàng tháng/quý cho Nhà máy HTMV Ninh Bình, theo dõi số lượng kế hoạch, số lượng đã xuất xưởng KCS, ngày ETA dự kiến và tự động sinh mã số khung VIN vào kho InStock khi hoàn tất sản xuất.</summary>
+public sealed class ProductionOrder
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string OrderNo { get; set; } = "";             // Mã lệnh sản xuất (PO-2026-03-0001, WO-...)
+    public string? OrderNoUser { get; set; }            // Mã lệnh nội bộ nhà máy / tham chiếu
+    public string OrdMonth { get; set; } = "";           // Tháng sản xuất kế hoạch (YYYY-MM, ví dụ: 2026-03)
+    public string OrdType { get; set; } = "MTO";         // Loại đơn hàng: MTO (Make to Order), MTS (Make to Stock), SAMPLE (Xe mẫu thử nghiệm), EXPORT (Xuất khẩu)
+    public string OrdCategoryType { get; set; } = "MakeToOrder"; // Phân loại: MakeToOrder, Regular, Urgent
+    public string PlantCode { get; set; } = "HTMV_NINHBINH_1"; // Nhà máy sản xuất: HTMV_NINHBINH_1 (Nhà máy Hyundai Ninh Bình 1), HTMV_NINHBINH_2 (Nhà máy 2), TCV_PLANT (Nhà máy xe thương mại)
+    public string? PlantName { get; set; }              // Tên nhà máy sản xuất
+    public int TotalPlanQty { get; set; } = 0;          // Tổng số lượng xe kế hoạch đặt sản xuất trong đợt
+    public int TotalProducedQty { get; set; } = 0;      // Tổng số lượng xe thực tế đã xuất xưởng KCS
+    public DateTime? EstimatedCompletionDate { get; set; } // Ngày hoàn thành dự kiến của toàn bộ lô sản xuất
+    public string Status { get; set; } = "Draft";       // Draft → Submitted → Scheduled → InProduction → Completed (hoặc Cancelled)
+    public string? Remark { get; set; }                 // Ghi chú yêu cầu sản xuất
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ScheduledBy { get; set; }            // Kế hoạch viên nhà máy lập lịch sản xuất
+    public DateTime? ScheduledAt { get; set; }
+    public string? StartedBy { get; set; }              // Quản đốc phân xưởng đưa vào dây chuyền sản xuất
+    public DateTime? StartedAt { get; set; }
+    public string? CompletedBy { get; set; }            // Quản đốc KCS nghiệm thu xuất xưởng đóng lệnh
+    public DateTime? CompletedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết dòng sản phẩm trong Lệnh sản xuất (BizHTC.WorkOrder & BizHTC.MMSIntergration / MnfPl_OrderDtl / ProductionOrderLine): dòng xe Model, phiên bản Spec, mã màu sơn, số lượng kế hoạch tháng N0, dự kiến N+1..N+3, ngày ETA, công đoạn sản xuất và số lượng đã xuất xưởng KCS.</summary>
+public sealed class ProductionOrderLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ProductionOrderId { get; set; }
+    public string OrderNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;              // Thứ tự dòng sản xuất
+    public string Model { get; set; } = "";              // Dòng xe (SantaFe, Tucson, Accent, Creta, Grand i10, Custin, Palisade, Stargazer, Ioniq 5...)
+    public string SpecCode { get; set; } = "";          // Mã phiên bản xe (2.5T AWD Calligraphy, 2.0 AT Đặc Biệt, 1.5 AT Cao Cấp, EV 72.6kWh...)
+    public string? SpecDescription { get; set; }        // Mô tả chi tiết cấu hình kỹ thuật xe
+    public string ColorCode { get; set; } = "NWAC/Black"; // Mã màu sơn ngoại thất / nội thất
+    public string? ColorName { get; set; }              // Tên màu sắc (Trắng Ngọc Trai / Nội Thất Đen...)
+    public int PlanQty { get; set; } = 1;               // Số lượng xe kế hoạch sản xuất trong tháng N0
+    public int QtyMonthN1 { get; set; } = 0;            // Số lượng dự kiến tháng N+1
+    public int QtyMonthN2 { get; set; } = 0;            // Số lượng dự kiến tháng N+2
+    public int QtyMonthN3 { get; set; } = 0;            // Số lượng dự kiến tháng N+3
+    public int ProducedQty { get; set; } = 0;           // Số lượng xe thực tế đã hoàn thành xuất xưởng KCS
+    public DateTime? ETADate { get; set; }              // Ngày dự kiến hoàn thành xuất xưởng dòng xe
+    public string Stage { get; set; } = "Stamping";     // Công đoạn sản xuất hiện tại: Stamping (Dập thân vỏ), Body (Hàn khung xe), Paint (Sơn nhúng & tĩnh điện), Assembly (Lắp ráp hoàn thiện), FinalQC (Kiểm định KCS cuối dây chuyền), Finished (Đã xuất xưởng)
+    public string Status { get; set; } = "Pending";     // Pending → Scheduled → InProduction → Completed (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {
     public long Id { get; set; }
     public Guid OrgId { get; set; }
     public string Vin { get; set; } = "";
-    public string Kind { get; set; } = "";          // Created/Allocated/DeliveryOrder/Delivered/Recall...
+    public string Kind { get; set; } = "";          // Created/Allocated/DeliveryOrder/Delivered/Recall/Manufactured...
     public string? Note { get; set; }
     public DateTime At { get; set; } = DateTime.Now;
 }
+
+// ===== DTOs cho Lệnh sản xuất & Kế hoạch sản xuất nhà máy OEM (MnfPl_Order / ProductionOrder) =====
+
+public sealed record CreateProductionOrderDto(
+    string? OrderNo,
+    string? OrderNoUser,
+    string OrdMonth,
+    string? OrdType,
+    string? OrdCategoryType,
+    string? PlantCode,
+    string? PlantName,
+    DateTime? EstimatedCompletionDate,
+    string? Remark,
+    string? CreatedBy,
+    List<ProductionOrderItemInputDto>? Items
+);
+
+public sealed record ProductionOrderItemInputDto(
+    string Model,
+    string SpecCode,
+    string? SpecDescription,
+    string ColorCode,
+    string? ColorName,
+    int PlanQty,
+    int? QtyMonthN1,
+    int? QtyMonthN2,
+    int? QtyMonthN3,
+    DateTime? ETADate,
+    string? Stage,
+    string? Remark
+);
+
+public sealed record UpdateProductionOrderDto(
+    string? OrderNoUser,
+    string? OrdMonth,
+    string? OrdType,
+    string? OrdCategoryType,
+    string? PlantCode,
+    string? PlantName,
+    DateTime? EstimatedCompletionDate,
+    string? Remark
+);
+
+public sealed record ProductionOrderTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record ProduceVinDto(
+    string? Vin,
+    string? EngineNo,
+    int? ModelYear,
+    string? StorageCode,
+    string? Remark,
+    string? OperatorName
+);
+
+public sealed record UpdateProductionOrderLineDto(
+    string? Model,
+    string? SpecCode,
+    string? SpecDescription,
+    string? ColorCode,
+    string? ColorName,
+    int? PlanQty,
+    int? QtyMonthN1,
+    int? QtyMonthN2,
+    int? QtyMonthN3,
+    DateTime? ETADate,
+    string? Stage,
+    string? Status,
+    string? Remark
+);
+
+public sealed record ProductionSummaryDto(
+    int TotalOrders,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalScheduled,
+    int TotalInProduction,
+    int TotalCompleted,
+    int TotalCancelled,
+    int TotalPlanQty,
+    int TotalProducedQty,
+    decimal CompletionRate,
+    List<ProductionModelStatsDto> ByModel,
+    List<ProductionPlantStatsDto> ByPlant
+);
+
+public sealed record ProductionModelStatsDto(string Model, int PlanQty, int ProducedQty, decimal Rate);
+public sealed record ProductionPlantStatsDto(string PlantCode, string PlantName, int OrderCount, int PlanQty, int ProducedQty);
+
+public sealed record VehicleProductionInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    int? ModelYear,
+    string? StorageCode,
+    string? LastWorkOrderNo,
+    DateTime? ManufacturedDate,
+    string? PlantCode,
+    ProductionOrder? ProductionOrder,
+    ProductionOrderLine? ProductionOrderLine
+);

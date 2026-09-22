@@ -1886,6 +1886,20 @@ public interface IVehicleService
     Task<object?> CancelCustomerCareAsync(string careNo, CancelCustomerCareDto dto);
     Task<object?> GetVehicleCareHistoryAsync(string vin);
     Task<object> GetCustomerCareSummaryAsync(string? dealerCode, DateTime? fromDate, DateTime? toDate);
+
+    // Lệnh sản xuất & Kế hoạch sản xuất nhà máy OEM (BizHTC.WorkOrder & BizHTC.MMSIntergration / MnfPl_Order / ProductionOrder)
+    Task<object> CreateProductionOrderAsync(CreateProductionOrderDto dto);
+    Task<object> ListProductionOrdersAsync(string? status, string? plantCode, string? ordMonth, string? ordType, string? model, string? orderNo);
+    Task<object?> GetProductionOrderAsync(string orderNo);
+    Task<object?> UpdateProductionOrderAsync(string orderNo, UpdateProductionOrderDto dto);
+    Task<object?> ProductionOrderTransitionAsync(string orderNo, string action, ProductionOrderTransitionDto? dto);
+    Task<object?> ProduceVinAsync(string orderNo, long lineId, ProduceVinDto dto);
+    Task<object?> AddProductionOrderLinesAsync(string orderNo, List<ProductionOrderItemInputDto> items);
+    Task<object?> UpdateProductionOrderLineAsync(string orderNo, long lineId, UpdateProductionOrderLineDto dto);
+    Task<object?> RemoveProductionOrderLineAsync(string orderNo, long lineId);
+    Task<object> GetProductionSummaryAsync(string? plantCode, string? ordMonth);
+    Task<object?> GetVehicleProductionInfoAsync(string vin);
+    Task<object?> GetVehicleProductionHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -22163,6 +22177,748 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             ratingDistribution,
             byCareType,
             byDealer
+        };
+    }
+
+    // ===== Lệnh sản xuất & Kế hoạch sản xuất nhà máy OEM (BizHTC.WorkOrder & BizHTC.MMSIntergration / MnfPl_Order / ProductionOrder) =====
+
+    public async Task<object> CreateProductionOrderAsync(CreateProductionOrderDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.OrdMonth))
+            throw new InvalidOperationException("Cần cung cấp tháng sản xuất kế hoạch OrdMonth (YYYY-MM).");
+
+        var ordMonth = dto.OrdMonth.Trim();
+        var plantCode = !string.IsNullOrWhiteSpace(dto.PlantCode) ? dto.PlantCode.Trim().ToUpperInvariant() : "HTMV_NINHBINH_1";
+        var plantName = dto.PlantName?.Trim() ?? plantCode switch
+        {
+            "HTMV_NINHBINH_1" => "Nhà máy Sản xuất Ô tô Hyundai Ninh Bình số 1 (HTMV 1)",
+            "HTMV_NINHBINH_2" => "Nhà máy Sản xuất Ô tô Hyundai Ninh Bình số 2 (HTMV 2)",
+            "TCV_PLANT" => "Nhà máy Sản xuất Xe Thương mại Hyundai Thành Công (TCV)",
+            _ => $"Nhà máy {plantCode}"
+        };
+
+        var orderNo = string.IsNullOrWhiteSpace(dto.OrderNo)
+            ? "PO-" + ordMonth.Replace("-", "") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()
+            : dto.OrderNo.Trim().ToUpperInvariant();
+
+        if (await db.ProductionOrders.AnyAsync(x => x.OrgId == Org && x.OrderNo == orderNo))
+            throw new InvalidOperationException($"Mã lệnh sản xuất {orderNo} đã tồn tại.");
+
+        var items = dto.Items ?? new List<ProductionOrderItemInputDto>();
+        var totalPlanQty = items.Sum(i => Math.Max(1, i.PlanQty));
+
+        var order = new ProductionOrder
+        {
+            OrgId = Org,
+            OrderNo = orderNo,
+            OrderNoUser = dto.OrderNoUser?.Trim(),
+            OrdMonth = ordMonth,
+            OrdType = !string.IsNullOrWhiteSpace(dto.OrdType) ? dto.OrdType.Trim().ToUpperInvariant() : "MTO",
+            OrdCategoryType = !string.IsNullOrWhiteSpace(dto.OrdCategoryType) ? dto.OrdCategoryType.Trim() : "MakeToOrder",
+            PlantCode = plantCode,
+            PlantName = plantName,
+            TotalPlanQty = totalPlanQty,
+            TotalProducedQty = 0,
+            EstimatedCompletionDate = dto.EstimatedCompletionDate ?? DateTime.Now.AddDays(30),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "OEM.PlanDept",
+            CreatedAt = DateTime.Now
+        };
+
+        db.ProductionOrders.Add(order);
+        await db.SaveChangesAsync();
+
+        int lineIdx = 1;
+        foreach (var it in items)
+        {
+            var line = new ProductionOrderLine
+            {
+                OrgId = Org,
+                ProductionOrderId = order.Id,
+                OrderNo = orderNo,
+                LineIndex = lineIdx++,
+                Model = it.Model.Trim(),
+                SpecCode = it.SpecCode.Trim(),
+                SpecDescription = it.SpecDescription?.Trim(),
+                ColorCode = it.ColorCode.Trim(),
+                ColorName = it.ColorName?.Trim() ?? it.ColorCode.Trim(),
+                PlanQty = Math.Max(1, it.PlanQty),
+                QtyMonthN1 = it.QtyMonthN1 ?? 0,
+                QtyMonthN2 = it.QtyMonthN2 ?? 0,
+                QtyMonthN3 = it.QtyMonthN3 ?? 0,
+                ProducedQty = 0,
+                ETADate = it.ETADate ?? order.EstimatedCompletionDate,
+                Stage = !string.IsNullOrWhiteSpace(it.Stage) ? it.Stage.Trim() : "Stamping",
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+            db.ProductionOrderLines.Add(line);
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            order.Id,
+            order.OrderNo,
+            order.OrderNoUser,
+            order.OrdMonth,
+            order.OrdType,
+            order.OrdCategoryType,
+            order.PlantCode,
+            order.PlantName,
+            order.TotalPlanQty,
+            order.TotalProducedQty,
+            order.EstimatedCompletionDate,
+            order.Status,
+            order.Remark,
+            order.CreatedBy,
+            order.CreatedAt,
+            itemsCount = items.Count
+        };
+    }
+
+    public async Task<object> ListProductionOrdersAsync(string? status, string? plantCode, string? ordMonth, string? ordType, string? model, string? orderNo)
+    {
+        var q = db.ProductionOrders.Where(x => x.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(plantCode)) q = q.Where(x => x.PlantCode == plantCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(ordMonth)) q = q.Where(x => x.OrdMonth == ordMonth.Trim());
+        if (!string.IsNullOrWhiteSpace(ordType)) q = q.Where(x => x.OrdType == ordType.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(orderNo)) q = q.Where(x => x.OrderNo.Contains(orderNo.Trim().ToUpperInvariant()) || (x.OrderNoUser != null && x.OrderNoUser.Contains(orderNo.Trim())));
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var cleanModel = model.Trim();
+            var matchedOrderNos = await db.ProductionOrderLines
+                .Where(l => l.OrgId == Org && l.Model.Contains(cleanModel))
+                .Select(l => l.OrderNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(x => matchedOrderNos.Contains(x.OrderNo));
+        }
+
+        var orders = await q.OrderByDescending(x => x.CreatedAt).ToListAsync();
+        var orderIds = orders.Select(x => x.Id).ToList();
+        var lines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && orderIds.Contains(l.ProductionOrderId)).ToListAsync();
+
+        return orders.Select(o =>
+        {
+            var oLines = lines.Where(l => l.ProductionOrderId == o.Id).ToList();
+            var completionRate = o.TotalPlanQty > 0 ? Math.Round((decimal)o.TotalProducedQty / o.TotalPlanQty * 100, 1) : 0;
+            return new
+            {
+                o.Id,
+                o.OrderNo,
+                o.OrderNoUser,
+                o.OrdMonth,
+                o.OrdType,
+                o.OrdCategoryType,
+                o.PlantCode,
+                o.PlantName,
+                o.TotalPlanQty,
+                o.TotalProducedQty,
+                completionRatePercent = completionRate,
+                o.EstimatedCompletionDate,
+                o.Status,
+                o.Remark,
+                o.CreatedBy,
+                o.CreatedAt,
+                o.ScheduledBy,
+                o.ScheduledAt,
+                o.StartedBy,
+                o.StartedAt,
+                o.CompletedBy,
+                o.CompletedAt,
+                o.CancelledBy,
+                o.CancelledAt,
+                o.CancelReason,
+                lines = oLines.Select(l => new
+                {
+                    l.Id,
+                    l.LineIndex,
+                    l.Model,
+                    l.SpecCode,
+                    l.SpecDescription,
+                    l.ColorCode,
+                    l.ColorName,
+                    l.PlanQty,
+                    l.QtyMonthN1,
+                    l.QtyMonthN2,
+                    l.QtyMonthN3,
+                    l.ProducedQty,
+                    l.ETADate,
+                    l.Stage,
+                    l.Status,
+                    l.Remark
+                })
+            };
+        });
+    }
+
+    public async Task<object?> GetProductionOrderAsync(string orderNo)
+    {
+        orderNo = orderNo.Trim().ToUpperInvariant();
+        var order = await db.ProductionOrders.FirstOrDefaultAsync(x => x.OrgId == Org && x.OrderNo == orderNo);
+        if (order == null) return null;
+
+        var lines = await db.ProductionOrderLines
+            .Where(l => l.OrgId == Org && l.ProductionOrderId == order.Id)
+            .OrderBy(l => l.LineIndex)
+            .ToListAsync();
+
+        var producedVehicles = await db.Vehicles
+            .Where(v => v.OrgId == Org && v.LastWorkOrderNo == order.OrderNo)
+            .OrderByDescending(v => v.ManufacturedDate ?? v.CreatedAt)
+            .Select(v => new
+            {
+                v.Vin,
+                v.Model,
+                v.EngineNo,
+                v.Color,
+                v.ModelYear,
+                status = v.Status.ToString(),
+                v.StorageCode,
+                v.ManufacturedDate,
+                v.PlantCode
+            })
+            .ToListAsync();
+
+        var completionRate = order.TotalPlanQty > 0 ? Math.Round((decimal)order.TotalProducedQty / order.TotalPlanQty * 100, 1) : 0;
+
+        return new
+        {
+            order.Id,
+            order.OrderNo,
+            order.OrderNoUser,
+            order.OrdMonth,
+            order.OrdType,
+            order.OrdCategoryType,
+            order.PlantCode,
+            order.PlantName,
+            order.TotalPlanQty,
+            order.TotalProducedQty,
+            completionRatePercent = completionRate,
+            order.EstimatedCompletionDate,
+            order.Status,
+            order.Remark,
+            order.CreatedBy,
+            order.CreatedAt,
+            order.ScheduledBy,
+            order.ScheduledAt,
+            order.StartedBy,
+            order.StartedAt,
+            order.CompletedBy,
+            order.CompletedAt,
+            order.CancelledBy,
+            order.CancelledAt,
+            order.CancelReason,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.LineIndex,
+                l.Model,
+                l.SpecCode,
+                l.SpecDescription,
+                l.ColorCode,
+                l.ColorName,
+                l.PlanQty,
+                l.QtyMonthN1,
+                l.QtyMonthN2,
+                l.QtyMonthN3,
+                l.ProducedQty,
+                l.ETADate,
+                l.Stage,
+                l.Status,
+                l.Remark
+            }),
+            producedVehicles
+        };
+    }
+
+    public async Task<object?> UpdateProductionOrderAsync(string orderNo, UpdateProductionOrderDto dto)
+    {
+        orderNo = orderNo.Trim().ToUpperInvariant();
+        var order = await db.ProductionOrders.FirstOrDefaultAsync(x => x.OrgId == Org && x.OrderNo == orderNo);
+        if (order == null) return null;
+        if (order.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sản xuất {orderNo} đang ở trạng thái {order.Status}, không thể chỉnh sửa.");
+
+        if (dto.OrderNoUser != null) order.OrderNoUser = dto.OrderNoUser.Trim();
+        if (dto.OrdMonth != null) order.OrdMonth = dto.OrdMonth.Trim();
+        if (dto.OrdType != null) order.OrdType = dto.OrdType.Trim().ToUpperInvariant();
+        if (dto.OrdCategoryType != null) order.OrdCategoryType = dto.OrdCategoryType.Trim();
+        if (dto.PlantCode != null)
+        {
+            order.PlantCode = dto.PlantCode.Trim().ToUpperInvariant();
+            order.PlantName = dto.PlantName?.Trim() ?? order.PlantCode switch
+            {
+                "HTMV_NINHBINH_1" => "Nhà máy Sản xuất Ô tô Hyundai Ninh Bình số 1 (HTMV 1)",
+                "HTMV_NINHBINH_2" => "Nhà máy Sản xuất Ô tô Hyundai Ninh Bình số 2 (HTMV 2)",
+                "TCV_PLANT" => "Nhà máy Sản xuất Xe Thương mại Hyundai Thành Công (TCV)",
+                _ => $"Nhà máy {order.PlantCode}"
+            };
+        }
+        else if (dto.PlantName != null) order.PlantName = dto.PlantName.Trim();
+
+        if (dto.EstimatedCompletionDate.HasValue) order.EstimatedCompletionDate = dto.EstimatedCompletionDate.Value;
+        if (dto.Remark != null) order.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return await GetProductionOrderAsync(orderNo);
+    }
+
+    public async Task<object?> ProductionOrderTransitionAsync(string orderNo, string action, ProductionOrderTransitionDto? dto)
+    {
+        orderNo = orderNo.Trim().ToUpperInvariant();
+        action = action.Trim().ToLowerInvariant();
+
+        var order = await db.ProductionOrders.FirstOrDefaultAsync(x => x.OrgId == Org && x.OrderNo == orderNo);
+        if (order == null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "HTMV.Planner";
+
+        switch (action)
+        {
+            case "submit":
+                if (order.Status != "Draft")
+                    throw new InvalidOperationException($"Chỉ có thể submit đơn hàng ở trạng thái Draft (hiện tại: {order.Status}).");
+                order.Status = "Submitted";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) order.Remark = (order.Remark + " | " + dto.Note).Trim(' ', '|');
+                break;
+
+            case "schedule":
+                if (order.Status is not ("Draft" or "Submitted"))
+                    throw new InvalidOperationException($"Chỉ có thể lập lịch cho đơn hàng Draft/Submitted (hiện tại: {order.Status}).");
+                order.Status = "Scheduled";
+                order.ScheduledBy = actor;
+                order.ScheduledAt = now;
+                var schLines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && l.ProductionOrderId == order.Id).ToListAsync();
+                foreach (var l in schLines)
+                {
+                    if (l.Status == "Pending") l.Status = "Scheduled";
+                }
+                break;
+
+            case "start" or "in-production" or "inprogress":
+                if (order.Status is not ("Scheduled" or "Submitted"))
+                    throw new InvalidOperationException($"Chỉ có thể đưa vào sản xuất đơn hàng Scheduled/Submitted (hiện tại: {order.Status}).");
+                order.Status = "InProduction";
+                order.StartedBy = actor;
+                order.StartedAt = now;
+                var prodLines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && l.ProductionOrderId == order.Id).ToListAsync();
+                foreach (var l in prodLines)
+                {
+                    if (l.Status is "Pending" or "Scheduled") l.Status = "InProduction";
+                }
+                break;
+
+            case "cancel":
+                if (order.Status is "Completed" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể hủy đơn hàng đã {order.Status}.");
+                order.Status = "Cancelled";
+                order.CancelledBy = actor;
+                order.CancelledAt = now;
+                order.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hủy lệnh sản xuất theo yêu cầu";
+                var cLines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && l.ProductionOrderId == order.Id).ToListAsync();
+                foreach (var l in cLines)
+                {
+                    if (l.Status != "Completed") l.Status = "Cancelled";
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động không hợp lệ: {action}");
+        }
+
+        await db.SaveChangesAsync();
+        return await GetProductionOrderAsync(orderNo);
+    }
+
+    public async Task<object?> ProduceVinAsync(string orderNo, long lineId, ProduceVinDto dto)
+    {
+        orderNo = orderNo.Trim().ToUpperInvariant();
+        var order = await db.ProductionOrders.FirstOrDefaultAsync(x => x.OrgId == Org && x.OrderNo == orderNo);
+        if (order == null) return null;
+        if (order.Status == "Cancelled")
+            throw new InvalidOperationException($"Lệnh sản xuất {orderNo} đã bị hủy, không thể xuất xưởng xe.");
+
+        var line = await db.ProductionOrderLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ProductionOrderId == order.Id && l.Id == lineId);
+        if (line == null) return null;
+        if (line.Status == "Cancelled")
+            throw new InvalidOperationException($"Dòng sản xuất {line.Model} - {line.SpecCode} đã bị hủy.");
+
+        // Sinh số khung VIN
+        var vin = string.IsNullOrWhiteSpace(dto.Vin)
+            ? $"VNM-HTMV-{line.Model.Replace(" ", "")[..Math.Min(4, line.Model.Replace(" ", "").Length)].ToUpperInvariant()}-{DateTime.Now:yyMMddHHmmss}-{line.ProducedQty + 1:00}"
+            : dto.Vin.Trim().ToUpperInvariant();
+
+        if (await db.Vehicles.AnyAsync(v => v.OrgId == Org && v.Vin == vin))
+            throw new InvalidOperationException($"Số khung VIN {vin} đã tồn tại trong hệ thống.");
+
+        var engineNo = !string.IsNullOrWhiteSpace(dto.EngineNo)
+            ? dto.EngineNo.Trim().ToUpperInvariant()
+            : $"ENG-{line.Model.Replace(" ", "")[..Math.Min(3, line.Model.Replace(" ", "").Length)].ToUpperInvariant()}-{DateTime.Now:yyMMddHHmmss}";
+
+        var modelYear = dto.ModelYear ?? order.CreatedAt.Year;
+        var storageCode = !string.IsNullOrWhiteSpace(dto.StorageCode)
+            ? dto.StorageCode.Trim().ToUpperInvariant()
+            : "KHO_NHA_MAY_NB";
+
+        var vehicle = new Vehicle
+        {
+            OrgId = Org,
+            Vin = vin,
+            Model = line.Model,
+            EngineNo = engineNo,
+            Color = line.ColorName ?? line.ColorCode,
+            ModelYear = modelYear,
+            StorageCode = storageCode,
+            Status = VehicleStatus.InStock,
+            TypeCB = "0",
+            LastWorkOrderNo = order.OrderNo,
+            ManufacturedDate = DateTime.Now,
+            PlantCode = order.PlantCode,
+            CreatedAt = DateTime.Now
+        };
+
+        db.Vehicles.Add(vehicle);
+
+        // Cập nhật số lượng sản xuất
+        line.ProducedQty += 1;
+        order.TotalProducedQty += 1;
+
+        if (order.Status is "Draft" or "Submitted" or "Scheduled")
+        {
+            order.Status = "InProduction";
+            if (order.StartedAt == null)
+            {
+                order.StartedAt = DateTime.Now;
+                order.StartedBy = dto.OperatorName?.Trim() ?? "KCS_HTMV";
+            }
+        }
+
+        if (line.ProducedQty >= line.PlanQty)
+        {
+            line.Status = "Completed";
+            line.Stage = "Finished";
+        }
+        else
+        {
+            line.Status = "InProduction";
+            line.Stage = "FinalQC";
+        }
+
+        // Kiểm tra toàn bộ order đã hoàn thành chưa
+        var allLines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && l.ProductionOrderId == order.Id).ToListAsync();
+        var allFinished = allLines.All(l => (l.Id == line.Id ? line.ProducedQty : l.ProducedQty) >= l.PlanQty || l.Status == "Cancelled");
+        if (allFinished && allLines.Any(l => l.Status != "Cancelled"))
+        {
+            order.Status = "Completed";
+            order.CompletedAt = DateTime.Now;
+            order.CompletedBy = dto.OperatorName?.Trim() ?? "KCS_HTMV";
+        }
+
+        Log(vin, "Manufactured",
+            $"{order.OrderNo} Xe đã hoàn thành sản xuất xuất xưởng KCS tại {order.PlantName ?? order.PlantCode} (Dòng xe: {line.Model}, Bản: {line.SpecCode}, Màu: {line.ColorName ?? line.ColorCode}). Nhập kho lưu bãi {storageCode}.");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            order.OrderNo,
+            lineId = line.Id,
+            line.Model,
+            line.SpecCode,
+            line.PlanQty,
+            line.ProducedQty,
+            lineStatus = line.Status,
+            orderStatus = order.Status,
+            orderTotalPlanQty = order.TotalPlanQty,
+            orderTotalProducedQty = order.TotalProducedQty,
+            vehicle = new
+            {
+                vehicle.Vin,
+                vehicle.Model,
+                vehicle.EngineNo,
+                vehicle.Color,
+                vehicle.ModelYear,
+                status = vehicle.Status.ToString(),
+                vehicle.StorageCode,
+                vehicle.ManufacturedDate,
+                vehicle.PlantCode,
+                vehicle.LastWorkOrderNo
+            }
+        };
+    }
+
+    public async Task<object?> AddProductionOrderLinesAsync(string orderNo, List<ProductionOrderItemInputDto> items)
+    {
+        orderNo = orderNo.Trim().ToUpperInvariant();
+        var order = await db.ProductionOrders.FirstOrDefaultAsync(x => x.OrgId == Org && x.OrderNo == orderNo);
+        if (order == null) return null;
+        if (order.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sản xuất {orderNo} đang ở trạng thái {order.Status}, không thể thêm dòng sản xuất.");
+
+        var existingLines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && l.ProductionOrderId == order.Id).ToListAsync();
+        int maxIndex = existingLines.Count > 0 ? existingLines.Max(l => l.LineIndex) : 0;
+
+        foreach (var it in items)
+        {
+            var line = new ProductionOrderLine
+            {
+                OrgId = Org,
+                ProductionOrderId = order.Id,
+                OrderNo = orderNo,
+                LineIndex = ++maxIndex,
+                Model = it.Model.Trim(),
+                SpecCode = it.SpecCode.Trim(),
+                SpecDescription = it.SpecDescription?.Trim(),
+                ColorCode = it.ColorCode.Trim(),
+                ColorName = it.ColorName?.Trim() ?? it.ColorCode.Trim(),
+                PlanQty = Math.Max(1, it.PlanQty),
+                QtyMonthN1 = it.QtyMonthN1 ?? 0,
+                QtyMonthN2 = it.QtyMonthN2 ?? 0,
+                QtyMonthN3 = it.QtyMonthN3 ?? 0,
+                ProducedQty = 0,
+                ETADate = it.ETADate ?? order.EstimatedCompletionDate,
+                Stage = !string.IsNullOrWhiteSpace(it.Stage) ? it.Stage.Trim() : "Stamping",
+                Status = order.Status == "Draft" ? "Pending" : order.Status == "Scheduled" ? "Scheduled" : "InProduction",
+                Remark = it.Remark?.Trim()
+            };
+            db.ProductionOrderLines.Add(line);
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && l.ProductionOrderId == order.Id).ToListAsync();
+        order.TotalPlanQty = allLines.Where(l => l.Status != "Cancelled").Sum(l => l.PlanQty);
+        await db.SaveChangesAsync();
+
+        return await GetProductionOrderAsync(orderNo);
+    }
+
+    public async Task<object?> UpdateProductionOrderLineAsync(string orderNo, long lineId, UpdateProductionOrderLineDto dto)
+    {
+        orderNo = orderNo.Trim().ToUpperInvariant();
+        var order = await db.ProductionOrders.FirstOrDefaultAsync(x => x.OrgId == Org && x.OrderNo == orderNo);
+        if (order == null) return null;
+        if (order.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sản xuất {orderNo} đang ở trạng thái {order.Status}, không thể chỉnh sửa dòng.");
+
+        var line = await db.ProductionOrderLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ProductionOrderId == order.Id && l.Id == lineId);
+        if (line == null) return null;
+
+        if (dto.Model != null) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (dto.SpecDescription != null) line.SpecDescription = dto.SpecDescription.Trim();
+        if (dto.ColorCode != null) line.ColorCode = dto.ColorCode.Trim();
+        if (dto.ColorName != null) line.ColorName = dto.ColorName.Trim();
+        if (dto.PlanQty.HasValue && dto.PlanQty.Value >= line.ProducedQty) line.PlanQty = dto.PlanQty.Value;
+        if (dto.QtyMonthN1.HasValue) line.QtyMonthN1 = dto.QtyMonthN1.Value;
+        if (dto.QtyMonthN2.HasValue) line.QtyMonthN2 = dto.QtyMonthN2.Value;
+        if (dto.QtyMonthN3.HasValue) line.QtyMonthN3 = dto.QtyMonthN3.Value;
+        if (dto.ETADate.HasValue) line.ETADate = dto.ETADate.Value;
+        if (dto.Stage != null) line.Stage = dto.Stage.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && l.ProductionOrderId == order.Id).ToListAsync();
+        order.TotalPlanQty = allLines.Where(l => l.Status != "Cancelled").Sum(l => l.PlanQty);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            line.Id,
+            line.OrderNo,
+            line.LineIndex,
+            line.Model,
+            line.SpecCode,
+            line.ColorCode,
+            line.ColorName,
+            line.PlanQty,
+            line.ProducedQty,
+            line.ETADate,
+            line.Stage,
+            line.Status,
+            line.Remark
+        };
+    }
+
+    public async Task<object?> RemoveProductionOrderLineAsync(string orderNo, long lineId)
+    {
+        orderNo = orderNo.Trim().ToUpperInvariant();
+        var order = await db.ProductionOrders.FirstOrDefaultAsync(x => x.OrgId == Org && x.OrderNo == orderNo);
+        if (order == null) return null;
+        if (order.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sản xuất {orderNo} đang ở trạng thái {order.Status}, không thể xóa dòng.");
+
+        var line = await db.ProductionOrderLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ProductionOrderId == order.Id && l.Id == lineId);
+        if (line == null) return null;
+        if (line.ProducedQty > 0)
+            throw new InvalidOperationException($"Không thể xóa dòng sản xuất đã xuất xưởng {line.ProducedQty} xe.");
+
+        db.ProductionOrderLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && l.ProductionOrderId == order.Id).ToListAsync();
+        order.TotalPlanQty = allLines.Where(l => l.Status != "Cancelled").Sum(l => l.PlanQty);
+        await db.SaveChangesAsync();
+
+        return new { success = true, deletedLineId = lineId, order.TotalPlanQty };
+    }
+
+    public async Task<object> GetProductionSummaryAsync(string? plantCode, string? ordMonth)
+    {
+        var qOrders = db.ProductionOrders.Where(x => x.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(plantCode)) qOrders = qOrders.Where(x => x.PlantCode == plantCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(ordMonth)) qOrders = qOrders.Where(x => x.OrdMonth == ordMonth.Trim());
+
+        var orders = await qOrders.ToListAsync();
+        var orderIds = orders.Select(x => x.Id).ToList();
+        var lines = await db.ProductionOrderLines.Where(l => l.OrgId == Org && orderIds.Contains(l.ProductionOrderId)).ToListAsync();
+
+        var totalOrders = orders.Count;
+        var totalDraft = orders.Count(x => x.Status == "Draft");
+        var totalSubmitted = orders.Count(x => x.Status == "Submitted");
+        var totalScheduled = orders.Count(x => x.Status == "Scheduled");
+        var totalInProduction = orders.Count(x => x.Status == "InProduction");
+        var totalCompleted = orders.Count(x => x.Status == "Completed");
+        var totalCancelled = orders.Count(x => x.Status == "Cancelled");
+
+        var totalPlanQty = lines.Where(l => l.Status != "Cancelled").Sum(l => l.PlanQty);
+        var totalProducedQty = lines.Sum(l => l.ProducedQty);
+        var completionRate = totalPlanQty > 0 ? Math.Round((decimal)totalProducedQty / totalPlanQty * 100, 1) : 0;
+
+        var byModel = lines.GroupBy(l => l.Model).Select(g =>
+        {
+            var pPlan = g.Where(x => x.Status != "Cancelled").Sum(x => x.PlanQty);
+            var pProd = g.Sum(x => x.ProducedQty);
+            var rate = pPlan > 0 ? Math.Round((decimal)pProd / pPlan * 100, 1) : 0;
+            return new
+            {
+                model = g.Key,
+                planQty = pPlan,
+                producedQty = pProd,
+                completionRatePercent = rate
+            };
+        }).OrderByDescending(x => x.planQty).ToList();
+
+        var byPlant = orders.GroupBy(o => o.PlantCode).Select(g =>
+        {
+            var pOrderIds = g.Select(o => o.Id).ToList();
+            var pLines = lines.Where(l => pOrderIds.Contains(l.ProductionOrderId)).ToList();
+            var pPlan = pLines.Where(x => x.Status != "Cancelled").Sum(x => x.PlanQty);
+            var pProd = pLines.Sum(x => x.ProducedQty);
+            return new
+            {
+                plantCode = g.Key,
+                plantName = g.First().PlantName ?? g.Key,
+                orderCount = g.Count(),
+                planQty = pPlan,
+                producedQty = pProd,
+                completionRatePercent = pPlan > 0 ? Math.Round((decimal)pProd / pPlan * 100, 1) : 0
+            };
+        }).ToList();
+
+        return new
+        {
+            totalOrders,
+            totalDraft,
+            totalSubmitted,
+            totalScheduled,
+            totalInProduction,
+            totalCompleted,
+            totalCancelled,
+            totalPlanQty,
+            totalProducedQty,
+            completionRatePercent = completionRate,
+            byModel,
+            byPlant
+        };
+    }
+
+    public async Task<object?> GetVehicleProductionInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle == null) return null;
+
+        ProductionOrder? order = null;
+        ProductionOrderLine? line = null;
+
+        if (!string.IsNullOrWhiteSpace(vehicle.LastWorkOrderNo))
+        {
+            order = await db.ProductionOrders.FirstOrDefaultAsync(o => o.OrgId == Org && o.OrderNo == vehicle.LastWorkOrderNo);
+            if (order != null)
+            {
+                line = await db.ProductionOrderLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ProductionOrderId == order.Id && l.Model == vehicle.Model);
+            }
+        }
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            vehicle.EngineNo,
+            vehicle.Color,
+            vehicle.ModelYear,
+            status = vehicle.Status.ToString(),
+            vehicle.StorageCode,
+            vehicle.LastWorkOrderNo,
+            vehicle.ManufacturedDate,
+            vehicle.PlantCode,
+            productionOrder = order == null ? null : new
+            {
+                order.OrderNo,
+                order.OrderNoUser,
+                order.OrdMonth,
+                order.OrdType,
+                order.OrdCategoryType,
+                order.PlantCode,
+                order.PlantName,
+                order.Status,
+                order.CreatedAt
+            },
+            productionOrderLine = line == null ? null : new
+            {
+                line.LineIndex,
+                line.Model,
+                line.SpecCode,
+                line.ColorCode,
+                line.ColorName,
+                line.PlanQty,
+                line.ProducedQty,
+                line.Stage,
+                line.Status
+            }
+        };
+    }
+
+    public async Task<object?> GetVehicleProductionHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle == null) return null;
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind == "Manufactured" || e.Kind == "Created"))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            vehicle.LastWorkOrderNo,
+            vehicle.ManufacturedDate,
+            vehicle.PlantCode,
+            history = events.Select(e => new { e.Id, e.Kind, e.Note, e.At })
         };
     }
 }

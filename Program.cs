@@ -2642,6 +2642,127 @@ app.MapGet("/api/vehicles/{vin}/care-history", async (string vin, IVehicleServic
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Lệnh sản xuất & Kế hoạch sản xuất ô tô tại Nhà máy OEM (BizHTC.WorkOrder & BizHTC.MMSIntergration / MnfPl_Order / ProductionOrder) =====
+
+app.MapPost("/api/production-orders", async (CreateProductionOrderDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.OrdMonth))
+        return Results.BadRequest(new { error = "Cần cung cấp tháng sản xuất kế hoạch OrdMonth (YYYY-MM)." });
+    try { return Results.Ok(await svc.CreateProductionOrderAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/production-orders", async (IVehicleService svc, string? status, string? plantCode, string? ordMonth, string? ordType, string? model, string? orderNo) =>
+    Results.Ok(await svc.ListProductionOrdersAsync(status, plantCode, ordMonth, ordType, model, orderNo))).RequireAuthorization();
+
+app.MapGet("/api/production-orders/summary", async (IVehicleService svc, string? plantCode, string? ordMonth) =>
+    Results.Ok(await svc.GetProductionSummaryAsync(plantCode, ordMonth))).RequireAuthorization();
+
+app.MapGet("/api/reports/production/summary", async (IVehicleService svc, string? plantCode, string? ordMonth) =>
+    Results.Ok(await svc.GetProductionSummaryAsync(plantCode, ordMonth))).RequireAuthorization();
+
+app.MapGet("/api/production-orders/{orderNo}", async (string orderNo, IVehicleService svc) =>
+{
+    var r = await svc.GetProductionOrderAsync(orderNo);
+    return r is null ? Results.NotFound(new { orderNo, error = "Không tìm thấy lệnh sản xuất." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/production-orders/{orderNo}", async (string orderNo, UpdateProductionOrderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateProductionOrderAsync(orderNo, dto);
+        return r is null ? Results.NotFound(new { orderNo, error = "Không tìm thấy lệnh sản xuất." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/production-orders/{orderNo}/update", async (string orderNo, UpdateProductionOrderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateProductionOrderAsync(orderNo, dto);
+        return r is null ? Results.NotFound(new { orderNo, error = "Không tìm thấy lệnh sản xuất." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/production-orders/{orderNo}/{action}", async (string orderNo, string action, ProductionOrderTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "schedule" or "start" or "in-production" or "inprogress" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|schedule|start|cancel" });
+    try
+    {
+        var r = await svc.ProductionOrderTransitionAsync(orderNo, action, dto);
+        return r is null ? Results.NotFound(new { orderNo, error = "Không tìm thấy lệnh sản xuất hoặc sai trạng thái." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/production-orders/{orderNo}/lines/{lineId:long}/produce-vin", async (string orderNo, long lineId, ProduceVinDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.ProduceVinAsync(orderNo, lineId, dto);
+        return r is null ? Results.NotFound(new { orderNo, lineId, error = "Không tìm thấy dòng sản xuất." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/production-orders/{orderNo}/lines", async (string orderNo, List<ProductionOrderItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách dòng sản phẩm để thêm vào đơn hàng." });
+    try
+    {
+        var r = await svc.AddProductionOrderLinesAsync(orderNo, items);
+        return r is null ? Results.NotFound(new { orderNo, error = "Không tìm thấy lệnh sản xuất." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/production-orders/{orderNo}/lines/{lineId:long}/update", async (string orderNo, long lineId, UpdateProductionOrderLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateProductionOrderLineAsync(orderNo, lineId, dto);
+        return r is null ? Results.NotFound(new { orderNo, lineId, error = "Không tìm thấy dòng sản xuất." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/production-orders/{orderNo}/lines/{lineId:long}", async (string orderNo, long lineId, UpdateProductionOrderLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateProductionOrderLineAsync(orderNo, lineId, dto);
+        return r is null ? Results.NotFound(new { orderNo, lineId, error = "Không tìm thấy dòng sản xuất." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/production-orders/{orderNo}/lines/{lineId:long}", async (string orderNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveProductionOrderLineAsync(orderNo, lineId);
+        return r is null ? Results.NotFound(new { orderNo, lineId, error = "Không tìm thấy dòng sản xuất hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/production-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleProductionInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/production-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleProductionHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

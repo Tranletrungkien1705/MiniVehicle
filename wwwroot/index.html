@@ -172,6 +172,14 @@
 <li><code>GET /api/customer-cares/summary</code> &amp; <code>GET /api/reports/customer-cares/summary</code> — báo cáo tổng hợp chỉ số CSI, tỷ lệ hài lòng CSAT %, điểm NPS, phân bổ đánh giá sao và tỷ lệ hoàn tất theo đại lý &amp; loại chăm sóc</li>
 <li><code>PUT /api/customer-cares/{careNo}</code> &amp; <code>POST /api/customer-cares/{careNo}/update</code> — cập nhật thông tin khách hàng, phản hồi, điểm đánh giá và phương án xử lý</li>
 <li><code>GET /api/vehicles/{vin}/customer-cares</code> &amp; <code>GET /api/vehicles/{vin}/customer-care-history</code> &amp; <code>GET /api/vehicles/{vin}/care-history</code> — tra cứu toàn bộ lịch sử các lần chăm sóc khách hàng, điểm CSI và khảo sát hài lòng của số khung VIN</li>
+<li><code>POST /api/production-orders</code> &amp; <code>/api/production-orders/{orderNo}/{action}</code> — tạo, nộp, lập lịch, đưa vào dây chuyền sản xuất &amp; hủy Lệnh sản xuất / Đơn đặt hàng sản xuất xe ô tô tại Nhà máy OEM HTMV Ninh Bình (BizHTC.WorkOrder &amp; BizHTC.MMSIntergration / MnfPl_Order / ProductionOrder: submit, schedule, start, cancel)</li>
+<li><code>GET /api/production-orders?status=&amp;plantCode=&amp;ordMonth=&amp;ordType=&amp;model=&amp;orderNo=</code> — tra cứu danh sách lệnh sản xuất xe ô tô nhà máy OEM</li>
+<li><code>GET /api/production-orders/summary</code> &amp; <code>GET /api/reports/production/summary</code> — báo cáo tổng hợp kế hoạch sản xuất, tỷ lệ hoàn thành xuất xưởng (Completion Rate %), phân bổ theo dòng xe model và nhà máy HTMV 1/2</li>
+<li><code>PUT /api/production-orders/{orderNo}</code> &amp; <code>POST /api/production-orders/{orderNo}/update</code> — cập nhật thông tin chung đơn hàng sản xuất</li>
+<li><code>POST /api/production-orders/{orderNo}/lines/{lineId}/produce-vin</code> — nghiệm thu xuất xưởng KCS xe ô tô từ dây chuyền (tự động tạo hồ sơ số khung VIN mới vào kho InStock, gán ModelYear, EngineNo, StorageCode và ghi nhận audit trail)</li>
+<li><code>POST /api/production-orders/{orderNo}/lines</code> &amp; <code>DELETE /api/production-orders/{orderNo}/lines/{lineId}</code> — thêm hoặc xóa dòng sản phẩm trong lệnh sản xuất</li>
+<li><code>POST /api/production-orders/{orderNo}/lines/{lineId}/update</code> &amp; <code>PUT /api/production-orders/{orderNo}/lines/{lineId}</code> — cập nhật số lượng kế hoạch, ngày ETA, công đoạn sản xuất (Stamping, Body, Paint, Assembly, FinalQC, Finished) và màu sắc theo dòng sản phẩm</li>
+<li><code>GET /api/vehicles/{vin}/production-info</code> &amp; <code>GET /api/vehicles/{vin}/production-history</code> — tra cứu nguồn gốc xuất xưởng, lệnh sản xuất và nhà máy lắp ráp của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

@@ -2606,6 +2606,164 @@ public static class Seeder
                 v2Care.CareCount = 1;
             }
         }
+
+        if (!await db.ProductionOrders.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var po1 = new ProductionOrder
+            {
+                OrgId = org,
+                OrderNo = "PO-202603-0001",
+                OrderNoUser = "SX/2026/03/HTMV1-01",
+                OrdMonth = "2026-03",
+                OrdType = "MTO",
+                OrdCategoryType = "MakeToOrder",
+                PlantCode = "HTMV_NINHBINH_1",
+                PlantName = "Nhà máy Sản xuất Ô tô Hyundai Ninh Bình số 1 (HTMV 1)",
+                TotalPlanQty = 5,
+                TotalProducedQty = 2,
+                EstimatedCompletionDate = DateTime.Now.AddDays(20),
+                Status = "InProduction",
+                Remark = "Kế hoạch sản xuất dòng xe Accent 1.4 và Creta 1.5 tháng 03/2026",
+                CreatedBy = "plan.oem",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ScheduledBy = "HTMV.Planner.NguyenVanTuan",
+                ScheduledAt = DateTime.Now.AddDays(-9),
+                StartedBy = "QuanDocXuong.LeVanHung",
+                StartedAt = DateTime.Now.AddDays(-7)
+            };
+            db.ProductionOrders.Add(po1);
+            await db.SaveChangesAsync();
+
+            db.ProductionOrderLines.AddRange(
+                new ProductionOrderLine
+                {
+                    OrgId = org,
+                    ProductionOrderId = po1.Id,
+                    OrderNo = po1.OrderNo,
+                    LineIndex = 1,
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    SpecDescription = "Động cơ Kappa 1.4L MPI, Hộp số tự động 6 cấp, Cửa sổ trời, Màn hình AVN 8 inch",
+                    ColorCode = "NWAC/Black",
+                    ColorName = "Trắng Ngọc Trai / Nội thất Đen",
+                    PlanQty = 3,
+                    QtyMonthN1 = 4,
+                    QtyMonthN2 = 5,
+                    QtyMonthN3 = 5,
+                    ProducedQty = 1,
+                    ETADate = DateTime.Now.AddDays(10),
+                    Stage = "FinalQC",
+                    Status = "InProduction",
+                    Remark = "Đã xuất xưởng 1 xe DEMOVIN00000001"
+                },
+                new ProductionOrderLine
+                {
+                    OrgId = org,
+                    ProductionOrderId = po1.Id,
+                    OrderNo = po1.OrderNo,
+                    LineIndex = 2,
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    SpecDescription = "Động cơ Smartstream G1.5, Hộp số iVT, Gói an toàn Hyundai SmartSense, Loa Bose",
+                    ColorCode = "SAW/Black",
+                    ColorName = "Đen Phantom / Nội thất Đen",
+                    PlanQty = 2,
+                    QtyMonthN1 = 3,
+                    QtyMonthN2 = 4,
+                    QtyMonthN3 = 4,
+                    ProducedQty = 1,
+                    ETADate = DateTime.Now.AddDays(15),
+                    Stage = "FinalQC",
+                    Status = "InProduction",
+                    Remark = "Đã xuất xưởng 1 xe DEMOVIN00000002"
+                }
+            );
+
+            var po2 = new ProductionOrder
+            {
+                OrgId = org,
+                OrderNo = "PO-202603-0002",
+                OrderNoUser = "SX/2026/03/HTMV2-02",
+                OrdMonth = "2026-03",
+                OrdType = "MTS",
+                OrdCategoryType = "Regular",
+                PlantCode = "HTMV_NINHBINH_2",
+                PlantName = "Nhà máy Sản xuất Ô tô Hyundai Ninh Bình số 2 (HTMV 2)",
+                TotalPlanQty = 4,
+                TotalProducedQty = 0,
+                EstimatedCompletionDate = DateTime.Now.AddDays(25),
+                Status = "Scheduled",
+                Remark = "Kế hoạch sản xuất xe SUV SantaFe & Tucson thế hệ mới",
+                CreatedBy = "plan.oem",
+                CreatedAt = DateTime.Now.AddDays(-5),
+                ScheduledBy = "HTMV.Planner.TranVanHung",
+                ScheduledAt = DateTime.Now.AddDays(-4)
+            };
+            db.ProductionOrders.Add(po2);
+            await db.SaveChangesAsync();
+
+            db.ProductionOrderLines.AddRange(
+                new ProductionOrderLine
+                {
+                    OrgId = org,
+                    ProductionOrderId = po2.Id,
+                    OrderNo = po2.OrderNo,
+                    LineIndex = 1,
+                    Model = "SantaFe 2.5T AWD",
+                    SpecCode = "2.5T Calligraphy 6 chỗ",
+                    SpecDescription = "Động cơ Smartstream 2.5 T-GDI 281 mã lực, Hộp số 8DCT, Dẫn động HTRAC",
+                    ColorCode = "R2P/Brown",
+                    ColorName = "Đỏ Đô / Da Nappa Nâu Cognac",
+                    PlanQty = 2,
+                    QtyMonthN1 = 3,
+                    QtyMonthN2 = 3,
+                    QtyMonthN3 = 4,
+                    ProducedQty = 0,
+                    ETADate = DateTime.Now.AddDays(22),
+                    Stage = "Body",
+                    Status = "Scheduled",
+                    Remark = "Chuẩn bị dập thân vỏ và hàn khung"
+                },
+                new ProductionOrderLine
+                {
+                    OrgId = org,
+                    ProductionOrderId = po2.Id,
+                    OrderNo = po2.OrderNo,
+                    LineIndex = 2,
+                    Model = "Tucson 1.6T HTRAC",
+                    SpecCode = "1.6 Turbo AWD",
+                    SpecDescription = "Động cơ Smartstream 1.6 T-GDI, Cụm màn hình cong Panoramic 12.3 inch",
+                    ColorCode = "T2X/Black",
+                    ColorName = "Xám Kim Loại / Nội thất Đen",
+                    PlanQty = 2,
+                    QtyMonthN1 = 3,
+                    QtyMonthN2 = 3,
+                    QtyMonthN3 = 3,
+                    ProducedQty = 0,
+                    ETADate = DateTime.Now.AddDays(25),
+                    Stage = "Stamping",
+                    Status = "Scheduled",
+                    Remark = "Chuẩn bị dập linh kiện thân vỏ"
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.LastWorkOrderNo = po1.OrderNo;
+                v1.ManufacturedDate = DateTime.Now.AddDays(-7);
+                v1.PlantCode = po1.PlantCode;
+            }
+
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null)
+            {
+                v2.LastWorkOrderNo = po1.OrderNo;
+                v2.ManufacturedDate = DateTime.Now.AddDays(-6);
+                v2.PlantCode = po1.PlantCode;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -2745,7 +2903,12 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCareType\" text NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCsiScore\" numeric NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"CareCount\" integer NOT NULL DEFAULT 0",
-            "CREATE TABLE IF NOT EXISTS public.\"CustomerCares\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CareNo\" text NOT NULL DEFAULT '', \"CareNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"PlateNo\" text NULL, \"Model\" text NULL, \"EngineNo\" text NULL, \"CustomerName\" text NULL, \"CustomerPhone\" text NULL, \"CustomerEmail\" text NULL, \"CustomerAddress\" text NULL, \"CareType\" text NOT NULL DEFAULT 'FollowUp72h', \"ContactMethod\" text NOT NULL DEFAULT 'PhoneCall', \"RoNo\" text NULL, \"DoNo\" text NULL, \"OdoKm\" integer NULL, \"ServiceDate\" timestamp NULL, \"ContactDate\" timestamp NULL, \"NextCareDate\" timestamp NULL, \"CallAttempts\" integer NOT NULL DEFAULT 1, \"CareStaff\" text NULL, \"ServiceAdvisor\" text NULL, \"ScoreOverall\" numeric NOT NULL DEFAULT 5.0, \"ScoreQuality\" numeric NOT NULL DEFAULT 5.0, \"ScoreAdvisor\" numeric NOT NULL DEFAULT 5.0, \"ScoreFacility\" numeric NOT NULL DEFAULT 5.0, \"IsProblemSolved\" boolean NOT NULL DEFAULT true, \"NpsScore\" integer NOT NULL DEFAULT 10, \"CustomerFeedback\" text NULL, \"RemedyAction\" text NULL, \"IsResolved\" boolean NOT NULL DEFAULT true, \"Status\" text NOT NULL DEFAULT 'Pending', \"EscalatedTo\" text NULL, \"EscalatedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())"
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastWorkOrderNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"ManufacturedDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PlantCode\" text NULL",
+            "CREATE TABLE IF NOT EXISTS public.\"CustomerCares\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CareNo\" text NOT NULL DEFAULT '', \"CareNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"PlateNo\" text NULL, \"Model\" text NULL, \"EngineNo\" text NULL, \"CustomerName\" text NULL, \"CustomerPhone\" text NULL, \"CustomerEmail\" text NULL, \"CustomerAddress\" text NULL, \"CareType\" text NOT NULL DEFAULT 'FollowUp72h', \"ContactMethod\" text NOT NULL DEFAULT 'PhoneCall', \"RoNo\" text NULL, \"DoNo\" text NULL, \"OdoKm\" integer NULL, \"ServiceDate\" timestamp NULL, \"ContactDate\" timestamp NULL, \"NextCareDate\" timestamp NULL, \"CallAttempts\" integer NOT NULL DEFAULT 1, \"CareStaff\" text NULL, \"ServiceAdvisor\" text NULL, \"ScoreOverall\" numeric NOT NULL DEFAULT 5.0, \"ScoreQuality\" numeric NOT NULL DEFAULT 5.0, \"ScoreAdvisor\" numeric NOT NULL DEFAULT 5.0, \"ScoreFacility\" numeric NOT NULL DEFAULT 5.0, \"IsProblemSolved\" boolean NOT NULL DEFAULT true, \"NpsScore\" integer NOT NULL DEFAULT 10, \"CustomerFeedback\" text NULL, \"RemedyAction\" text NULL, \"IsResolved\" boolean NOT NULL DEFAULT true, \"Status\" text NOT NULL DEFAULT 'Pending', \"EscalatedTo\" text NULL, \"EscalatedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS public.\"ProductionOrders\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"OrderNo\" text NOT NULL DEFAULT '', \"OrderNoUser\" text NULL, \"OrdMonth\" text NOT NULL DEFAULT '', \"OrdType\" text NOT NULL DEFAULT 'MTO', \"OrdCategoryType\" text NOT NULL DEFAULT 'MakeToOrder', \"PlantCode\" text NOT NULL DEFAULT 'HTMV_NINHBINH_1', \"PlantName\" text NULL, \"TotalPlanQty\" integer NOT NULL DEFAULT 0, \"TotalProducedQty\" integer NOT NULL DEFAULT 0, \"EstimatedCompletionDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ScheduledBy\" text NULL, \"ScheduledAt\" timestamp NULL, \"StartedBy\" text NULL, \"StartedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ProductionOrderLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ProductionOrderId\" bigint NOT NULL, \"OrderNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT '', \"ColorName\" text NULL, \"PlanQty\" integer NOT NULL DEFAULT 1, \"QtyMonthN1\" integer NOT NULL DEFAULT 0, \"QtyMonthN2\" integer NOT NULL DEFAULT 0, \"QtyMonthN3\" integer NOT NULL DEFAULT 0, \"ProducedQty\" integer NOT NULL DEFAULT 0, \"ETADate\" timestamp NULL, \"Stage\" text NOT NULL DEFAULT 'Stamping', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }
