@@ -62,6 +62,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<ContractCancelLine> ContractCancelLines => Set<ContractCancelLine>();
     public DbSet<CarColorChange> CarColorChanges => Set<CarColorChange>();
     public DbSet<CarColorChangeLine> CarColorChangeLines => Set<CarColorChangeLine>();
+    public DbSet<BankBillMinutes> BankBillMinutes => Set<BankBillMinutes>();
+    public DbSet<BankBillMinutesLine> BankBillMinutesLines => Set<BankBillMinutesLine>();
+    public DbSet<GuaranteeClaim> GuaranteeClaims => Set<GuaranteeClaim>();
+    public DbSet<GuaranteeClaimLine> GuaranteeClaimLines => Set<GuaranteeClaimLine>();
+    public DbSet<ContractOversea> ContractOverseas => Set<ContractOversea>();
+    public DbSet<ContractOverseaLine> ContractOverseaLines => Set<ContractOverseaLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -93,5 +99,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<GuaranteeExtension>().HasIndex(x => new { x.OrgId, x.GrtClaimExtNo }).IsUnique();
         b.Entity<ContractCancel>().HasIndex(x => new { x.OrgId, x.ContractCNo }).IsUnique();
         b.Entity<CarColorChange>().HasIndex(x => new { x.OrgId, x.ChangeNo }).IsUnique();
+        b.Entity<BankBillMinutes>().HasIndex(x => new { x.OrgId, x.BankBillMnNo }).IsUnique();
+        b.Entity<GuaranteeClaim>().HasIndex(x => new { x.OrgId, x.ClaimNo }).IsUnique();
+        b.Entity<ContractOversea>().HasIndex(x => new { x.OrgId, x.ContractNo }).IsUnique();
     }
 }

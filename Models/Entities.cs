@@ -43,10 +43,14 @@ public sealed class Vehicle
     public string TypeCB { get; set; } = "0";       // Tình trạng đóng thùng xe thương mại: "0" - Chassis chưa đóng thùng, "1" - Đã đóng thùng (BizHTC.Car.TypeCB)
     public string? LoaiThung { get; set; }          // Loại thùng hiện tại (ThungBat, ThungKin, ThungLanh, ThungLung, ThungComposite, ThungChuyenDung)
     public string? CBReqNo { get; set; }            // Mã yêu cầu đóng thùng gần nhất (Sto_CBReq)
+    public string? ContractNoOversea { get; set; }  // Mã hợp đồng mua bán ngoại thương CBU/CKD (CT_ContractOversea)
     public bool IsInvoiced { get; set; } = false;   // Đã xuất hóa đơn GTGT bán xe cho đại lý (Car_InvoiceList)
     public string? InvoiceNo { get; set; }          // Số hóa đơn GTGT điện tử (HD26-...)
     public DateTime? InvoiceDate { get; set; }      // Ngày xuất hóa đơn GTGT
     public string? InvoiceListCode { get; set; }    // Mã bảng kê / đợt xuất hóa đơn liên quan (IVL...)
+    public bool IsBankBillHandedOver { get; set; } = false; // Đã bàn giao hồ sơ gốc và hóa đơn cho Ngân hàng (Car_BankBillMinutes)
+    public string? BankBillMnNo { get; set; }       // Mã biên bản bàn giao hồ sơ ngân hàng gần nhất
+    public DateTime? BankBillHandoverDate { get; set; } // Ngày bàn giao hồ sơ xe cho ngân hàng
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -1228,6 +1232,180 @@ public sealed class CarColorChangeLine
     public string? OldColorName { get; set; }              // Tên chi tiết màu cũ (Trắng ngọc trai / Đen...)
     public string? NewColorName { get; set; }              // Tên chi tiết màu mới (Đỏ đô / Xanh lục bảo...)
     public string Status { get; set; } = "Pending";        // Pending → Submitted → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Biên bản bàn giao hóa đơn & hồ sơ chứng từ xe ô tô cho Ngân hàng (BizHTC.Car.Car_BankBillMinutes / BankBillMinutes): bàn giao hồ sơ gốc, hóa đơn GTGT, giấy chứng nhận chất lượng cho Ngân hàng bảo lãnh / tài trợ tín dụng mua xe ô tô cho Đại lý.</summary>
+public sealed class BankBillMinutes
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string BankBillMnNo { get; set; } = "";         // Mã biên bản bàn giao (BBM...)
+    public string BankCode { get; set; } = "";             // Mã ngân hàng tiếp nhận chứng từ (VCB, TCB, VPB, BIDV, CTG, MB...)
+    public string? BankName { get; set; }                  // Tên ngân hàng
+    public string DealerCode { get; set; } = "";           // Mã đại lý mua xe thụ hưởng
+    public string? GuaranteeNo { get; set; }               // Mã chứng thư bảo lãnh ngân hàng liên kết (Pmt_Guarantee)
+    public DateTime BankBillDate { get; set; } = DateTime.Now; // Ngày lập biên bản bàn giao hồ sơ
+    public DateTime? BankBillReceiveDate { get; set; }     // Ngày đại diện ngân hàng ký xác nhận nhận đủ hồ sơ
+    public int TotalVehicleCount { get; set; } = 0;        // Tổng số lượng xe bàn giao hồ sơ trong đợt
+    public decimal TotalAmount { get; set; } = 0;          // Tổng trị giá các xe bàn giao hồ sơ (VNĐ)
+    public string? BankOfficer { get; set; }               // Cán bộ / Chuyên viên đại diện Ngân hàng nhận hồ sơ
+    public string? HTCOfficer { get; set; }                // Cán bộ Kế toán / Pháp chế OEM bàn giao hồ sơ
+    public string Status { get; set; } = "Draft";          // Draft → Submitted → Approved / HandedOver (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Diễn giải / ghi chú biên bản bàn giao
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                // Lãnh đạo OEM phê duyệt / bàn giao
+    public DateTime? ApprovedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe trong Biên bản bàn giao chứng từ ngân hàng (BizHTC.Car.Car_BankBillMinutesDtl / BankBillMinutesLine): danh sách VIN, thông tin hóa đơn GTGT, chứng thư bảo lãnh, kiểm tra bàn giao Hóa đơn gốc, Phiếu kiểm tra chất lượng XK (COC), Phiếu kiểm định PDI và Sổ bảo hành.</summary>
+public sealed class BankBillMinutesLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long BankBillMinutesId { get; set; }
+    public string BankBillMnNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? EngineNo { get; set; }
+    public string? Color { get; set; }
+    public string? InvoiceDealerCode { get; set; }         // Đại lý ghi trên hóa đơn GTGT
+    public string? InvoiceNo { get; set; }                 // Số hóa đơn GTGT điện tử (HD26-...)
+    public DateTime? InvoiceDate { get; set; }             // Ngày hóa đơn GTGT
+    public string? GuaranteeNo { get; set; }               // Mã chứng thư bảo lãnh ngân hàng (nếu có)
+    public decimal CarPrice { get; set; } = 0;             // Trị giá xuất hóa đơn / giá bán xe (VNĐ)
+    public decimal GuaranteeValue { get; set; } = 0;       // Giá trị bảo lãnh thanh toán (VNĐ)
+    public bool HasOriginalInvoice { get; set; } = true;   // Bàn giao Hóa đơn GTGT bản gốc / chuyển đổi điện tử
+    public bool HasQualityCert { get; set; } = true;       // Bàn giao Giấy chứng nhận chất lượng xuất xưởng (COC)
+    public bool HasInspectionCert { get; set; } = true;    // Bàn giao Phiếu kiểm tra chất lượng / PDI xuất xưởng
+    public bool HasWarrantyBooklet { get; set; } = true;   // Bàn giao Sổ bảo hành tiêu chuẩn xe ô tô
+    public string Status { get; set; } = "Pending";        // Pending → HandedOver (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Yêu cầu & Hồ sơ Đòi tiền / Khiếu nại bảo lãnh thanh toán ngân hàng mua xe ô tô cho Đại lý (BizHTC.Payment.Pmt_GrtClaim / GuaranteeClaim): phát hành lệnh yêu cầu ngân hàng giải ngân thực thi nghĩa vụ bảo lãnh khi đại lý phát sinh nợ quá hạn hoặc rủi ro thanh toán.</summary>
+public sealed class GuaranteeClaim
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ClaimNo { get; set; } = "";             // Mã hồ sơ đòi tiền bảo lãnh (CLM...)
+    public string DealerCode { get; set; } = "";          // Mã đại lý nợ quá hạn bị đòi bảo lãnh
+    public string BankCode { get; set; } = "";            // Mã ngân hàng bảo lãnh (VCB, TCB, VPB, BIDV, CTG, MB...)
+    public string? BankName { get; set; }                 // Tên ngân hàng
+    public string? GuaranteeNo { get; set; }              // Mã chứng thư bảo lãnh ngân hàng liên quan (Pmt_Guarantee)
+    public DateTime ClaimDate { get; set; } = DateTime.Now; // Ngày lập hồ sơ đòi tiền bảo lãnh
+    public int TotalVehicleCount { get; set; } = 0;       // Tổng số lượng xe yêu cầu đòi bảo lãnh
+    public decimal TotalClaimAmount { get; set; } = 0;    // Tổng số tiền yêu cầu ngân hàng giải ngân trả (VNĐ)
+    public string ClaimReason { get; set; } = "OverduePayment"; // Lý do đòi bảo lãnh: OverduePayment (Nợ quá hạn), DealerDefault (Đại lý mất khả năng thanh toán), CreditRisk (Rủi ro tín dụng), ContractBreach (Vi phạm hợp đồng)
+    public string? FileSigned { get; set; }               // Văn bản đòi tiền bảo lãnh có chữ ký số OEM
+    public string? BankRefNo { get; set; }                // Số chứng từ / Ủy nhiệm chi ngân hàng giải ngân
+    public DateTime? DisbursementDate { get; set; }       // Ngày ngân hàng giải ngân tiền bảo lãnh
+    public string Status { get; set; } = "Draft";         // Draft → Submitted → Claimed → Settled (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú giải trình hồ sơ
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }               // Lãnh đạo tài chính duyệt phát hành văn bản đòi bảo lãnh
+    public DateTime? ApprovedAt { get; set; }
+    public string? SettledBy { get; set; }                // Kế toán OEM xác nhận ngân hàng đã chuyển tiền
+    public DateTime? SettledAt { get; set; }
+    public string? RejectedBy { get; set; }               // Người từ chối hồ sơ
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }              // Người hủy hồ sơ
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe trong hồ sơ đòi bảo lãnh ngân hàng (BizHTC.Payment.Pmt_GrtClaimDetail / GuaranteeClaimLine): danh sách VIN, chứng thư bảo lãnh, giá trị bảo lãnh, số tiền đòi, hạn thanh toán và số ngày nợ quá hạn.</summary>
+public sealed class GuaranteeClaimLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long GuaranteeClaimId { get; set; }
+    public string ClaimNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? EngineNo { get; set; }
+    public string? Color { get; set; }
+    public string? GuaranteeNo { get; set; }              // Mã chứng thư bảo lãnh ngân hàng gốc
+    public decimal GuaranteeValue { get; set; } = 0;      // Giá trị bảo lãnh ban đầu của xe (VNĐ)
+    public decimal ClaimAmount { get; set; } = 0;         // Số tiền đòi ngân hàng thanh toán cho xe này (VNĐ)
+    public DateTime? DueDate { get; set; }                // Hạn thanh toán bảo lãnh theo hợp đồng
+    public int OverdueDays { get; set; } = 0;             // Số ngày quá hạn thanh toán
+    public string Status { get; set; } = "Pending";       // Pending → Claimed → Settled (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Hợp đồng mua bán xe / bộ linh kiện ngoại thương CBU/CKD (BizHTC.Contract.ContractOversea / CT_ContractOversea): quản lý hợp đồng nhập khẩu xe nguyên chiếc CBU hoặc bộ linh kiện CKD giữa Hãng OEM và Nhà sản xuất quốc tế (HMC Hàn Quốc, Ấn Độ...).</summary>
+public sealed class ContractOversea
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ContractNo { get; set; } = "";             // Mã hợp đồng ngoại thương (CTO...)
+    public string? ContractNoUser { get; set; }            // Số hợp đồng nội bộ / tham chiếu
+    public string SupplierCode { get; set; } = "";         // Mã nhà cung cấp / Hãng sản xuất ngoại (HMC, HMI, HMEC, MOBIS...)
+    public string? SupplierName { get; set; }              // Tên nhà cung cấp / Hãng xe quốc tế
+    public string IncotermsCode { get; set; } = "CIF_HAI_PHONG"; // Incoterms (CIF_HAI_PHONG, FOB_BUSAN, FOB_ULSAN, CFR_CAT_LAI, CIF_CAI_MEP, EXW...)
+    public string Currency { get; set; } = "USD";          // Đồng tiền thanh toán quốc tế (USD, EUR, KRW, JPY, VND)
+    public decimal ExchangeRate { get; set; } = 25450m;    // Tỷ giá quy đổi ngoại tệ sang VNĐ
+    public string PaymentTerm { get; set; } = "LC";        // Phương thức thanh toán quốc tế: LC (Letter of Credit), TT (Telegraphic Transfer), DP, DA, OA
+    public string DeparturePort { get; set; } = "BUSAN";   // Cảng xuất bến / bốc hàng (BUSAN, ULSAN, CHENNAI, INCHEON...)
+    public string ArrivalPort { get; set; } = "CANG_HAI_PHONG"; // Cảng cập bến / đích (CANG_HAI_PHONG, CANG_CAT_LAI, CANG_CAI_MEP, NHA_MAY_NINH_BINH...)
+    public string? OrderMonth { get; set; }                // Tháng đặt hàng (yyyy-MM)
+    public string? ProductionMonth { get; set; }           // Tháng kế hoạch sản xuất (yyyy-MM)
+    public string? ExpectedDeliveryMonth { get; set; }     // Tháng dự kiến cập cảng / giao nhận (yyyy-MM)
+    public DateTime ContractDate { get; set; } = DateTime.Now; // Ngày ký kết hợp đồng ngoại thương
+    public DateTime? DeliveryDeadline { get; set; }        // Hạn chót giao hàng theo hợp đồng
+    public int TotalQuantity { get; set; } = 0;            // Tổng số lượng xe / bộ linh kiện trong hợp đồng
+    public decimal TotalAmountForeign { get; set; } = 0;   // Tổng giá trị hợp đồng bằng ngoại tệ (USD/EUR...)
+    public decimal TotalAmount { get; set; } = 0;          // Tổng giá trị quy đổi sang VNĐ = TotalAmountForeign * ExchangeRate
+    public string? FileSigned { get; set; }                // Tệp văn bản hợp đồng ngoại thương ký số điện tử
+    public string Status { get; set; } = "Draft";          // Draft → Submitted → Approved → InExecution → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Điều khoản / ghi chú hợp đồng
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                // Lãnh đạo xuất nhập khẩu / Ban Giám Đốc phê duyệt
+    public DateTime? ApprovedAt { get; set; }
+    public string? CompletedBy { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe trong hợp đồng ngoại thương (BizHTC.Contract.CT_ContractOverseaDetail / ContractOverseaLine): thông tin model xe CBU/CKD, phiên bản spec, màu sắc, nhà máy sản xuất, đơn giá ngoại tệ USD và quy đổi VNĐ.</summary>
+public sealed class ContractOverseaLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ContractOverseaId { get; set; }
+    public string ContractNo { get; set; } = "";
+    public string? Vin { get; set; }                       // Số khung VIN cụ thể (nếu đã phân bổ trước)
+    public string Model { get; set; } = "";                // Dòng xe (SantaFe, Tucson, Palisade, Custin, Ioniq 5, Creta, Accent...)
+    public string? SpecCode { get; set; }                  // Phiên bản xe (2.5T AWD Calligraphy, 1.6T HTRAC, 2.0 AT Cao cấp, Hybrid...)
+    public string? Color { get; set; }                     // Màu sắc xe
+    public string? ColorCode { get; set; }                 // Mã màu sơn quốc tế (NWAC, SAW, R2P, T2X...)
+    public int? ModelYear { get; set; } = 2026;            // Năm sản xuất / Model Year
+    public string? PlantCode { get; set; }                 // Nhà máy sản xuất (ULSAN_PLANT_1, ASAN_PLANT, CHENNAI_PLANT...)
+    public string? PortCode { get; set; }                  // Mã cảng bốc hàng (BUSAN, ULSAN, CHENNAI...)
+    public string? WorkOrderNo { get; set; }               // Lệnh sản xuất / Work Order liên kết
+    public string? LCTemp { get; set; }                    // Mã L/C dự kiến / thư tín dụng thanh toán (CT_LC)
+    public int OrderQty { get; set; } = 1;                 // Số lượng xe đặt mua
+    public decimal UnitPriceForeign { get; set; } = 0;     // Đơn giá ngoại tệ (USD)
+    public decimal TotalAmountForeign { get; set; } = 0;   // Thành tiền ngoại tệ (USD) = OrderQty * UnitPriceForeign
+    public decimal UnitPrice { get; set; } = 0;            // Đơn giá quy đổi (VNĐ) = UnitPriceForeign * ExchangeRate
+    public decimal TotalAmount { get; set; } = 0;          // Thành tiền quy đổi (VNĐ) = TotalAmountForeign * ExchangeRate
+    public string Status { get; set; } = "Pending";        // Pending → Submitted → Approved → InProduction → Shipped → Delivered (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
 }
 

@@ -1073,6 +1073,171 @@ public static class Seeder
                 }
             );
         }
+
+        if (!await db.ContractOverseas.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var cto1 = new ContractOversea
+            {
+                OrgId = org,
+                ContractNo = "CTO-HMC-2026-001",
+                ContractNoUser = "HĐNT-2026/01/HMC-01",
+                SupplierCode = "HMC",
+                SupplierName = "Hyundai Motor Company (Korea)",
+                IncotermsCode = "CIF_HAI_PHONG",
+                Currency = "USD",
+                ExchangeRate = 25450m,
+                PaymentTerm = "LC",
+                DeparturePort = "BUSAN",
+                ArrivalPort = "CANG_HAI_PHONG",
+                OrderMonth = "2026-01",
+                ProductionMonth = "2026-02",
+                ExpectedDeliveryMonth = "2026-03",
+                ContractDate = DateTime.Now.AddDays(-60),
+                DeliveryDeadline = DateTime.Now.AddDays(15),
+                TotalQuantity = 2,
+                TotalAmountForeign = 49115.91m,
+                TotalAmount = 1250000000m,
+                FileSigned = "https://doc.hyundai.thanhcong.vn/contracts-oversea/CTO-HMC-2026-001.pdf",
+                Status = "Approved",
+                Remark = "Hợp đồng ngoại thương nhập khẩu xe nguyên chiếc CBU Accent và Creta từ tập đoàn Hyundai Hàn Quốc về Cảng Hải Phòng",
+                CreatedBy = "import.planner",
+                CreatedAt = DateTime.Now.AddDays(-60),
+                ApprovedBy = "Director.LeNgocDuc",
+                ApprovedAt = DateTime.Now.AddDays(-55)
+            };
+            db.ContractOverseas.Add(cto1);
+            await db.SaveChangesAsync();
+
+            db.ContractOverseaLines.AddRange(
+                new ContractOverseaLine
+                {
+                    OrgId = org,
+                    ContractOverseaId = cto1.Id,
+                    ContractNo = cto1.ContractNo,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    Color = "Trắng",
+                    ColorCode = "NWAC",
+                    ModelYear = 2026,
+                    PlantCode = "ULSAN_PLANT_1",
+                    PortCode = "BUSAN",
+                    WorkOrderNo = "WO-HMC-2026-1001",
+                    LCTemp = "LC-VCB-2026-901",
+                    OrderQty = 1,
+                    UnitPriceForeign = 21610.99m,
+                    TotalAmountForeign = 21610.99m,
+                    UnitPrice = 550000000m,
+                    TotalAmount = 550000000m,
+                    Status = "Approved",
+                    Remark = "Tiêu chuẩn xuất xưởng CBU thị trường Việt Nam"
+                },
+                new ContractOverseaLine
+                {
+                    OrgId = org,
+                    ContractOverseaId = cto1.Id,
+                    ContractNo = cto1.ContractNo,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    Color = "Đen",
+                    ColorCode = "SAW",
+                    ModelYear = 2026,
+                    PlantCode = "ULSAN_PLANT_2",
+                    PortCode = "BUSAN",
+                    WorkOrderNo = "WO-HMC-2026-1002",
+                    LCTemp = "LC-VCB-2026-901",
+                    OrderQty = 1,
+                    UnitPriceForeign = 27504.92m,
+                    TotalAmountForeign = 27504.92m,
+                    UnitPrice = 700000000m,
+                    TotalAmount = 700000000m,
+                    Status = "Approved",
+                    Remark = "Tiêu chuẩn xuất xưởng CBU thị trường Việt Nam"
+                }
+            );
+
+            var cto2 = new ContractOversea
+            {
+                OrgId = org,
+                ContractNo = "CTO-HMI-2026-002",
+                ContractNoUser = "HĐNT-2026/02/HMI-02",
+                SupplierCode = "HMI",
+                SupplierName = "Hyundai Motor India",
+                IncotermsCode = "CIF_HAI_PHONG",
+                Currency = "USD",
+                ExchangeRate = 25450m,
+                PaymentTerm = "LC",
+                DeparturePort = "CHENNAI",
+                ArrivalPort = "CANG_HAI_PHONG",
+                OrderMonth = "2026-02",
+                ProductionMonth = "2026-03",
+                ExpectedDeliveryMonth = "2026-04",
+                ContractDate = DateTime.Now.AddDays(-20),
+                DeliveryDeadline = DateTime.Now.AddDays(40),
+                TotalQuantity = 2,
+                TotalAmountForeign = 40000m,
+                TotalAmount = 1018000000m,
+                Status = "Submitted",
+                Remark = "Hợp đồng ngoại thương nhập khẩu dòng xe đô thị Venue và Grand i10 từ nhà máy Hyundai Ấn Độ",
+                CreatedBy = "import.planner",
+                CreatedAt = DateTime.Now.AddDays(-20)
+            };
+            db.ContractOverseas.Add(cto2);
+            await db.SaveChangesAsync();
+
+            db.ContractOverseaLines.AddRange(
+                new ContractOverseaLine
+                {
+                    OrgId = org,
+                    ContractOverseaId = cto2.Id,
+                    ContractNo = cto2.ContractNo,
+                    Model = "Hyundai Venue 1.0 T-GDi",
+                    SpecCode = "1.0 T-GDi Cao cấp",
+                    Color = "Đỏ",
+                    ColorCode = "R2P",
+                    ModelYear = 2026,
+                    PlantCode = "CHENNAI_PLANT_1",
+                    PortCode = "CHENNAI",
+                    WorkOrderNo = "WO-HMI-2026-2001",
+                    OrderQty = 1,
+                    UnitPriceForeign = 22000m,
+                    TotalAmountForeign = 22000m,
+                    UnitPrice = 559900000m,
+                    TotalAmount = 559900000m,
+                    Status = "Submitted",
+                    Remark = "Kế hoạch nhập khẩu quý 2"
+                },
+                new ContractOverseaLine
+                {
+                    OrgId = org,
+                    ContractOverseaId = cto2.Id,
+                    ContractNo = cto2.ContractNo,
+                    Model = "Hyundai Grand i10 Hatchback",
+                    SpecCode = "1.2 AT Tiêu chuẩn",
+                    Color = "Bạc",
+                    ColorCode = "T2X",
+                    ModelYear = 2026,
+                    PlantCode = "CHENNAI_PLANT_2",
+                    PortCode = "CHENNAI",
+                    WorkOrderNo = "WO-HMI-2026-2002",
+                    OrderQty = 1,
+                    UnitPriceForeign = 18000m,
+                    TotalAmountForeign = 18000m,
+                    UnitPrice = 458100000m,
+                    TotalAmount = 458100000m,
+                    Status = "Submitted",
+                    Remark = "Kế hoạch nhập khẩu quý 2"
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null) v1.ContractNoOversea = cto1.ContractNo;
+
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null) v2.ContractNoOversea = cto1.ContractNo;
+        }
         await db.SaveChangesAsync();
     }
 
@@ -1159,6 +1324,16 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"ContractCancelLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ContractCancelId\" bigint NOT NULL, \"ContractCNo\" text NOT NULL DEFAULT '', \"DlrContractNo\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"Color\" text NULL, \"ContractUpdateType\" text NOT NULL DEFAULT 'CANCEL_VIN', \"CancelQty\" integer NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"RefundAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"CarColorChanges\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ChangeNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"ChangeType\" text NOT NULL DEFAULT 'DealerRequest', \"Reason\" text NULL, \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"CarColorChangeLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CarColorChangeId\" bigint NOT NULL, \"ChangeNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"OldColor\" text NOT NULL DEFAULT '', \"NewColor\" text NOT NULL DEFAULT '', \"OldColorCode\" text NULL, \"NewColorCode\" text NULL, \"OldColorName\" text NULL, \"NewColorName\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsBankBillHandedOver\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"BankBillMnNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"BankBillHandoverDate\" timestamp NULL",
+            "CREATE TABLE IF NOT EXISTS public.\"BankBillMinutes\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"BankBillMnNo\" text NOT NULL DEFAULT '', \"BankCode\" text NOT NULL DEFAULT '', \"BankName\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"GuaranteeNo\" text NULL, \"BankBillDate\" timestamp NOT NULL DEFAULT now(), \"BankBillReceiveDate\" timestamp NULL, \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"BankOfficer\" text NULL, \"HTCOfficer\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"BankBillMinutesLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"BankBillMinutesId\" bigint NOT NULL, \"BankBillMnNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"InvoiceDealerCode\" text NULL, \"InvoiceNo\" text NULL, \"InvoiceDate\" timestamp NULL, \"GuaranteeNo\" text NULL, \"CarPrice\" numeric NOT NULL DEFAULT 0, \"GuaranteeValue\" numeric NOT NULL DEFAULT 0, \"HasOriginalInvoice\" boolean NOT NULL DEFAULT true, \"HasQualityCert\" boolean NOT NULL DEFAULT true, \"HasInspectionCert\" boolean NOT NULL DEFAULT true, \"HasWarrantyBooklet\" boolean NOT NULL DEFAULT true, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"GuaranteeClaims\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ClaimNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"BankCode\" text NOT NULL DEFAULT '', \"BankName\" text NULL, \"GuaranteeNo\" text NULL, \"ClaimDate\" timestamp NOT NULL DEFAULT now(), \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalClaimAmount\" numeric NOT NULL DEFAULT 0, \"ClaimReason\" text NOT NULL DEFAULT 'OverduePayment', \"FileSigned\" text NULL, \"BankRefNo\" text NULL, \"DisbursementDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"GuaranteeClaimLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GuaranteeClaimId\" bigint NOT NULL, \"ClaimNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"GuaranteeNo\" text NULL, \"GuaranteeValue\" numeric NOT NULL DEFAULT 0, \"ClaimAmount\" numeric NOT NULL DEFAULT 0, \"DueDate\" timestamp NULL, \"OverdueDays\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"ContractNoOversea\" text NULL",
+            "CREATE TABLE IF NOT EXISTS public.\"ContractOverseas\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ContractNo\" text NOT NULL DEFAULT '', \"ContractNoUser\" text NULL, \"SupplierCode\" text NOT NULL DEFAULT '', \"SupplierName\" text NULL, \"IncotermsCode\" text NOT NULL DEFAULT 'CIF_HAI_PHONG', \"Currency\" text NOT NULL DEFAULT 'USD', \"ExchangeRate\" numeric NOT NULL DEFAULT 25450, \"PaymentTerm\" text NOT NULL DEFAULT 'LC', \"DeparturePort\" text NOT NULL DEFAULT 'BUSAN', \"ArrivalPort\" text NOT NULL DEFAULT 'CANG_HAI_PHONG', \"OrderMonth\" text NULL, \"ProductionMonth\" text NULL, \"ExpectedDeliveryMonth\" text NULL, \"ContractDate\" timestamp NOT NULL DEFAULT now(), \"DeliveryDeadline\" timestamp NULL, \"TotalQuantity\" integer NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"FileSigned\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ContractOverseaLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ContractOverseaId\" bigint NOT NULL, \"ContractNo\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"Color\" text NULL, \"ColorCode\" text NULL, \"ModelYear\" integer NULL DEFAULT 2026, \"PlantCode\" text NULL, \"PortCode\" text NULL, \"WorkOrderNo\" text NULL, \"LCTemp\" text NULL, \"OrderQty\" integer NOT NULL DEFAULT 1, \"UnitPriceForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

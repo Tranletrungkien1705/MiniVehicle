@@ -102,6 +102,13 @@
 <li><code>POST /api/color-changes/{code}/lines/{vin}/update</code> — điều chỉnh màu sơn mới, mã màu và ghi chú theo từng xe VIN</li>
 <li><code>POST /api/color-changes/{code}/lines</code> &amp; <code>DELETE /api/color-changes/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong đề nghị thay đổi màu sơn</li>
 <li><code>GET /api/color-changes/history/{vin}</code> — tra cứu toàn bộ lịch sử các lần đổi màu sơn và sự kiện đổi màu của số khung VIN (Rpt_CarColorChangeHistory)</li>
+<li><code>POST /api/contract-overseas</code> &amp; <code>/api/contract-overseas/{contractNo}/{action}</code> — tạo, nộp, phê duyệt, thực thi sản xuất &amp; hoàn tất Hợp đồng mua bán xe / bộ linh kiện ngoại thương CBU/CKD (BizHTC.Contract.ContractOversea / CT_ContractOversea: submit, approve, execute, complete, reject, cancel)</li>
+<li><code>GET /api/contract-overseas?status=&amp;supplier=&amp;incoterms=&amp;currency=&amp;orderMonth=&amp;contractNo=&amp;vin=</code> — tra cứu danh sách hợp đồng ngoại thương CBU/CKD (HMC Hàn Quốc, HMI Ấn Độ, HMEC Séc...)</li>
+<li><code>GET /api/contract-overseas/summary</code> — báo cáo tổng hợp hợp đồng ngoại thương theo trạng thái, nhà cung cấp và dòng xe</li>
+<li><code>PUT /api/contract-overseas/{contractNo}</code> — điều chỉnh thông tin chung, tỷ giá quy đổi, điều kiện Incoterms, cảng xuất/nhập của hợp đồng ngoại thương</li>
+<li><code>POST /api/contract-overseas/{contractNo}/lines/{lineId}/update</code> — cập nhật model, phiên bản spec, màu sắc, nhà máy, đơn giá ngoại tệ USD/EUR và quy đổi VNĐ theo từng dòng xe</li>
+<li><code>POST /api/contract-overseas/{contractNo}/lines</code> &amp; <code>DELETE /api/contract-overseas/{contractNo}/lines/{lineId}</code> — bổ sung hoặc rút bớt xe trong hợp đồng ngoại thương</li>
+<li><code>GET /api/vehicles/{vin}/contract-oversea-info</code> — tra cứu thông tin hợp đồng ngoại thương, nhà sản xuất và lịch sử ngoại thương theo số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

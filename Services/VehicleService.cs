@@ -514,6 +514,184 @@ public record UpdateCarColorChangeLineDto(
     string? Remark = null
 );
 
+public record BankBillMinutesItemInputDto(
+    string Vin,
+    string? InvoiceNo = null,
+    DateTime? InvoiceDate = null,
+    string? InvoiceDealerCode = null,
+    string? GuaranteeNo = null,
+    decimal? CarPrice = null,
+    decimal? GuaranteeValue = null,
+    bool HasOriginalInvoice = true,
+    bool HasQualityCert = true,
+    bool HasInspectionCert = true,
+    bool HasWarrantyBooklet = true,
+    string? Remark = null
+);
+
+public record CreateBankBillMinutesDto(
+    string BankCode,
+    string DealerCode,
+    List<BankBillMinutesItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? BankName = null,
+    string? GuaranteeNo = null,
+    DateTime? BankBillDate = null,
+    string? BankOfficer = null,
+    string? HTCOfficer = null,
+    string? Remark = null,
+    string? BankBillMnNo = null,
+    string? CreatedBy = null
+);
+
+public record BankBillMinutesTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? BankOfficer = null,
+    string? HTCOfficer = null,
+    DateTime? BankBillReceiveDate = null,
+    string? Reason = null
+);
+
+public record UpdateBankBillMinutesLineDto(
+    string? InvoiceNo = null,
+    DateTime? InvoiceDate = null,
+    string? GuaranteeNo = null,
+    decimal? CarPrice = null,
+    decimal? GuaranteeValue = null,
+    bool? HasOriginalInvoice = null,
+    bool? HasQualityCert = null,
+    bool? HasInspectionCert = null,
+    bool? HasWarrantyBooklet = null,
+    string? Remark = null
+);
+
+public record GuaranteeClaimItemInputDto(
+    string Vin,
+    string? Model = null,
+    string? EngineNo = null,
+    string? Color = null,
+    string? GuaranteeNo = null,
+    decimal? GuaranteeValue = null,
+    decimal? ClaimAmount = null,
+    DateTime? DueDate = null,
+    int? OverdueDays = null,
+    string? Remark = null
+);
+
+public record CreateGuaranteeClaimDto(
+    string DealerCode,
+    string BankCode,
+    List<GuaranteeClaimItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? BankName = null,
+    string? GuaranteeNo = null,
+    DateTime? ClaimDate = null,
+    string? ClaimReason = null,
+    string? FileSigned = null,
+    string? Remark = null,
+    string? ClaimNo = null,
+    string? CreatedBy = null
+);
+
+public record GuaranteeClaimTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? BankRefNo = null,
+    DateTime? DisbursementDate = null,
+    string? FileSigned = null,
+    string? Reason = null
+);
+
+public record UpdateGuaranteeClaimLineDto(
+    decimal? ClaimAmount = null,
+    DateTime? DueDate = null,
+    int? OverdueDays = null,
+    string? GuaranteeNo = null,
+    string? Remark = null
+);
+
+public record ContractOverseaItemInputDto(
+    string Model,
+    string? Vin = null,
+    string? SpecCode = null,
+    string? Color = null,
+    string? ColorCode = null,
+    int? ModelYear = 2026,
+    string? PlantCode = null,
+    string? PortCode = null,
+    string? WorkOrderNo = null,
+    string? LCTemp = null,
+    int OrderQty = 1,
+    decimal UnitPriceForeign = 0,
+    decimal? TotalAmountForeign = null,
+    decimal? UnitPrice = null,
+    decimal? TotalAmount = null,
+    string? Remark = null
+);
+
+public record CreateContractOverseaDto(
+    string SupplierCode,
+    List<ContractOverseaItemInputDto>? Items = null,
+    string? SupplierName = null,
+    string? IncotermsCode = "CIF_HAI_PHONG",
+    string? Currency = "USD",
+    decimal ExchangeRate = 25450m,
+    string? PaymentTerm = "LC",
+    string? DeparturePort = "BUSAN",
+    string? ArrivalPort = "CANG_HAI_PHONG",
+    string? OrderMonth = null,
+    string? ProductionMonth = null,
+    string? ExpectedDeliveryMonth = null,
+    DateTime? ContractDate = null,
+    DateTime? DeliveryDeadline = null,
+    string? FileSigned = null,
+    string? Remark = null,
+    string? ContractNo = null,
+    string? ContractNoUser = null,
+    string? CreatedBy = null
+);
+
+public record ContractOverseaTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? FileSigned = null,
+    string? Reason = null
+);
+
+public record UpdateContractOverseaHeaderDto(
+    string? SupplierName = null,
+    string? IncotermsCode = null,
+    string? Currency = null,
+    decimal? ExchangeRate = null,
+    string? PaymentTerm = null,
+    string? DeparturePort = null,
+    string? ArrivalPort = null,
+    string? OrderMonth = null,
+    string? ProductionMonth = null,
+    string? ExpectedDeliveryMonth = null,
+    DateTime? DeliveryDeadline = null,
+    string? FileSigned = null,
+    string? Remark = null
+);
+
+public record UpdateContractOverseaLineDto(
+    string? Model = null,
+    string? SpecCode = null,
+    string? Color = null,
+    string? ColorCode = null,
+    int? ModelYear = null,
+    string? PlantCode = null,
+    string? PortCode = null,
+    string? WorkOrderNo = null,
+    string? LCTemp = null,
+    int? OrderQty = null,
+    decimal? UnitPriceForeign = null,
+    decimal? ExchangeRate = null,
+    string? Vin = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -691,6 +869,34 @@ public interface IVehicleService
     Task<object?> RemoveCarColorChangeLineAsync(string changeNo, string vin);
     Task<object?> GetVehicleColorChangeHistoryAsync(string vin);
     Task<object?> GetVehicleColorChangeInfoAsync(string vin);
+    Task<object> CreateBankBillMinutesAsync(CreateBankBillMinutesDto dto);
+    Task<object> ListBankBillMinutesAsync(string? status, string? bank, string? dealer, string? guaranteeNo, string? bankBillMnNo, string? vin);
+    Task<object?> GetBankBillMinutesAsync(string bankBillMnNo);
+    Task<object?> BankBillMinutesTransitionAsync(string bankBillMnNo, string action, BankBillMinutesTransitionDto? dto);
+    Task<object?> UpdateBankBillMinutesLineAsync(string bankBillMnNo, string vin, UpdateBankBillMinutesLineDto dto);
+    Task<object?> AddBankBillMinutesLinesAsync(string bankBillMnNo, List<BankBillMinutesItemInputDto> items);
+    Task<object?> RemoveBankBillMinutesLineAsync(string bankBillMnNo, string vin);
+    Task<object?> GetVehicleBankBillInfoAsync(string vin);
+    Task<object> GetPendingVehiclesForBankBillAsync(string? bankCode, string? dealerCode);
+    Task<object> CreateGuaranteeClaimAsync(CreateGuaranteeClaimDto dto);
+    Task<object> ListGuaranteeClaimsAsync(string? status, string? bank, string? dealer, string? guaranteeNo, string? claimNo, string? vin);
+    Task<object?> GetGuaranteeClaimAsync(string claimNo);
+    Task<object?> GuaranteeClaimTransitionAsync(string claimNo, string action, GuaranteeClaimTransitionDto? dto);
+    Task<object?> UpdateGuaranteeClaimLineAsync(string claimNo, string vin, UpdateGuaranteeClaimLineDto dto);
+    Task<object?> AddGuaranteeClaimLinesAsync(string claimNo, List<GuaranteeClaimItemInputDto> items);
+    Task<object?> RemoveGuaranteeClaimLineAsync(string claimNo, string vin);
+    Task<object?> GetVehicleGuaranteeClaimInfoAsync(string vin);
+    Task<object> GetOverdueGuaranteedVehiclesAsync(string? bankCode, string? dealerCode, int? overdueDaysThreshold);
+    Task<object> CreateContractOverseaAsync(CreateContractOverseaDto dto);
+    Task<object> ListContractOverseasAsync(string? status, string? supplier, string? incoterms, string? currency, string? orderMonth, string? contractNo, string? vin);
+    Task<object?> GetContractOverseaAsync(string contractNo);
+    Task<object?> ContractOverseaTransitionAsync(string contractNo, string action, ContractOverseaTransitionDto? dto);
+    Task<object?> UpdateContractOverseaHeaderAsync(string contractNo, UpdateContractOverseaHeaderDto dto);
+    Task<object?> UpdateContractOverseaLineAsync(string contractNo, long lineId, UpdateContractOverseaLineDto dto);
+    Task<object?> AddContractOverseaLinesAsync(string contractNo, List<ContractOverseaItemInputDto> items);
+    Task<object?> RemoveContractOverseaLineAsync(string contractNo, long lineId);
+    Task<object?> GetVehicleContractOverseaInfoAsync(string vin);
+    Task<object> GetContractOverseaSummaryAsync();
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -11438,5 +11644,2314 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
     public async Task<object?> GetVehicleColorChangeInfoAsync(string vin)
     {
         return await GetVehicleColorChangeHistoryAsync(vin);
+    }
+
+    // ===== Biên bản bàn giao hóa đơn & hồ sơ chứng từ xe cho Ngân hàng (BizHTC.Car.Car_BankBillMinutes / BankBillMinutes) =====
+    public async Task<object> CreateBankBillMinutesAsync(CreateBankBillMinutesDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.BankCode))
+            throw new InvalidOperationException("Cần mã Ngân hàng tiếp nhận chứng từ (BankCode).");
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã Đại lý mua xe (DealerCode).");
+
+        var items = new List<BankBillMinutesItemInputDto>();
+        if (dto.Items != null && dto.Items.Count > 0) items.AddRange(dto.Items);
+        else if (dto.Vins != null && dto.Vins.Count > 0) items.AddRange(dto.Vins.Select(v => new BankBillMinutesItemInputDto(v)));
+
+        if (items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 VIN trong biên bản bàn giao hồ sơ ngân hàng.");
+
+        var distinctItems = items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("Số khung VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var mnNo = string.IsNullOrWhiteSpace(dto.BankBillMnNo)
+            ? "BBM" + DateTime.Now.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()
+            : dto.BankBillMnNo!.Trim().ToUpperInvariant();
+
+        if (await db.BankBillMinutes.AnyAsync(m => m.OrgId == Org && m.BankBillMnNo == mnNo))
+            throw new InvalidOperationException($"Mã biên bản bàn giao hồ sơ ngân hàng {mnNo} đã tồn tại.");
+
+        var bankCode = dto.BankCode.Trim().ToUpperInvariant();
+        var dealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        var vDict = vehicles.ToDictionary(v => v.Vin);
+
+        // Pre-fetch invoice details for these VINs if available
+        var invLines = await db.CarInvoiceLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status == "Issued")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var invDict = invLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        // Pre-fetch guarantee lines for these VINs if available
+        var grtLines = await db.GuaranteeLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status != "Cancelled")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var grtDict = grtLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        var m = new BankBillMinutes
+        {
+            OrgId = Org,
+            BankBillMnNo = mnNo,
+            BankCode = bankCode,
+            BankName = dto.BankName?.Trim(),
+            DealerCode = dealerCode,
+            GuaranteeNo = dto.GuaranteeNo?.Trim().ToUpperInvariant(),
+            BankBillDate = dto.BankBillDate ?? DateTime.Now,
+            BankOfficer = dto.BankOfficer?.Trim(),
+            HTCOfficer = dto.HTCOfficer?.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "system"
+        };
+
+        db.BankBillMinutes.Add(m);
+        await db.SaveChangesAsync();
+
+        var detailLines = new List<BankBillMinutesLine>();
+        decimal totalAmt = 0;
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            vDict.TryGetValue(vin, out var v);
+            invDict.TryGetValue(vin, out var inv);
+            grtDict.TryGetValue(vin, out var grt);
+
+            var invoiceNo = item.InvoiceNo ?? v?.InvoiceNo ?? inv?.InvoiceNo;
+            var invoiceDate = item.InvoiceDate ?? v?.InvoiceDate ?? inv?.InvoiceDate;
+            var invoiceDealer = item.InvoiceDealerCode ?? inv?.InvoiceDealerCode ?? dealerCode;
+            var guaranteeNo = item.GuaranteeNo ?? dto.GuaranteeNo ?? grt?.GuaranteeNo;
+
+            var carPrice = item.CarPrice.HasValue && item.CarPrice.Value > 0
+                ? item.CarPrice.Value
+                : (inv?.TotalAmount ?? 500000000m);
+
+            var guaranteeValue = item.GuaranteeValue.HasValue && item.GuaranteeValue.Value > 0
+                ? item.GuaranteeValue.Value
+                : (grt?.GuaranteeValue ?? carPrice);
+
+            totalAmt += carPrice;
+
+            var line = new BankBillMinutesLine
+            {
+                OrgId = Org,
+                BankBillMinutesId = m.Id,
+                BankBillMnNo = m.BankBillMnNo,
+                Vin = vin,
+                Model = v?.Model,
+                EngineNo = v?.EngineNo ?? inv?.EngineNo,
+                Color = v?.Color,
+                InvoiceDealerCode = invoiceDealer,
+                InvoiceNo = invoiceNo,
+                InvoiceDate = invoiceDate,
+                GuaranteeNo = guaranteeNo,
+                CarPrice = carPrice,
+                GuaranteeValue = guaranteeValue,
+                HasOriginalInvoice = item.HasOriginalInvoice,
+                HasQualityCert = item.HasQualityCert,
+                HasInspectionCert = item.HasInspectionCert,
+                HasWarrantyBooklet = item.HasWarrantyBooklet,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            };
+
+            detailLines.Add(line);
+            Log(vin, "BankBillCreated", $"Tạo biên bản bàn giao hồ sơ ngân hàng {bankCode} số {mnNo}");
+        }
+
+        db.BankBillMinutesLines.AddRange(detailLines);
+        m.TotalVehicleCount = detailLines.Count;
+        m.TotalAmount = totalAmt;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            m.Id,
+            m.BankBillMnNo,
+            m.BankCode,
+            m.BankName,
+            m.DealerCode,
+            m.GuaranteeNo,
+            m.BankBillDate,
+            m.TotalVehicleCount,
+            m.TotalAmount,
+            m.BankOfficer,
+            m.HTCOfficer,
+            m.Status,
+            m.CreatedBy,
+            m.CreatedAt,
+            vins = detailLines.Select(l => l.Vin)
+        };
+    }
+
+    public async Task<object> ListBankBillMinutesAsync(string? status, string? bank, string? dealer, string? guaranteeNo, string? bankBillMnNo, string? vin)
+    {
+        var q = db.BankBillMinutes.Where(m => m.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var st = status.Trim().ToLowerInvariant();
+            q = q.Where(m => m.Status.ToLower() == st);
+        }
+
+        if (!string.IsNullOrWhiteSpace(bank))
+        {
+            var b = bank.Trim().ToUpperInvariant();
+            q = q.Where(m => m.BankCode.ToUpper() == b || (m.BankName != null && m.BankName.ToUpper().Contains(b)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(m => m.DealerCode.ToUpper() == d);
+        }
+
+        if (!string.IsNullOrWhiteSpace(guaranteeNo))
+        {
+            var g = guaranteeNo.Trim().ToUpperInvariant();
+            q = q.Where(m => m.GuaranteeNo != null && m.GuaranteeNo.ToUpper().Contains(g));
+        }
+
+        if (!string.IsNullOrWhiteSpace(bankBillMnNo))
+        {
+            var no = bankBillMnNo.Trim().ToUpperInvariant();
+            q = q.Where(m => m.BankBillMnNo.ToUpper().Contains(no));
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            var matchedIds = await db.BankBillMinutesLines
+                .Where(l => l.OrgId == Org && l.Vin.ToUpper().Contains(v))
+                .Select(l => l.BankBillMinutesId)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(m => matchedIds.Contains(m.Id));
+        }
+
+        var items = await q.OrderByDescending(m => m.Id).Take(500).Select(m => new
+        {
+            m.Id,
+            m.BankBillMnNo,
+            m.BankCode,
+            m.BankName,
+            m.DealerCode,
+            m.GuaranteeNo,
+            m.BankBillDate,
+            m.BankBillReceiveDate,
+            m.TotalVehicleCount,
+            m.TotalAmount,
+            m.BankOfficer,
+            m.HTCOfficer,
+            m.Status,
+            m.Remark,
+            m.CreatedBy,
+            m.CreatedAt,
+            m.ApprovedBy,
+            m.ApprovedAt,
+            m.RejectedBy,
+            m.RejectedAt,
+            m.RejectReason,
+            m.CancelledBy,
+            m.CancelledAt,
+            m.CancelReason,
+            lineCount = db.BankBillMinutesLines.Count(l => l.OrgId == Org && l.BankBillMinutesId == m.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetBankBillMinutesAsync(string bankBillMnNo)
+    {
+        bankBillMnNo = bankBillMnNo.Trim().ToUpperInvariant();
+        var m = await db.BankBillMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.BankBillMnNo == bankBillMnNo);
+        if (m is null) return null;
+
+        var lines = await db.BankBillMinutesLines
+            .Where(l => l.OrgId == Org && l.BankBillMinutesId == m.Id)
+            .ToListAsync();
+
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles
+            .Where(v => v.OrgId == Org && vins.Contains(v.Vin))
+            .ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.EngineNo,
+            l.Color,
+            l.InvoiceDealerCode,
+            l.InvoiceNo,
+            l.InvoiceDate,
+            l.GuaranteeNo,
+            l.CarPrice,
+            l.GuaranteeValue,
+            l.HasOriginalInvoice,
+            l.HasQualityCert,
+            l.HasInspectionCert,
+            l.HasWarrantyBooklet,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.ModelYear,
+                v.StorageCode,
+                v.DealerCode,
+                status = v.Status.ToString(),
+                v.IsInvoiced,
+                v.IsMortgaged,
+                v.IsBankBillHandedOver,
+                v.BankBillHandoverDate
+            } : null
+        }).ToList();
+
+        return new
+        {
+            m.Id,
+            m.BankBillMnNo,
+            m.BankCode,
+            m.BankName,
+            m.DealerCode,
+            m.GuaranteeNo,
+            m.BankBillDate,
+            m.BankBillReceiveDate,
+            m.TotalVehicleCount,
+            m.TotalAmount,
+            m.BankOfficer,
+            m.HTCOfficer,
+            m.Status,
+            m.Remark,
+            m.CreatedBy,
+            m.CreatedAt,
+            m.ApprovedBy,
+            m.ApprovedAt,
+            m.RejectedBy,
+            m.RejectedAt,
+            m.RejectReason,
+            m.CancelledBy,
+            m.CancelledAt,
+            m.CancelReason,
+            lines = details
+        };
+    }
+
+    public async Task<object?> BankBillMinutesTransitionAsync(string bankBillMnNo, string action, BankBillMinutesTransitionDto? dto)
+    {
+        bankBillMnNo = bankBillMnNo.Trim().ToUpperInvariant();
+        var m = await db.BankBillMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.BankBillMnNo == bankBillMnNo);
+        if (m is null) return null;
+
+        var act = action.Trim().ToLowerInvariant();
+        var lines = await db.BankBillMinutesLines
+            .Where(l => l.OrgId == Org && l.BankBillMinutesId == m.Id)
+            .ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles
+            .Where(v => v.OrgId == Org && vins.Contains(v.Vin))
+            .ToListAsync();
+
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "submit" or "request":
+                if (m.Status != "Draft")
+                    throw new InvalidOperationException($"Không thể trình duyệt biên bản ở trạng thái '{m.Status}'.");
+                m.Status = "Submitted";
+                foreach (var l in lines)
+                {
+                    l.Status = "Submitted";
+                    Log(l.Vin, "BankBillSubmitted", $"Trình duyệt biên bản bàn giao hồ sơ ngân hàng {m.BankCode} số {m.BankBillMnNo}");
+                }
+                break;
+
+            case "approve" or "handover" or "complete" or "sign":
+                if (m.Status is "HandedOver" or "Cancelled")
+                    throw new InvalidOperationException($"Biên bản đang ở trạng thái '{m.Status}', không thể phê duyệt bàn giao.");
+
+                m.Status = "HandedOver";
+                m.ApprovedBy = dto?.User ?? dto?.HTCOfficer ?? "manager";
+                m.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.BankOfficer)) m.BankOfficer = dto.BankOfficer.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.HTCOfficer)) m.HTCOfficer = dto.HTCOfficer.Trim();
+                m.BankBillReceiveDate = dto?.BankBillReceiveDate ?? now;
+
+                foreach (var l in lines)
+                {
+                    l.Status = "HandedOver";
+                }
+
+                foreach (var v in vehicles)
+                {
+                    v.IsBankBillHandedOver = true;
+                    v.BankBillMnNo = m.BankBillMnNo;
+                    v.BankBillHandoverDate = now;
+                    Log(v.Vin, "BankBillHandover", $"Bàn giao hồ sơ gốc và hóa đơn cho ngân hàng {m.BankCode} theo biên bản {m.BankBillMnNo}");
+                }
+                break;
+
+            case "reject":
+                if (m.Status is "HandedOver" or "Cancelled")
+                    throw new InvalidOperationException($"Biên bản đang ở trạng thái '{m.Status}', không thể từ chối.");
+
+                m.Status = "Rejected";
+                m.RejectedBy = dto?.User ?? "manager";
+                m.RejectedAt = now;
+                m.RejectReason = dto?.Reason ?? dto?.Note ?? "Từ chối bàn giao hồ sơ";
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Rejected";
+                    Log(l.Vin, "BankBillRejected", $"Từ chối biên bản bàn giao hồ sơ {m.BankBillMnNo}: {m.RejectReason}");
+                }
+                break;
+
+            case "cancel":
+                if (m.Status == "Cancelled")
+                    throw new InvalidOperationException("Biên bản đã bị hủy trước đó.");
+
+                var wasHandedOver = m.Status == "HandedOver";
+                m.Status = "Cancelled";
+                m.CancelledBy = dto?.User ?? "manager";
+                m.CancelledAt = now;
+                m.CancelReason = dto?.Reason ?? dto?.Note ?? "Hủy biên bản bàn giao hồ sơ";
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Cancelled";
+                }
+
+                if (wasHandedOver)
+                {
+                    foreach (var v in vehicles)
+                    {
+                        if (v.BankBillMnNo == m.BankBillMnNo)
+                        {
+                            v.IsBankBillHandedOver = false;
+                            v.BankBillMnNo = null;
+                            v.BankBillHandoverDate = null;
+                        }
+                        Log(v.Vin, "BankBillCancelled", $"Hủy bàn giao hồ sơ theo biên bản {m.BankBillMnNo}: {m.CancelReason}");
+                    }
+                }
+                else
+                {
+                    foreach (var l in lines)
+                    {
+                        Log(l.Vin, "BankBillCancelled", $"Hủy biên bản bàn giao hồ sơ {m.BankBillMnNo}: {m.CancelReason}");
+                    }
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ. Hỗ trợ: submit, approve, handover, reject, cancel.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            m.Remark = string.IsNullOrWhiteSpace(m.Remark) ? dto.Note.Trim() : m.Remark + " | " + dto.Note.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            m.BankBillMnNo,
+            m.BankCode,
+            m.DealerCode,
+            m.Status,
+            m.BankBillDate,
+            m.BankBillReceiveDate,
+            m.ApprovedBy,
+            m.ApprovedAt,
+            m.RejectedBy,
+            m.RejectedAt,
+            m.RejectReason,
+            m.CancelledBy,
+            m.CancelledAt,
+            m.CancelReason,
+            vehicleCount = lines.Count
+        };
+    }
+
+    public async Task<object?> UpdateBankBillMinutesLineAsync(string bankBillMnNo, string vin, UpdateBankBillMinutesLineDto dto)
+    {
+        bankBillMnNo = bankBillMnNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var m = await db.BankBillMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.BankBillMnNo == bankBillMnNo);
+        if (m is null) return null;
+
+        if (m.Status is "HandedOver" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa dòng xe khi biên bản đang ở trạng thái '{m.Status}'.");
+
+        var line = await db.BankBillMinutesLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.BankBillMinutesId == m.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.InvoiceNo != null) line.InvoiceNo = dto.InvoiceNo.Trim().ToUpperInvariant();
+        if (dto.InvoiceDate.HasValue) line.InvoiceDate = dto.InvoiceDate.Value;
+        if (dto.GuaranteeNo != null) line.GuaranteeNo = dto.GuaranteeNo.Trim().ToUpperInvariant();
+        if (dto.CarPrice.HasValue) line.CarPrice = dto.CarPrice.Value;
+        if (dto.GuaranteeValue.HasValue) line.GuaranteeValue = dto.GuaranteeValue.Value;
+        if (dto.HasOriginalInvoice.HasValue) line.HasOriginalInvoice = dto.HasOriginalInvoice.Value;
+        if (dto.HasQualityCert.HasValue) line.HasQualityCert = dto.HasQualityCert.Value;
+        if (dto.HasInspectionCert.HasValue) line.HasInspectionCert = dto.HasInspectionCert.Value;
+        if (dto.HasWarrantyBooklet.HasValue) line.HasWarrantyBooklet = dto.HasWarrantyBooklet.Value;
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        // Recalculate total amount
+        var allLines = await db.BankBillMinutesLines.Where(l => l.OrgId == Org && l.BankBillMinutesId == m.Id).ToListAsync();
+        m.TotalAmount = allLines.Sum(l => l.CarPrice);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            m.BankBillMnNo,
+            line.Vin,
+            line.Model,
+            line.InvoiceNo,
+            line.InvoiceDate,
+            line.GuaranteeNo,
+            line.CarPrice,
+            line.GuaranteeValue,
+            line.HasOriginalInvoice,
+            line.HasQualityCert,
+            line.HasInspectionCert,
+            line.HasWarrantyBooklet,
+            line.Status,
+            line.Remark,
+            headerTotalAmount = m.TotalAmount
+        };
+    }
+
+    public async Task<object?> AddBankBillMinutesLinesAsync(string bankBillMnNo, List<BankBillMinutesItemInputDto> items)
+    {
+        bankBillMnNo = bankBillMnNo.Trim().ToUpperInvariant();
+        var m = await db.BankBillMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.BankBillMnNo == bankBillMnNo);
+        if (m is null) return null;
+
+        if (m.Status is "HandedOver" or "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm dòng xe khi biên bản đang ở trạng thái '{m.Status}'.");
+
+        var distinctItems = items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+
+        var existingVins = await db.BankBillMinutesLines
+            .Where(l => l.OrgId == Org && l.BankBillMinutesId == m.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var duplicateVins = vins.Intersect(existingVins).ToList();
+        if (duplicateVins.Count > 0)
+            throw new InvalidOperationException("Các VIN sau đã có trong biên bản: " + string.Join(", ", duplicateVins));
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var vDict = vehicles.ToDictionary(v => v.Vin);
+
+        var invLines = await db.CarInvoiceLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status == "Issued")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var invDict = invLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        var grtLines = await db.GuaranteeLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status != "Cancelled")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var grtDict = grtLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        var newLines = new List<BankBillMinutesLine>();
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            vDict.TryGetValue(vin, out var v);
+            invDict.TryGetValue(vin, out var inv);
+            grtDict.TryGetValue(vin, out var grt);
+
+            var invoiceNo = item.InvoiceNo ?? v?.InvoiceNo ?? inv?.InvoiceNo;
+            var invoiceDate = item.InvoiceDate ?? v?.InvoiceDate ?? inv?.InvoiceDate;
+            var invoiceDealer = item.InvoiceDealerCode ?? inv?.InvoiceDealerCode ?? m.DealerCode;
+            var guaranteeNo = item.GuaranteeNo ?? m.GuaranteeNo ?? grt?.GuaranteeNo;
+
+            var carPrice = item.CarPrice.HasValue && item.CarPrice.Value > 0
+                ? item.CarPrice.Value
+                : (inv?.TotalAmount ?? 500000000m);
+
+            var guaranteeValue = item.GuaranteeValue.HasValue && item.GuaranteeValue.Value > 0
+                ? item.GuaranteeValue.Value
+                : (grt?.GuaranteeValue ?? carPrice);
+
+            var line = new BankBillMinutesLine
+            {
+                OrgId = Org,
+                BankBillMinutesId = m.Id,
+                BankBillMnNo = m.BankBillMnNo,
+                Vin = vin,
+                Model = v?.Model,
+                EngineNo = v?.EngineNo ?? inv?.EngineNo,
+                Color = v?.Color,
+                InvoiceDealerCode = invoiceDealer,
+                InvoiceNo = invoiceNo,
+                InvoiceDate = invoiceDate,
+                GuaranteeNo = guaranteeNo,
+                CarPrice = carPrice,
+                GuaranteeValue = guaranteeValue,
+                HasOriginalInvoice = item.HasOriginalInvoice,
+                HasQualityCert = item.HasQualityCert,
+                HasInspectionCert = item.HasInspectionCert,
+                HasWarrantyBooklet = item.HasWarrantyBooklet,
+                Status = m.Status == "Submitted" ? "Submitted" : "Pending",
+                Remark = item.Remark?.Trim()
+            };
+
+            newLines.Add(line);
+            Log(vin, "BankBillCreated", $"Bổ sung xe vào biên bản bàn giao hồ sơ {m.BankCode} số {m.BankBillMnNo}");
+        }
+
+        db.BankBillMinutesLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.BankBillMinutesLines.Where(l => l.OrgId == Org && l.BankBillMinutesId == m.Id).ToListAsync();
+        m.TotalVehicleCount = allLines.Count;
+        m.TotalAmount = allLines.Sum(l => l.CarPrice);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            m.BankBillMnNo,
+            addedCount = newLines.Count,
+            totalVehicleCount = m.TotalVehicleCount,
+            totalAmount = m.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveBankBillMinutesLineAsync(string bankBillMnNo, string vin)
+    {
+        bankBillMnNo = bankBillMnNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var m = await db.BankBillMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.BankBillMnNo == bankBillMnNo);
+        if (m is null) return null;
+
+        if (m.Status is "HandedOver" or "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa dòng xe khi biên bản đang ở trạng thái '{m.Status}'.");
+
+        var line = await db.BankBillMinutesLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.BankBillMinutesId == m.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.BankBillMinutesLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.BankBillMinutesLines.Where(l => l.OrgId == Org && l.BankBillMinutesId == m.Id).ToListAsync();
+        m.TotalVehicleCount = allLines.Count;
+        m.TotalAmount = allLines.Sum(l => l.CarPrice);
+
+        Log(vin, "BankBillRemoved", $"Rút xe khỏi biên bản bàn giao hồ sơ {m.BankCode} số {m.BankBillMnNo}");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            m.BankBillMnNo,
+            removedVin = vin,
+            totalVehicleCount = m.TotalVehicleCount,
+            totalAmount = m.TotalAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleBankBillInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var lines = await db.BankBillMinutesLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var mnNos = lines.Select(l => l.BankBillMnNo).Distinct().ToList();
+        var minutes = await db.BankBillMinutes
+            .Where(m => m.OrgId == Org && mnNos.Contains(m.BankBillMnNo))
+            .ToDictionaryAsync(m => m.BankBillMnNo);
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("BankBill") || e.Kind == "BankBillHandover"))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.EngineNo,
+            v.Color,
+            v.DealerCode,
+            v.StorageCode,
+            status = v.Status.ToString(),
+            v.IsInvoiced,
+            v.InvoiceNo,
+            v.InvoiceDate,
+            v.IsMortgaged,
+            v.MortgageBankCode,
+            v.IsBankBillHandedOver,
+            v.BankBillMnNo,
+            v.BankBillHandoverDate,
+            history = lines.Select(l => new
+            {
+                l.Id,
+                l.BankBillMnNo,
+                bankCode = minutes.TryGetValue(l.BankBillMnNo, out var min) ? min.BankCode : "",
+                bankName = min?.BankName,
+                dealerCode = min?.DealerCode,
+                l.InvoiceNo,
+                l.InvoiceDate,
+                l.GuaranteeNo,
+                l.CarPrice,
+                l.GuaranteeValue,
+                l.HasOriginalInvoice,
+                l.HasQualityCert,
+                l.HasInspectionCert,
+                l.HasWarrantyBooklet,
+                l.Status,
+                headerStatus = min?.Status,
+                bankBillDate = min?.BankBillDate,
+                bankBillReceiveDate = min?.BankBillReceiveDate,
+                bankOfficer = min?.BankOfficer,
+                htcOfficer = min?.HTCOfficer,
+                approvedBy = min?.ApprovedBy,
+                approvedAt = min?.ApprovedAt,
+                l.Remark
+            }),
+            events = events.Select(e => new
+            {
+                e.Kind,
+                e.Note,
+                e.At
+            })
+        };
+    }
+
+    public async Task<object> GetPendingVehiclesForBankBillAsync(string? bankCode, string? dealerCode)
+    {
+        var q = db.Vehicles.Where(v => v.OrgId == Org && !v.IsBankBillHandedOver);
+
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+        {
+            var d = dealerCode.Trim().ToUpperInvariant();
+            q = q.Where(v => v.DealerCode == d);
+        }
+
+        var list = await q.OrderByDescending(v => v.Id).Take(200).ToListAsync();
+        var vins = list.Select(v => v.Vin).ToList();
+
+        var invLines = await db.CarInvoiceLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status == "Issued")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var invDict = invLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        var grtLines = await db.GuaranteeLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status != "Cancelled")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var grtDict = grtLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        var items = list.Select(v =>
+        {
+            invDict.TryGetValue(v.Vin, out var inv);
+            grtDict.TryGetValue(v.Vin, out var grt);
+
+            return new
+            {
+                v.Vin,
+                v.Model,
+                v.EngineNo,
+                v.Color,
+                v.ModelYear,
+                v.DealerCode,
+                v.StorageCode,
+                status = v.Status.ToString(),
+                v.IsInvoiced,
+                invoiceNo = v.InvoiceNo ?? inv?.InvoiceNo,
+                invoiceDate = v.InvoiceDate ?? inv?.InvoiceDate,
+                carPrice = inv?.TotalAmount ?? 0,
+                v.IsMortgaged,
+                mortgageBankCode = v.MortgageBankCode,
+                guaranteeNo = grt?.GuaranteeNo,
+                guaranteeValue = grt?.GuaranteeValue ?? 0,
+                isBankBillHandedOver = v.IsBankBillHandedOver
+            };
+        }).ToList();
+
+        if (!string.IsNullOrWhiteSpace(bankCode))
+        {
+            var b = bankCode.Trim().ToUpperInvariant();
+            items = items.Where(i => i.mortgageBankCode == b || (i.guaranteeNo != null && i.guaranteeNo.Contains(b))).ToList();
+        }
+
+        return new { count = items.Count, items };
+    }
+
+    // ===== Yêu cầu & Hồ sơ Đòi tiền / Khiếu nại bảo lãnh thanh toán ngân hàng (BizHTC.Payment.Pmt_GrtClaim / GuaranteeClaim) =====
+    public async Task<object> CreateGuaranteeClaimAsync(CreateGuaranteeClaimDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý nợ nộp tiền (DealerCode).");
+        if (string.IsNullOrWhiteSpace(dto.BankCode))
+            throw new InvalidOperationException("Cần mã ngân hàng bảo lãnh (BankCode).");
+
+        var items = new List<GuaranteeClaimItemInputDto>();
+        if (dto.Items != null && dto.Items.Count > 0) items.AddRange(dto.Items);
+        else if (dto.Vins != null && dto.Vins.Count > 0) items.AddRange(dto.Vins.Select(v => new GuaranteeClaimItemInputDto(v)));
+
+        if (items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe VIN trong hồ sơ đòi tiền bảo lãnh.");
+
+        var distinctItems = items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var claimNo = string.IsNullOrWhiteSpace(dto.ClaimNo)
+            ? "CLM" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.ClaimNo.Trim().ToUpperInvariant();
+
+        if (await db.GuaranteeClaims.AnyAsync(c => c.OrgId == Org && c.ClaimNo == claimNo))
+            throw new InvalidOperationException($"Mã hồ sơ đòi bảo lãnh {claimNo} đã tồn tại.");
+
+        var dealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        var bankCode = dto.BankCode.Trim().ToUpperInvariant();
+
+        var grtLines = await db.GuaranteeLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status != "Cancelled")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var grtDict = grtLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        var invLines = await db.CarInvoiceLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status == "Issued")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var invDict = invLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        var vDict = vehicles.ToDictionary(v => v.Vin);
+
+        var now = DateTime.Now;
+        var claimLines = new List<GuaranteeClaimLine>();
+        decimal totalClaim = 0;
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            vDict.TryGetValue(vin, out var v);
+            grtDict.TryGetValue(vin, out var grt);
+            invDict.TryGetValue(vin, out var inv);
+
+            var guaranteeNo = item.GuaranteeNo ?? grt?.GuaranteeNo ?? dto.GuaranteeNo;
+            var guaranteeValue = item.GuaranteeValue.HasValue && item.GuaranteeValue.Value > 0
+                ? item.GuaranteeValue.Value
+                : (grt?.GuaranteeValue ?? inv?.TotalAmount ?? 500000000m);
+
+            var claimAmount = item.ClaimAmount.HasValue && item.ClaimAmount.Value > 0
+                ? item.ClaimAmount.Value
+                : guaranteeValue;
+
+            var dueDate = item.DueDate ?? grt?.DateExpired ?? now.AddDays(-15);
+            var overdueDays = item.OverdueDays ?? (dueDate < now ? (int)(now.Date - dueDate.Date).TotalDays : 0);
+
+            var line = new GuaranteeClaimLine
+            {
+                OrgId = Org,
+                ClaimNo = claimNo,
+                Vin = vin,
+                Model = item.Model ?? v?.Model,
+                EngineNo = item.EngineNo ?? v?.EngineNo,
+                Color = item.Color ?? v?.Color,
+                GuaranteeNo = guaranteeNo,
+                GuaranteeValue = guaranteeValue,
+                ClaimAmount = claimAmount,
+                DueDate = dueDate,
+                OverdueDays = overdueDays,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            };
+
+            claimLines.Add(line);
+            totalClaim += claimAmount;
+        }
+
+        var claim = new GuaranteeClaim
+        {
+            OrgId = Org,
+            ClaimNo = claimNo,
+            DealerCode = dealerCode,
+            BankCode = bankCode,
+            BankName = dto.BankName?.Trim(),
+            GuaranteeNo = dto.GuaranteeNo?.Trim().ToUpperInvariant(),
+            ClaimDate = dto.ClaimDate ?? now,
+            TotalVehicleCount = claimLines.Count,
+            TotalClaimAmount = totalClaim,
+            ClaimReason = dto.ClaimReason?.Trim() ?? "OverduePayment",
+            FileSigned = dto.FileSigned?.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = now
+        };
+
+        db.GuaranteeClaims.Add(claim);
+        await db.SaveChangesAsync();
+
+        foreach (var l in claimLines)
+        {
+            l.GuaranteeClaimId = claim.Id;
+            db.GuaranteeClaimLines.Add(l);
+            Log(l.Vin, "GuaranteeClaimCreated", $"Tạo hồ sơ đòi bảo lãnh ngân hàng {bankCode} số {claimNo}. Số tiền đòi: {l.ClaimAmount:N0} VNĐ. Quá hạn: {l.OverdueDays} ngày");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            claim.Id,
+            claim.ClaimNo,
+            claim.DealerCode,
+            claim.BankCode,
+            claim.BankName,
+            claim.GuaranteeNo,
+            claim.ClaimDate,
+            claim.ClaimReason,
+            claim.TotalVehicleCount,
+            claim.TotalClaimAmount,
+            claim.Status,
+            lines = claimLines.Select(l => new
+            {
+                l.Vin,
+                l.Model,
+                l.GuaranteeNo,
+                l.GuaranteeValue,
+                l.ClaimAmount,
+                l.DueDate,
+                l.OverdueDays,
+                l.Status
+            })
+        };
+    }
+
+    public async Task<object> ListGuaranteeClaimsAsync(string? status, string? bank, string? dealer, string? guaranteeNo, string? claimNo, string? vin)
+    {
+        var q = db.GuaranteeClaims.Where(c => c.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var s = status.Trim().ToLowerInvariant();
+            q = q.Where(c => c.Status.ToLower() == s);
+        }
+        if (!string.IsNullOrWhiteSpace(bank))
+        {
+            var b = bank.Trim().ToUpperInvariant();
+            q = q.Where(c => c.BankCode == b);
+        }
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(c => c.DealerCode == d);
+        }
+        if (!string.IsNullOrWhiteSpace(guaranteeNo))
+        {
+            var g = guaranteeNo.Trim().ToUpperInvariant();
+            q = q.Where(c => c.GuaranteeNo != null && c.GuaranteeNo.Contains(g));
+        }
+        if (!string.IsNullOrWhiteSpace(claimNo))
+        {
+            var cNo = claimNo.Trim().ToUpperInvariant();
+            q = q.Where(c => c.ClaimNo.Contains(cNo));
+        }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            var claimIds = await db.GuaranteeClaimLines.Where(l => l.OrgId == Org && l.Vin == v).Select(l => l.GuaranteeClaimId).ToListAsync();
+            q = q.Where(c => claimIds.Contains(c.Id));
+        }
+
+        var items = await q.OrderByDescending(c => c.Id).Take(500).Select(c => new
+        {
+            c.Id,
+            c.ClaimNo,
+            c.DealerCode,
+            c.BankCode,
+            c.BankName,
+            c.GuaranteeNo,
+            c.ClaimDate,
+            c.TotalVehicleCount,
+            c.TotalClaimAmount,
+            c.ClaimReason,
+            c.BankRefNo,
+            c.DisbursementDate,
+            c.FileSigned,
+            c.Status,
+            c.Remark,
+            c.CreatedBy,
+            c.CreatedAt,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            c.SettledBy,
+            c.SettledAt,
+            c.RejectedBy,
+            c.RejectedAt,
+            c.CancelledBy,
+            c.CancelledAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetGuaranteeClaimAsync(string claimNo)
+    {
+        claimNo = claimNo.Trim().ToUpperInvariant();
+        var claim = await db.GuaranteeClaims.FirstOrDefaultAsync(c => c.OrgId == Org && c.ClaimNo == claimNo);
+        if (claim is null) return null;
+
+        var lines = await db.GuaranteeClaimLines
+            .Where(l => l.OrgId == Org && l.GuaranteeClaimId == claim.Id)
+            .OrderBy(l => l.Id)
+            .Select(l => new
+            {
+                l.Id,
+                l.ClaimNo,
+                l.Vin,
+                l.Model,
+                l.EngineNo,
+                l.Color,
+                l.GuaranteeNo,
+                l.GuaranteeValue,
+                l.ClaimAmount,
+                l.DueDate,
+                l.OverdueDays,
+                l.Status,
+                l.Remark
+            })
+            .ToListAsync();
+
+        return new
+        {
+            claim.Id,
+            claim.ClaimNo,
+            claim.DealerCode,
+            claim.BankCode,
+            claim.BankName,
+            claim.GuaranteeNo,
+            claim.ClaimDate,
+            claim.TotalVehicleCount,
+            claim.TotalClaimAmount,
+            claim.ClaimReason,
+            claim.FileSigned,
+            claim.BankRefNo,
+            claim.DisbursementDate,
+            claim.Status,
+            claim.Remark,
+            claim.CreatedBy,
+            claim.CreatedAt,
+            claim.ApprovedBy,
+            claim.ApprovedAt,
+            claim.SettledBy,
+            claim.SettledAt,
+            claim.RejectedBy,
+            claim.RejectedAt,
+            claim.RejectReason,
+            claim.CancelledBy,
+            claim.CancelledAt,
+            claim.CancelReason,
+            lines
+        };
+    }
+
+    public async Task<object?> GuaranteeClaimTransitionAsync(string claimNo, string action, GuaranteeClaimTransitionDto? dto)
+    {
+        claimNo = claimNo.Trim().ToUpperInvariant();
+        action = action.Trim().ToLowerInvariant();
+
+        var claim = await db.GuaranteeClaims.FirstOrDefaultAsync(c => c.OrgId == Org && c.ClaimNo == claimNo);
+        if (claim is null) return null;
+
+        var lines = await db.GuaranteeClaimLines.Where(l => l.OrgId == Org && l.GuaranteeClaimId == claim.Id).ToListAsync();
+        var now = DateTime.Now;
+
+        switch (action)
+        {
+            case "submit":
+                if (claim.Status != "Draft")
+                    throw new InvalidOperationException($"Không thể nộp hồ sơ khi đang ở trạng thái '{claim.Status}'. Chỉ áp dụng cho 'Draft'.");
+                claim.Status = "Submitted";
+                foreach (var l in lines)
+                {
+                    l.Status = "Submitted";
+                    Log(l.Vin, "GuaranteeClaimSubmitted", $"Nộp hồ sơ đòi bảo lãnh ngân hàng {claim.BankCode} số {claim.ClaimNo} để phê duyệt.");
+                }
+                break;
+
+            case "approve" or "claim":
+                if (claim.Status != "Submitted")
+                    throw new InvalidOperationException($"Không thể duyệt/phát hành lệnh đòi bảo lãnh khi đang ở trạng thái '{claim.Status}'. Cần ở 'Submitted'.");
+                claim.Status = "Claimed";
+                claim.ApprovedBy = dto?.User ?? "RiskManager.OEM";
+                claim.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.FileSigned)) claim.FileSigned = dto.FileSigned.Trim();
+                foreach (var l in lines)
+                {
+                    l.Status = "Claimed";
+                    Log(l.Vin, "GuaranteeClaimIssued", $"Phát hành lệnh đòi bảo lãnh chính thức {claim.ClaimNo} gửi Ngân hàng {claim.BankCode} đòi số tiền {l.ClaimAmount:N0} VNĐ. Người duyệt: {claim.ApprovedBy}");
+                }
+                break;
+
+            case "settle" or "disburse" or "complete":
+                if (claim.Status != "Claimed")
+                    throw new InvalidOperationException($"Không thể xác nhận giải ngân khi đang ở trạng thái '{claim.Status}'. Cần ở 'Claimed'.");
+                claim.Status = "Settled";
+                claim.SettledBy = dto?.User ?? "Finance.OEM";
+                claim.SettledAt = now;
+                claim.DisbursementDate = dto?.DisbursementDate ?? now;
+                claim.BankRefNo = !string.IsNullOrWhiteSpace(dto?.BankRefNo)
+                    ? dto.BankRefNo.Trim().ToUpperInvariant()
+                    : ("UNC-" + now.ToString("yyyyMMddHHmmss"));
+
+                var vins = lines.Select(l => l.Vin).ToList();
+                var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+                var grtLines = await db.GuaranteeLines.Where(g => g.OrgId == Org && vins.Contains(g.Vin) && g.Status != "Cancelled").ToListAsync();
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Settled";
+
+                    var v = vehicles.FirstOrDefault(x => x.Vin == l.Vin);
+                    if (v != null)
+                    {
+                        v.IsPaid = true;
+                        v.PaidAmount = (v.PaidAmount > 0 ? v.PaidAmount : 0) + l.ClaimAmount;
+                        v.PaidAt = claim.DisbursementDate;
+                    }
+
+                    var gl = grtLines.FirstOrDefault(x => x.Vin == l.Vin);
+                    if (gl != null)
+                    {
+                        gl.Status = "Settled";
+                    }
+
+                    Log(l.Vin, "GuaranteeClaimSettled", $"Ngân hàng {claim.BankCode} đã giải ngân chi trả bảo lãnh {l.ClaimAmount:N0} VNĐ theo UNC {claim.BankRefNo} vào ngày {claim.DisbursementDate:dd/MM/yyyy}");
+                }
+                break;
+
+            case "reject":
+                if (claim.Status != "Submitted" && claim.Status != "Draft")
+                    throw new InvalidOperationException($"Không thể từ chối hồ sơ khi đang ở trạng thái '{claim.Status}'.");
+                claim.Status = "Rejected";
+                claim.RejectedBy = dto?.User ?? "Approver";
+                claim.RejectedAt = now;
+                claim.RejectReason = dto?.Reason ?? dto?.Note ?? "Hồ sơ đòi bảo lãnh bị từ chối.";
+                foreach (var l in lines)
+                {
+                    l.Status = "Rejected";
+                    Log(l.Vin, "GuaranteeClaimRejected", $"Từ chối hồ sơ đòi bảo lãnh {claim.ClaimNo}: {claim.RejectReason}");
+                }
+                break;
+
+            case "cancel":
+                if (claim.Status is "Settled" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể hủy hồ sơ khi đang ở trạng thái '{claim.Status}'.");
+                claim.Status = "Cancelled";
+                claim.CancelledBy = dto?.User ?? "User";
+                claim.CancelledAt = now;
+                claim.CancelReason = dto?.Reason ?? dto?.Note ?? "Hủy hồ sơ đòi bảo lãnh ngân hàng.";
+                foreach (var l in lines)
+                {
+                    l.Status = "Cancelled";
+                    Log(l.Vin, "GuaranteeClaimCancelled", $"Hủy hồ sơ đòi bảo lãnh {claim.ClaimNo}: {claim.CancelReason}");
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ. Hỗ trợ: submit, approve, claim, settle, disburse, reject, cancel.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            claim.Remark = string.IsNullOrWhiteSpace(claim.Remark) ? dto.Note.Trim() : claim.Remark + " | " + dto.Note.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            claim.ClaimNo,
+            claim.DealerCode,
+            claim.BankCode,
+            claim.Status,
+            claim.BankRefNo,
+            claim.DisbursementDate,
+            claim.ApprovedBy,
+            claim.ApprovedAt,
+            claim.SettledBy,
+            claim.SettledAt,
+            claim.RejectedBy,
+            claim.RejectedAt,
+            claim.RejectReason,
+            claim.CancelledBy,
+            claim.CancelledAt,
+            claim.CancelReason,
+            vehicleCount = lines.Count,
+            totalClaimAmount = claim.TotalClaimAmount
+        };
+    }
+
+    public async Task<object?> UpdateGuaranteeClaimLineAsync(string claimNo, string vin, UpdateGuaranteeClaimLineDto dto)
+    {
+        claimNo = claimNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var claim = await db.GuaranteeClaims.FirstOrDefaultAsync(c => c.OrgId == Org && c.ClaimNo == claimNo);
+        if (claim is null) return null;
+
+        if (claim.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa dòng xe khi hồ sơ đang ở trạng thái '{claim.Status}'.");
+
+        var line = await db.GuaranteeClaimLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.GuaranteeClaimId == claim.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.ClaimAmount.HasValue && dto.ClaimAmount.Value > 0) line.ClaimAmount = dto.ClaimAmount.Value;
+        if (dto.DueDate.HasValue) line.DueDate = dto.DueDate.Value;
+        if (dto.OverdueDays.HasValue) line.OverdueDays = dto.OverdueDays.Value;
+        if (dto.GuaranteeNo != null) line.GuaranteeNo = dto.GuaranteeNo.Trim().ToUpperInvariant();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.GuaranteeClaimLines.Where(l => l.OrgId == Org && l.GuaranteeClaimId == claim.Id).ToListAsync();
+        claim.TotalClaimAmount = allLines.Sum(l => l.ClaimAmount);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            claim.ClaimNo,
+            line.Vin,
+            line.Model,
+            line.GuaranteeNo,
+            line.GuaranteeValue,
+            line.ClaimAmount,
+            line.DueDate,
+            line.OverdueDays,
+            line.Status,
+            line.Remark,
+            headerTotalClaimAmount = claim.TotalClaimAmount
+        };
+    }
+
+    public async Task<object?> AddGuaranteeClaimLinesAsync(string claimNo, List<GuaranteeClaimItemInputDto> items)
+    {
+        claimNo = claimNo.Trim().ToUpperInvariant();
+        var claim = await db.GuaranteeClaims.FirstOrDefaultAsync(c => c.OrgId == Org && c.ClaimNo == claimNo);
+        if (claim is null) return null;
+
+        if (claim.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm dòng xe khi hồ sơ đang ở trạng thái '{claim.Status}'.");
+
+        var distinctItems = items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+
+        var existingVins = await db.GuaranteeClaimLines
+            .Where(l => l.OrgId == Org && l.GuaranteeClaimId == claim.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var duplicateVins = vins.Intersect(existingVins).ToList();
+        if (duplicateVins.Count > 0)
+            throw new InvalidOperationException("Các VIN sau đã có trong hồ sơ: " + string.Join(", ", duplicateVins));
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var grtLines = await db.GuaranteeLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status != "Cancelled")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var grtDict = grtLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        var invLines = await db.CarInvoiceLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status == "Issued")
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+        var invDict = invLines.GroupBy(l => l.Vin).ToDictionary(g => g.Key, g => g.First());
+
+        var vDict = vehicles.ToDictionary(v => v.Vin);
+        var now = DateTime.Now;
+
+        var newLines = new List<GuaranteeClaimLine>();
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            vDict.TryGetValue(vin, out var v);
+            grtDict.TryGetValue(vin, out var grt);
+            invDict.TryGetValue(vin, out var inv);
+
+            var guaranteeNo = item.GuaranteeNo ?? grt?.GuaranteeNo ?? claim.GuaranteeNo;
+            var guaranteeValue = item.GuaranteeValue.HasValue && item.GuaranteeValue.Value > 0
+                ? item.GuaranteeValue.Value
+                : (grt?.GuaranteeValue ?? inv?.TotalAmount ?? 500000000m);
+
+            var claimAmount = item.ClaimAmount.HasValue && item.ClaimAmount.Value > 0
+                ? item.ClaimAmount.Value
+                : guaranteeValue;
+
+            var dueDate = item.DueDate ?? grt?.DateExpired ?? now.AddDays(-15);
+            var overdueDays = item.OverdueDays ?? (dueDate < now ? (int)(now.Date - dueDate.Date).TotalDays : 0);
+
+            var line = new GuaranteeClaimLine
+            {
+                OrgId = Org,
+                GuaranteeClaimId = claim.Id,
+                ClaimNo = claim.ClaimNo,
+                Vin = vin,
+                Model = item.Model ?? v?.Model,
+                EngineNo = item.EngineNo ?? v?.EngineNo,
+                Color = item.Color ?? v?.Color,
+                GuaranteeNo = guaranteeNo,
+                GuaranteeValue = guaranteeValue,
+                ClaimAmount = claimAmount,
+                DueDate = dueDate,
+                OverdueDays = overdueDays,
+                Status = claim.Status == "Submitted" ? "Submitted" : "Pending",
+                Remark = item.Remark?.Trim()
+            };
+
+            newLines.Add(line);
+            Log(vin, "GuaranteeClaimCreated", $"Bổ sung xe vào hồ sơ đòi bảo lãnh {claim.BankCode} số {claim.ClaimNo}");
+        }
+
+        db.GuaranteeClaimLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.GuaranteeClaimLines.Where(l => l.OrgId == Org && l.GuaranteeClaimId == claim.Id).ToListAsync();
+        claim.TotalVehicleCount = allLines.Count;
+        claim.TotalClaimAmount = allLines.Sum(l => l.ClaimAmount);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            claim.ClaimNo,
+            addedCount = newLines.Count,
+            totalVehicleCount = claim.TotalVehicleCount,
+            totalClaimAmount = claim.TotalClaimAmount
+        };
+    }
+
+    public async Task<object?> RemoveGuaranteeClaimLineAsync(string claimNo, string vin)
+    {
+        claimNo = claimNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var claim = await db.GuaranteeClaims.FirstOrDefaultAsync(c => c.OrgId == Org && c.ClaimNo == claimNo);
+        if (claim is null) return null;
+
+        if (claim.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa dòng xe khi hồ sơ đang ở trạng thái '{claim.Status}'.");
+
+        var line = await db.GuaranteeClaimLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.GuaranteeClaimId == claim.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.GuaranteeClaimLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.GuaranteeClaimLines.Where(l => l.OrgId == Org && l.GuaranteeClaimId == claim.Id).ToListAsync();
+        claim.TotalVehicleCount = allLines.Count;
+        claim.TotalClaimAmount = allLines.Sum(l => l.ClaimAmount);
+
+        Log(vin, "GuaranteeClaimRemoved", $"Rút xe khỏi hồ sơ đòi bảo lãnh {claim.BankCode} số {claim.ClaimNo}");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            claim.ClaimNo,
+            removedVin = vin,
+            totalVehicleCount = claim.TotalVehicleCount,
+            totalClaimAmount = claim.TotalClaimAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleGuaranteeClaimInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var lines = await db.GuaranteeClaimLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var claimNos = lines.Select(l => l.ClaimNo).Distinct().ToList();
+        var claims = await db.GuaranteeClaims
+            .Where(c => c.OrgId == Org && claimNos.Contains(c.ClaimNo))
+            .ToDictionaryAsync(c => c.ClaimNo);
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && e.Kind.StartsWith("GuaranteeClaim"))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.EngineNo,
+            v.Color,
+            v.DealerCode,
+            v.StorageCode,
+            status = v.Status.ToString(),
+            v.IsPaid,
+            v.PaidAmount,
+            v.PaidAt,
+            history = lines.Select(l => new
+            {
+                l.Id,
+                l.ClaimNo,
+                bankCode = claims.TryGetValue(l.ClaimNo, out var clm) ? clm.BankCode : "",
+                bankName = clm?.BankName,
+                dealerCode = clm?.DealerCode,
+                l.GuaranteeNo,
+                l.GuaranteeValue,
+                l.ClaimAmount,
+                l.DueDate,
+                l.OverdueDays,
+                l.Status,
+                headerStatus = clm?.Status,
+                claimDate = clm?.ClaimDate,
+                claimReason = clm?.ClaimReason,
+                bankRefNo = clm?.BankRefNo,
+                disbursementDate = clm?.DisbursementDate,
+                approvedBy = clm?.ApprovedBy,
+                approvedAt = clm?.ApprovedAt,
+                settledBy = clm?.SettledBy,
+                settledAt = clm?.SettledAt,
+                l.Remark
+            }),
+            events = events.Select(e => new
+            {
+                e.Kind,
+                e.Note,
+                e.At
+            })
+        };
+    }
+
+    public async Task<object> GetOverdueGuaranteedVehiclesAsync(string? bankCode, string? dealerCode, int? overdueDaysThreshold)
+    {
+        var now = DateTime.Now;
+        var thresholdDate = overdueDaysThreshold.HasValue ? now.AddDays(-overdueDaysThreshold.Value) : now;
+
+        var grtLines = await db.GuaranteeLines
+            .Where(g => g.OrgId == Org && g.Status != "Cancelled" && g.Status != "Settled")
+            .ToListAsync();
+
+        var vins = grtLines.Select(g => g.Vin).Distinct().ToList();
+
+        var vehicles = await db.Vehicles
+            .Where(v => v.OrgId == Org && vins.Contains(v.Vin) && !v.IsPaid)
+            .ToListAsync();
+
+        var vDict = vehicles.ToDictionary(v => v.Vin);
+
+        var guarantees = await db.Guarantees
+            .Where(g => g.OrgId == Org)
+            .ToDictionaryAsync(g => g.GuaranteeNo);
+
+        var list = new List<object>();
+
+        foreach (var gl in grtLines)
+        {
+            if (!vDict.TryGetValue(gl.Vin, out var v)) continue;
+
+            guarantees.TryGetValue(gl.GuaranteeNo, out var grt);
+            var bCode = grt?.BankCode ?? "";
+            var dCode = grt?.DealerCode ?? v.DealerCode ?? "";
+
+            if (!string.IsNullOrWhiteSpace(bankCode) && !bCode.Equals(bankCode.Trim(), StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (!string.IsNullOrWhiteSpace(dealerCode) && !dCode.Equals(dealerCode.Trim(), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var dateExpired = gl.DateExpired ?? grt?.DateExpired ?? now;
+            var overdueDays = (int)(now.Date - dateExpired.Date).TotalDays;
+
+            list.Add(new
+            {
+                v.Vin,
+                v.Model,
+                v.EngineNo,
+                v.Color,
+                v.DealerCode,
+                v.StorageCode,
+                status = v.Status.ToString(),
+                guaranteeNo = gl.GuaranteeNo,
+                bankCode = bCode,
+                bankName = grt?.BankName,
+                guaranteeValue = gl.GuaranteeValue,
+                dateStart = gl.DateStart,
+                dateExpired = dateExpired,
+                isOverdue = overdueDays > 0,
+                overdueDays = Math.Max(0, overdueDays),
+                v.IsPaid
+            });
+        }
+
+        return new { count = list.Count, items = list };
+    }
+
+    // ===== Hợp đồng mua bán xe / linh kiện ngoại thương CBU/CKD (BizHTC.Contract.ContractOversea / CT_ContractOversea) =====
+    public async Task<object> CreateContractOverseaAsync(CreateContractOverseaDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.SupplierCode))
+            throw new InvalidOperationException("Cần mã nhà cung cấp / đối tác ngoại thương (SupplierCode).");
+
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng xe / bộ linh kiện (Items) trong hợp đồng ngoại thương.");
+
+        var supplierCode = dto.SupplierCode.Trim().ToUpperInvariant();
+        var contractNo = string.IsNullOrWhiteSpace(dto.ContractNo)
+            ? "CTO" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.ContractNo.Trim().ToUpperInvariant();
+
+        if (await db.ContractOverseas.AnyAsync(c => c.OrgId == Org && c.ContractNo == contractNo))
+            throw new InvalidOperationException($"Mã hợp đồng ngoại thương {contractNo} đã tồn tại.");
+
+        var exchangeRate = dto.ExchangeRate > 0 ? dto.ExchangeRate : 25450m;
+        var now = DateTime.Now;
+
+        var vins = dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)).Select(i => i.Vin!.Trim().ToUpperInvariant()).Distinct().ToList();
+        var vehicles = vins.Count > 0 ? await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync() : new List<Vehicle>();
+        var vDict = vehicles.ToDictionary(v => v.Vin);
+
+        var lines = new List<ContractOverseaLine>();
+        foreach (var item in dto.Items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Model))
+                throw new InvalidOperationException("Tên dòng xe (Model) không được để trống.");
+
+            var qty = Math.Max(1, item.OrderQty);
+            var unitPriceForeign = item.UnitPriceForeign;
+            var totalAmountForeign = item.TotalAmountForeign ?? (qty * unitPriceForeign);
+            var unitPrice = item.UnitPrice ?? (unitPriceForeign * exchangeRate);
+            var totalAmount = item.TotalAmount ?? (totalAmountForeign * exchangeRate);
+
+            string? itemVin = null;
+            if (!string.IsNullOrWhiteSpace(item.Vin))
+            {
+                itemVin = item.Vin.Trim().ToUpperInvariant();
+                if (vDict.TryGetValue(itemVin, out var v))
+                {
+                    v.ContractNoOversea = contractNo;
+                }
+            }
+
+            lines.Add(new ContractOverseaLine
+            {
+                OrgId = Org,
+                ContractNo = contractNo,
+                Vin = itemVin,
+                Model = item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                Color = item.Color?.Trim(),
+                ColorCode = item.ColorCode?.Trim().ToUpperInvariant(),
+                ModelYear = item.ModelYear ?? 2026,
+                PlantCode = item.PlantCode?.Trim().ToUpperInvariant(),
+                PortCode = item.PortCode?.Trim().ToUpperInvariant() ?? dto.DeparturePort?.Trim().ToUpperInvariant(),
+                WorkOrderNo = item.WorkOrderNo?.Trim().ToUpperInvariant(),
+                LCTemp = item.LCTemp?.Trim().ToUpperInvariant(),
+                OrderQty = qty,
+                UnitPriceForeign = unitPriceForeign,
+                TotalAmountForeign = totalAmountForeign,
+                UnitPrice = unitPrice,
+                TotalAmount = totalAmount,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        var header = new ContractOversea
+        {
+            OrgId = Org,
+            ContractNo = contractNo,
+            ContractNoUser = dto.ContractNoUser?.Trim(),
+            SupplierCode = supplierCode,
+            SupplierName = dto.SupplierName?.Trim() ?? (supplierCode == "HMC" ? "Hyundai Motor Company (Korea)" : supplierCode == "HMI" ? "Hyundai Motor India" : "Nhà cung cấp quốc tế"),
+            IncotermsCode = dto.IncotermsCode?.Trim().ToUpperInvariant() ?? "CIF_HAI_PHONG",
+            Currency = dto.Currency?.Trim().ToUpperInvariant() ?? "USD",
+            ExchangeRate = exchangeRate,
+            PaymentTerm = dto.PaymentTerm?.Trim().ToUpperInvariant() ?? "LC",
+            DeparturePort = dto.DeparturePort?.Trim().ToUpperInvariant() ?? "BUSAN",
+            ArrivalPort = dto.ArrivalPort?.Trim().ToUpperInvariant() ?? "CANG_HAI_PHONG",
+            OrderMonth = dto.OrderMonth?.Trim(),
+            ProductionMonth = dto.ProductionMonth?.Trim(),
+            ExpectedDeliveryMonth = dto.ExpectedDeliveryMonth?.Trim(),
+            ContractDate = dto.ContractDate ?? now,
+            DeliveryDeadline = dto.DeliveryDeadline,
+            TotalQuantity = lines.Sum(l => l.OrderQty),
+            TotalAmountForeign = lines.Sum(l => l.TotalAmountForeign),
+            TotalAmount = lines.Sum(l => l.TotalAmount),
+            FileSigned = dto.FileSigned?.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = now
+        };
+
+        db.ContractOverseas.Add(header);
+        await db.SaveChangesAsync();
+
+        foreach (var line in lines)
+        {
+            line.ContractOverseaId = header.Id;
+            db.ContractOverseaLines.Add(line);
+
+            if (!string.IsNullOrWhiteSpace(line.Vin))
+            {
+                Log(line.Vin, "ContractOverseaCreated", $"Tạo hợp đồng ngoại thương {contractNo} nhập khẩu xe {line.Model} từ nhà cung cấp {header.SupplierCode}. Đơn giá: {line.UnitPriceForeign:N2} {header.Currency}");
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.Id,
+            header.ContractNo,
+            header.ContractNoUser,
+            header.SupplierCode,
+            header.SupplierName,
+            header.IncotermsCode,
+            header.Currency,
+            header.ExchangeRate,
+            header.PaymentTerm,
+            header.DeparturePort,
+            header.ArrivalPort,
+            header.OrderMonth,
+            header.ProductionMonth,
+            header.ExpectedDeliveryMonth,
+            header.ContractDate,
+            header.DeliveryDeadline,
+            header.TotalQuantity,
+            header.TotalAmountForeign,
+            header.TotalAmount,
+            header.Status,
+            header.Remark,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.ContractNo,
+                l.Vin,
+                l.Model,
+                l.SpecCode,
+                l.Color,
+                l.ColorCode,
+                l.ModelYear,
+                l.PlantCode,
+                l.PortCode,
+                l.WorkOrderNo,
+                l.LCTemp,
+                l.OrderQty,
+                l.UnitPriceForeign,
+                l.TotalAmountForeign,
+                l.UnitPrice,
+                l.TotalAmount,
+                l.Status
+            })
+        };
+    }
+
+    public async Task<object> ListContractOverseasAsync(string? status, string? supplier, string? incoterms, string? currency, string? orderMonth, string? contractNo, string? vin)
+    {
+        var q = db.ContractOverseas.Where(c => c.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var s = status.Trim().ToLowerInvariant();
+            q = q.Where(c => c.Status.ToLower() == s);
+        }
+        if (!string.IsNullOrWhiteSpace(supplier))
+        {
+            var sup = supplier.Trim().ToUpperInvariant();
+            q = q.Where(c => c.SupplierCode == sup || (c.SupplierName != null && c.SupplierName.ToUpper().Contains(sup)));
+        }
+        if (!string.IsNullOrWhiteSpace(incoterms))
+        {
+            var inc = incoterms.Trim().ToUpperInvariant();
+            q = q.Where(c => c.IncotermsCode.Contains(inc));
+        }
+        if (!string.IsNullOrWhiteSpace(currency))
+        {
+            var cur = currency.Trim().ToUpperInvariant();
+            q = q.Where(c => c.Currency == cur);
+        }
+        if (!string.IsNullOrWhiteSpace(orderMonth))
+        {
+            var om = orderMonth.Trim();
+            q = q.Where(c => c.OrderMonth == om);
+        }
+        if (!string.IsNullOrWhiteSpace(contractNo))
+        {
+            var cNo = contractNo.Trim().ToUpperInvariant();
+            q = q.Where(c => c.ContractNo.Contains(cNo) || (c.ContractNoUser != null && c.ContractNoUser.Contains(cNo)));
+        }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            var contractIds = await db.ContractOverseaLines.Where(l => l.OrgId == Org && l.Vin == v).Select(l => l.ContractOverseaId).ToListAsync();
+            q = q.Where(c => contractIds.Contains(c.Id));
+        }
+
+        var items = await q.OrderByDescending(c => c.Id).Take(500).Select(c => new
+        {
+            c.Id,
+            c.ContractNo,
+            c.ContractNoUser,
+            c.SupplierCode,
+            c.SupplierName,
+            c.IncotermsCode,
+            c.Currency,
+            c.ExchangeRate,
+            c.PaymentTerm,
+            c.DeparturePort,
+            c.ArrivalPort,
+            c.OrderMonth,
+            c.ProductionMonth,
+            c.ExpectedDeliveryMonth,
+            c.ContractDate,
+            c.DeliveryDeadline,
+            c.TotalQuantity,
+            c.TotalAmountForeign,
+            c.TotalAmount,
+            c.FileSigned,
+            c.Status,
+            c.Remark,
+            c.CreatedBy,
+            c.CreatedAt,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            c.CompletedBy,
+            c.CompletedAt,
+            c.RejectedBy,
+            c.RejectedAt,
+            c.CancelledBy,
+            c.CancelledAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetContractOverseaAsync(string contractNo)
+    {
+        contractNo = contractNo.Trim().ToUpperInvariant();
+        var header = await db.ContractOverseas.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == contractNo);
+        if (header is null) return null;
+
+        var lines = await db.ContractOverseaLines
+            .Where(l => l.OrgId == Org && l.ContractOverseaId == header.Id)
+            .OrderBy(l => l.Id)
+            .Select(l => new
+            {
+                l.Id,
+                l.ContractNo,
+                l.Vin,
+                l.Model,
+                l.SpecCode,
+                l.Color,
+                l.ColorCode,
+                l.ModelYear,
+                l.PlantCode,
+                l.PortCode,
+                l.WorkOrderNo,
+                l.LCTemp,
+                l.OrderQty,
+                l.UnitPriceForeign,
+                l.TotalAmountForeign,
+                l.UnitPrice,
+                l.TotalAmount,
+                l.Status,
+                l.Remark
+            })
+            .ToListAsync();
+
+        return new
+        {
+            header.Id,
+            header.ContractNo,
+            header.ContractNoUser,
+            header.SupplierCode,
+            header.SupplierName,
+            header.IncotermsCode,
+            header.Currency,
+            header.ExchangeRate,
+            header.PaymentTerm,
+            header.DeparturePort,
+            header.ArrivalPort,
+            header.OrderMonth,
+            header.ProductionMonth,
+            header.ExpectedDeliveryMonth,
+            header.ContractDate,
+            header.DeliveryDeadline,
+            header.TotalQuantity,
+            header.TotalAmountForeign,
+            header.TotalAmount,
+            header.FileSigned,
+            header.Status,
+            header.Remark,
+            header.CreatedBy,
+            header.CreatedAt,
+            header.ApprovedBy,
+            header.ApprovedAt,
+            header.CompletedBy,
+            header.CompletedAt,
+            header.RejectedBy,
+            header.RejectedAt,
+            header.RejectReason,
+            header.CancelledBy,
+            header.CancelledAt,
+            header.CancelReason,
+            lines
+        };
+    }
+
+    public async Task<object?> ContractOverseaTransitionAsync(string contractNo, string action, ContractOverseaTransitionDto? dto)
+    {
+        contractNo = contractNo.Trim().ToUpperInvariant();
+        action = action.Trim().ToLowerInvariant();
+
+        var header = await db.ContractOverseas.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == contractNo);
+        if (header is null) return null;
+
+        var lines = await db.ContractOverseaLines.Where(l => l.OrgId == Org && l.ContractOverseaId == header.Id).ToListAsync();
+        var now = DateTime.Now;
+
+        switch (action)
+        {
+            case "submit":
+                if (header.Status != "Draft")
+                    throw new InvalidOperationException($"Không thể nộp hợp đồng khi đang ở trạng thái '{header.Status}'. Chỉ áp dụng cho 'Draft'.");
+                header.Status = "Submitted";
+                foreach (var l in lines)
+                {
+                    l.Status = "Submitted";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "ContractOverseaSubmitted", $"Nộp hợp đồng ngoại thương {header.ContractNo} chờ phê duyệt.");
+                }
+                break;
+
+            case "approve":
+                if (header.Status != "Submitted")
+                    throw new InvalidOperationException($"Không thể phê duyệt hợp đồng khi đang ở trạng thái '{header.Status}'. Cần ở 'Submitted'.");
+                header.Status = "Approved";
+                header.ApprovedBy = dto?.User ?? "Director.ImportExport";
+                header.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.FileSigned)) header.FileSigned = dto.FileSigned.Trim();
+                foreach (var l in lines)
+                {
+                    l.Status = "Approved";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "ContractOverseaApproved", $"Phê duyệt hợp đồng ngoại thương {header.ContractNo} nhập khẩu xe {l.Model}. Người duyệt: {header.ApprovedBy}");
+                }
+                break;
+
+            case "execute" or "start" or "in-execution" or "inexecution" or "inprogress":
+                if (header.Status != "Approved")
+                    throw new InvalidOperationException($"Không thể chuyển sang triển khai sản xuất khi hợp đồng đang ở trạng thái '{header.Status}'. Cần ở 'Approved'.");
+                header.Status = "InExecution";
+                foreach (var l in lines)
+                {
+                    l.Status = "InProduction";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "ContractOverseaExecuting", $"Bắt đầu thực thi hợp đồng ngoại thương {header.ContractNo}, nhà máy {l.PlantCode ?? header.SupplierCode} đưa vào dây chuyền sản xuất.");
+                }
+                break;
+
+            case "complete" or "finish":
+                if (header.Status != "Approved" && header.Status != "InExecution")
+                    throw new InvalidOperationException($"Không thể hoàn tất hợp đồng khi đang ở trạng thái '{header.Status}'. Cần ở 'Approved' hoặc 'InExecution'.");
+                header.Status = "Completed";
+                header.CompletedBy = dto?.User ?? "Logistics.Manager";
+                header.CompletedAt = now;
+                foreach (var l in lines)
+                {
+                    l.Status = "Delivered";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "ContractOverseaCompleted", $"Hoàn tất giao nhận toàn bộ lô xe theo hợp đồng ngoại thương {header.ContractNo}. Cập cảng {header.ArrivalPort}.");
+                }
+                break;
+
+            case "reject":
+                if (header.Status != "Draft" && header.Status != "Submitted")
+                    throw new InvalidOperationException($"Không thể từ chối hợp đồng khi đang ở trạng thái '{header.Status}'.");
+                header.Status = "Rejected";
+                header.RejectedBy = dto?.User ?? "Approver";
+                header.RejectedAt = now;
+                header.RejectReason = dto?.Reason ?? dto?.Note ?? "Hợp đồng ngoại thương bị từ chối.";
+                foreach (var l in lines)
+                {
+                    l.Status = "Rejected";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "ContractOverseaRejected", $"Từ chối hợp đồng ngoại thương {header.ContractNo}: {header.RejectReason}");
+                }
+                break;
+
+            case "cancel":
+                if (header.Status is "Completed" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể hủy hợp đồng khi đang ở trạng thái '{header.Status}'.");
+                header.Status = "Cancelled";
+                header.CancelledBy = dto?.User ?? "User";
+                header.CancelledAt = now;
+                header.CancelReason = dto?.Reason ?? dto?.Note ?? "Hủy hợp đồng ngoại thương.";
+                foreach (var l in lines)
+                {
+                    l.Status = "Cancelled";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "ContractOverseaCancelled", $"Hủy hợp đồng ngoại thương {header.ContractNo}: {header.CancelReason}");
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ. Hỗ trợ: submit, approve, execute, complete, reject, cancel.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            header.Remark = string.IsNullOrWhiteSpace(header.Remark) ? dto.Note.Trim() : header.Remark + " | " + dto.Note.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.ContractNo,
+            header.ContractNoUser,
+            header.SupplierCode,
+            header.Status,
+            header.ApprovedBy,
+            header.ApprovedAt,
+            header.CompletedBy,
+            header.CompletedAt,
+            header.RejectedBy,
+            header.RejectedAt,
+            header.RejectReason,
+            header.CancelledBy,
+            header.CancelledAt,
+            header.CancelReason,
+            totalQuantity = header.TotalQuantity,
+            totalAmountForeign = header.TotalAmountForeign,
+            totalAmount = header.TotalAmount
+        };
+    }
+
+    public async Task<object?> UpdateContractOverseaHeaderAsync(string contractNo, UpdateContractOverseaHeaderDto dto)
+    {
+        contractNo = contractNo.Trim().ToUpperInvariant();
+        var header = await db.ContractOverseas.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == contractNo);
+        if (header is null) return null;
+
+        if (header.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa hợp đồng khi đang ở trạng thái '{header.Status}'.");
+
+        if (dto.SupplierName != null) header.SupplierName = dto.SupplierName.Trim();
+        if (dto.IncotermsCode != null) header.IncotermsCode = dto.IncotermsCode.Trim().ToUpperInvariant();
+        if (dto.Currency != null) header.Currency = dto.Currency.Trim().ToUpperInvariant();
+        if (dto.PaymentTerm != null) header.PaymentTerm = dto.PaymentTerm.Trim().ToUpperInvariant();
+        if (dto.DeparturePort != null) header.DeparturePort = dto.DeparturePort.Trim().ToUpperInvariant();
+        if (dto.ArrivalPort != null) header.ArrivalPort = dto.ArrivalPort.Trim().ToUpperInvariant();
+        if (dto.OrderMonth != null) header.OrderMonth = dto.OrderMonth.Trim();
+        if (dto.ProductionMonth != null) header.ProductionMonth = dto.ProductionMonth.Trim();
+        if (dto.ExpectedDeliveryMonth != null) header.ExpectedDeliveryMonth = dto.ExpectedDeliveryMonth.Trim();
+        if (dto.DeliveryDeadline.HasValue) header.DeliveryDeadline = dto.DeliveryDeadline.Value;
+        if (dto.FileSigned != null) header.FileSigned = dto.FileSigned.Trim();
+        if (dto.Remark != null) header.Remark = dto.Remark.Trim();
+
+        if (dto.ExchangeRate.HasValue && dto.ExchangeRate.Value > 0)
+        {
+            header.ExchangeRate = dto.ExchangeRate.Value;
+            var lines = await db.ContractOverseaLines.Where(l => l.OrgId == Org && l.ContractOverseaId == header.Id).ToListAsync();
+            foreach (var l in lines)
+            {
+                l.UnitPrice = l.UnitPriceForeign * header.ExchangeRate;
+                l.TotalAmount = l.TotalAmountForeign * header.ExchangeRate;
+            }
+            header.TotalAmount = lines.Sum(l => l.TotalAmount);
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.ContractNo,
+            header.ContractNoUser,
+            header.SupplierCode,
+            header.SupplierName,
+            header.IncotermsCode,
+            header.Currency,
+            header.ExchangeRate,
+            header.PaymentTerm,
+            header.DeparturePort,
+            header.ArrivalPort,
+            header.OrderMonth,
+            header.ProductionMonth,
+            header.ExpectedDeliveryMonth,
+            header.DeliveryDeadline,
+            header.TotalQuantity,
+            header.TotalAmountForeign,
+            header.TotalAmount,
+            header.Status,
+            header.Remark
+        };
+    }
+
+    public async Task<object?> UpdateContractOverseaLineAsync(string contractNo, long lineId, UpdateContractOverseaLineDto dto)
+    {
+        contractNo = contractNo.Trim().ToUpperInvariant();
+        var header = await db.ContractOverseas.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == contractNo);
+        if (header is null) return null;
+
+        if (header.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa dòng xe khi hợp đồng đang ở trạng thái '{header.Status}'.");
+
+        var line = await db.ContractOverseaLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ContractOverseaId == header.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (dto.Model != null) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (dto.Color != null) line.Color = dto.Color.Trim();
+        if (dto.ColorCode != null) line.ColorCode = dto.ColorCode.Trim().ToUpperInvariant();
+        if (dto.ModelYear.HasValue) line.ModelYear = dto.ModelYear.Value;
+        if (dto.PlantCode != null) line.PlantCode = dto.PlantCode.Trim().ToUpperInvariant();
+        if (dto.PortCode != null) line.PortCode = dto.PortCode.Trim().ToUpperInvariant();
+        if (dto.WorkOrderNo != null) line.WorkOrderNo = dto.WorkOrderNo.Trim().ToUpperInvariant();
+        if (dto.LCTemp != null) line.LCTemp = dto.LCTemp.Trim().ToUpperInvariant();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        if (dto.Vin != null)
+        {
+            var oldVin = line.Vin;
+            var newVin = string.IsNullOrWhiteSpace(dto.Vin) ? null : dto.Vin.Trim().ToUpperInvariant();
+            line.Vin = newVin;
+
+            if (!string.IsNullOrWhiteSpace(oldVin) && oldVin != newVin)
+            {
+                var oldV = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == oldVin);
+                if (oldV != null && oldV.ContractNoOversea == contractNo) oldV.ContractNoOversea = null;
+            }
+            if (!string.IsNullOrWhiteSpace(newVin))
+            {
+                var newV = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == newVin);
+                if (newV != null) newV.ContractNoOversea = contractNo;
+            }
+        }
+
+        if (dto.OrderQty.HasValue && dto.OrderQty.Value > 0) line.OrderQty = dto.OrderQty.Value;
+        if (dto.UnitPriceForeign.HasValue && dto.UnitPriceForeign.Value >= 0) line.UnitPriceForeign = dto.UnitPriceForeign.Value;
+
+        var rate = (dto.ExchangeRate.HasValue && dto.ExchangeRate.Value > 0) ? dto.ExchangeRate.Value : header.ExchangeRate;
+        line.TotalAmountForeign = line.OrderQty * line.UnitPriceForeign;
+        line.UnitPrice = line.UnitPriceForeign * rate;
+        line.TotalAmount = line.TotalAmountForeign * rate;
+
+        var allLines = await db.ContractOverseaLines.Where(l => l.OrgId == Org && l.ContractOverseaId == header.Id).ToListAsync();
+        header.TotalQuantity = allLines.Sum(l => l.OrderQty);
+        header.TotalAmountForeign = allLines.Sum(l => l.TotalAmountForeign);
+        header.TotalAmount = allLines.Sum(l => l.TotalAmount);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.ContractNo,
+            line.Id,
+            line.Vin,
+            line.Model,
+            line.SpecCode,
+            line.Color,
+            line.ColorCode,
+            line.ModelYear,
+            line.PlantCode,
+            line.PortCode,
+            line.WorkOrderNo,
+            line.LCTemp,
+            line.OrderQty,
+            line.UnitPriceForeign,
+            line.TotalAmountForeign,
+            line.UnitPrice,
+            line.TotalAmount,
+            line.Status,
+            line.Remark,
+            headerTotalQuantity = header.TotalQuantity,
+            headerTotalAmountForeign = header.TotalAmountForeign,
+            headerTotalAmount = header.TotalAmount
+        };
+    }
+
+    public async Task<object?> AddContractOverseaLinesAsync(string contractNo, List<ContractOverseaItemInputDto> items)
+    {
+        contractNo = contractNo.Trim().ToUpperInvariant();
+        var header = await db.ContractOverseas.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == contractNo);
+        if (header is null) return null;
+
+        if (header.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm dòng xe khi hợp đồng đang ở trạng thái '{header.Status}'.");
+
+        if (items is null || items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng xe mới.");
+
+        var vins = items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)).Select(i => i.Vin!.Trim().ToUpperInvariant()).Distinct().ToList();
+        var vehicles = vins.Count > 0 ? await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync() : new List<Vehicle>();
+        var vDict = vehicles.ToDictionary(v => v.Vin);
+
+        var newLines = new List<ContractOverseaLine>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Model))
+                throw new InvalidOperationException("Tên dòng xe (Model) không được để trống.");
+
+            var qty = Math.Max(1, item.OrderQty);
+            var unitPriceForeign = item.UnitPriceForeign;
+            var totalAmountForeign = item.TotalAmountForeign ?? (qty * unitPriceForeign);
+            var unitPrice = item.UnitPrice ?? (unitPriceForeign * header.ExchangeRate);
+            var totalAmount = item.TotalAmount ?? (totalAmountForeign * header.ExchangeRate);
+
+            string? itemVin = null;
+            if (!string.IsNullOrWhiteSpace(item.Vin))
+            {
+                itemVin = item.Vin.Trim().ToUpperInvariant();
+                if (vDict.TryGetValue(itemVin, out var v))
+                {
+                    v.ContractNoOversea = contractNo;
+                }
+            }
+
+            var line = new ContractOverseaLine
+            {
+                OrgId = Org,
+                ContractOverseaId = header.Id,
+                ContractNo = header.ContractNo,
+                Vin = itemVin,
+                Model = item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                Color = item.Color?.Trim(),
+                ColorCode = item.ColorCode?.Trim().ToUpperInvariant(),
+                ModelYear = item.ModelYear ?? 2026,
+                PlantCode = item.PlantCode?.Trim().ToUpperInvariant(),
+                PortCode = item.PortCode?.Trim().ToUpperInvariant() ?? header.DeparturePort,
+                WorkOrderNo = item.WorkOrderNo?.Trim().ToUpperInvariant(),
+                LCTemp = item.LCTemp?.Trim().ToUpperInvariant(),
+                OrderQty = qty,
+                UnitPriceForeign = unitPriceForeign,
+                TotalAmountForeign = totalAmountForeign,
+                UnitPrice = unitPrice,
+                TotalAmount = totalAmount,
+                Status = header.Status == "Submitted" ? "Submitted" : header.Status == "Approved" ? "Approved" : "Pending",
+                Remark = item.Remark?.Trim()
+            };
+
+            newLines.Add(line);
+            if (!string.IsNullOrWhiteSpace(itemVin))
+                Log(itemVin, "ContractOverseaLineAdded", $"Bổ sung xe vào hợp đồng ngoại thương {header.ContractNo} từ nhà cung cấp {header.SupplierCode}");
+        }
+
+        db.ContractOverseaLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ContractOverseaLines.Where(l => l.OrgId == Org && l.ContractOverseaId == header.Id).ToListAsync();
+        header.TotalQuantity = allLines.Sum(l => l.OrderQty);
+        header.TotalAmountForeign = allLines.Sum(l => l.TotalAmountForeign);
+        header.TotalAmount = allLines.Sum(l => l.TotalAmount);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.ContractNo,
+            addedCount = newLines.Count,
+            totalQuantity = header.TotalQuantity,
+            totalAmountForeign = header.TotalAmountForeign,
+            totalAmount = header.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveContractOverseaLineAsync(string contractNo, long lineId)
+    {
+        contractNo = contractNo.Trim().ToUpperInvariant();
+        var header = await db.ContractOverseas.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == contractNo);
+        if (header is null) return null;
+
+        if (header.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa dòng xe khi hợp đồng đang ở trạng thái '{header.Status}'.");
+
+        var line = await db.ContractOverseaLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ContractOverseaId == header.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(line.Vin))
+        {
+            var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == line.Vin);
+            if (v != null && v.ContractNoOversea == contractNo) v.ContractNoOversea = null;
+            Log(line.Vin, "ContractOverseaLineRemoved", $"Rút xe khỏi hợp đồng ngoại thương {header.ContractNo}");
+        }
+
+        db.ContractOverseaLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ContractOverseaLines.Where(l => l.OrgId == Org && l.ContractOverseaId == header.Id).ToListAsync();
+        header.TotalQuantity = allLines.Sum(l => l.OrderQty);
+        header.TotalAmountForeign = allLines.Sum(l => l.TotalAmountForeign);
+        header.TotalAmount = allLines.Sum(l => l.TotalAmount);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.ContractNo,
+            removedLineId = lineId,
+            totalQuantity = header.TotalQuantity,
+            totalAmountForeign = header.TotalAmountForeign,
+            totalAmount = header.TotalAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleContractOverseaInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var lines = await db.ContractOverseaLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var contractNos = lines.Select(l => l.ContractNo).Distinct().ToList();
+        if (v.ContractNoOversea != null && !contractNos.Contains(v.ContractNoOversea))
+            contractNos.Add(v.ContractNoOversea);
+
+        var contracts = await db.ContractOverseas
+            .Where(c => c.OrgId == Org && contractNos.Contains(c.ContractNo))
+            .ToDictionaryAsync(c => c.ContractNo);
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && e.Kind.StartsWith("ContractOversea"))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.EngineNo,
+            v.Color,
+            v.DealerCode,
+            v.StorageCode,
+            v.ContractNoOversea,
+            v.PackingListNo,
+            v.DeclarationNo,
+            v.IsCustomsCleared,
+            status = v.Status.ToString(),
+            contracts = lines.Select(l => new
+            {
+                l.Id,
+                l.ContractNo,
+                supplierCode = contracts.TryGetValue(l.ContractNo, out var c) ? c.SupplierCode : "",
+                supplierName = c?.SupplierName,
+                incotermsCode = c?.IncotermsCode,
+                currency = c?.Currency,
+                exchangeRate = c?.ExchangeRate,
+                paymentTerm = c?.PaymentTerm,
+                departurePort = c?.DeparturePort,
+                arrivalPort = c?.ArrivalPort,
+                headerStatus = c?.Status,
+                contractDate = c?.ContractDate,
+                deliveryDeadline = c?.DeliveryDeadline,
+                l.Model,
+                l.SpecCode,
+                l.Color,
+                l.ModelYear,
+                l.PlantCode,
+                l.PortCode,
+                l.WorkOrderNo,
+                l.LCTemp,
+                l.OrderQty,
+                l.UnitPriceForeign,
+                l.TotalAmountForeign,
+                l.UnitPrice,
+                l.TotalAmount,
+                l.Status,
+                l.Remark
+            }),
+            events = events.Select(e => new
+            {
+                e.Kind,
+                e.Note,
+                e.At
+            })
+        };
+    }
+
+    public async Task<object> GetContractOverseaSummaryAsync()
+    {
+        var contracts = await db.ContractOverseas.Where(c => c.OrgId == Org).ToListAsync();
+        var lines = await db.ContractOverseaLines.Where(l => l.OrgId == Org).ToListAsync();
+
+        var byStatus = contracts.GroupBy(c => c.Status).Select(g => new
+        {
+            status = g.Key,
+            contractCount = g.Count(),
+            totalQuantity = g.Sum(c => c.TotalQuantity),
+            totalAmountForeign = g.Sum(c => c.TotalAmountForeign),
+            totalAmount = g.Sum(c => c.TotalAmount)
+        }).ToList();
+
+        var bySupplier = contracts.GroupBy(c => c.SupplierCode).Select(g => new
+        {
+            supplierCode = g.Key,
+            supplierName = g.First().SupplierName,
+            contractCount = g.Count(),
+            totalQuantity = g.Sum(c => c.TotalQuantity),
+            totalAmountForeign = g.Sum(c => c.TotalAmountForeign),
+            totalAmount = g.Sum(c => c.TotalAmount)
+        }).ToList();
+
+        var byModel = lines.GroupBy(l => l.Model).Select(g => new
+        {
+            model = g.Key,
+            totalQuantity = g.Sum(l => l.OrderQty),
+            totalAmountForeign = g.Sum(l => l.TotalAmountForeign),
+            totalAmount = g.Sum(l => l.TotalAmount)
+        }).OrderByDescending(m => m.totalQuantity).ToList();
+
+        return new
+        {
+            totalContracts = contracts.Count,
+            totalVehicles = contracts.Sum(c => c.TotalQuantity),
+            totalAmountForeign = contracts.Sum(c => c.TotalAmountForeign),
+            totalAmount = contracts.Sum(c => c.TotalAmount),
+            byStatus,
+            bySupplier,
+            byModel
+        };
     }
 }

@@ -1290,6 +1290,237 @@ app.MapGet("/api/color-changes/vehicle-info/{vin}", async (string vin, IVehicleS
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Biên bản bàn giao hóa đơn & hồ sơ chứng từ xe cho Ngân hàng (BizHTC.Car.Car_BankBillMinutes / BankBillMinutes) ----
+app.MapPost("/api/bank-bill-minutes", async (CreateBankBillMinutesDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.BankCode) || string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã ngân hàng BankCode và đại lý DealerCode." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong biên bản bàn giao hồ sơ ngân hàng." });
+    try { return Results.Ok(await svc.CreateBankBillMinutesAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/bank-bill-minutes", async (IVehicleService svc, string? status, string? bank, string? dealer, string? guaranteeNo, string? bankBillMnNo, string? vin) =>
+    Results.Ok(await svc.ListBankBillMinutesAsync(status, bank, dealer, guaranteeNo, bankBillMnNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/bank-bill-minutes/pending-vehicles", async (IVehicleService svc, string? bank, string? dealer) =>
+    Results.Ok(await svc.GetPendingVehiclesForBankBillAsync(bank, dealer))).RequireAuthorization();
+
+app.MapGet("/api/bank-bill-minutes/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.GetBankBillMinutesAsync(code);
+    return r is null ? Results.NotFound(new { code, error = "Không tìm thấy biên bản bàn giao hồ sơ ngân hàng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/bank-bill-minutes/{code}/{action}", async (string code, string action, BankBillMinutesTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "handover" or "complete" or "sign" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|handover|reject|cancel" });
+    var r = await svc.BankBillMinutesTransitionAsync(code, action, dto);
+    return r is null ? Results.NotFound(new { code, error = "Không thấy biên bản bàn giao hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/bank-bill-minutes/{code}/lines/{vin}/update", async (string code, string vin, UpdateBankBillMinutesLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateBankBillMinutesLineAsync(code, vin, dto);
+        return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong biên bản hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/bank-bill-minutes/{code}/lines", async (string code, List<BankBillMinutesItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào biên bản bàn giao." });
+    try
+    {
+        var r = await svc.AddBankBillMinutesLinesAsync(code, items);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy biên bản bàn giao hoặc hồ sơ đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/bank-bill-minutes/{code}/lines/{vin}", async (string code, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveBankBillMinutesLineAsync(code, vin);
+    return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong biên bản hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/bank-bill-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleBankBillInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+// ---- Yêu cầu & Hồ sơ Đòi tiền / Khiếu nại bảo lãnh thanh toán ngân hàng (BizHTC.Payment.Pmt_GrtClaim / GuaranteeClaim) ----
+app.MapPost("/api/guarantee-claims", async (CreateGuaranteeClaimDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.BankCode) || string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã ngân hàng BankCode và đại lý DealerCode." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong hồ sơ đòi tiền bảo lãnh." });
+    try { return Results.Ok(await svc.CreateGuaranteeClaimAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/guarantee-claims", async (IVehicleService svc, string? status, string? bank, string? dealer, string? guaranteeNo, string? claimNo, string? vin) =>
+    Results.Ok(await svc.ListGuaranteeClaimsAsync(status, bank, dealer, guaranteeNo, claimNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/guarantee-claims/overdue-vehicles", async (IVehicleService svc, string? bank, string? dealer, int? overdueDays) =>
+    Results.Ok(await svc.GetOverdueGuaranteedVehiclesAsync(bank, dealer, overdueDays))).RequireAuthorization();
+
+app.MapGet("/api/guarantee-claims/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.GetGuaranteeClaimAsync(code);
+    return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hồ sơ đòi tiền bảo lãnh." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/guarantee-claims/{code}/{action}", async (string code, string action, GuaranteeClaimTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "claim" or "settle" or "disburse" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|claim|settle|disburse|reject|cancel" });
+    try
+    {
+        var r = await svc.GuaranteeClaimTransitionAsync(code, action, dto);
+        return r is null ? Results.NotFound(new { code, error = "Không thấy hồ sơ đòi bảo lãnh hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/guarantee-claims/{code}/lines/{vin}/update", async (string code, string vin, UpdateGuaranteeClaimLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGuaranteeClaimLineAsync(code, vin, dto);
+        return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong hồ sơ hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/guarantee-claims/{code}/lines", async (string code, List<GuaranteeClaimItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào hồ sơ đòi bảo lãnh." });
+    try
+    {
+        var r = await svc.AddGuaranteeClaimLinesAsync(code, items);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hồ sơ đòi bảo lãnh hoặc hồ sơ đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/guarantee-claims/{code}/lines/{vin}", async (string code, string vin, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveGuaranteeClaimLineAsync(code, vin);
+        return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong hồ sơ hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/guarantee-claim-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleGuaranteeClaimInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+// ---- Hợp đồng mua bán xe / bộ linh kiện ngoại thương CBU/CKD (BizHTC.Contract.ContractOversea / CT_ContractOversea) ----
+app.MapPost("/api/contract-overseas", async (CreateContractOverseaDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.SupplierCode))
+        return Results.BadRequest(new { error = "Cần mã nhà cung cấp / đối tác quốc tế SupplierCode." });
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách xe/linh kiện Items trong hợp đồng ngoại thương." });
+    try { return Results.Ok(await svc.CreateContractOverseaAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/contract-overseas", async (IVehicleService svc, string? status, string? supplier, string? incoterms, string? currency, string? orderMonth, string? contractNo, string? vin) =>
+    Results.Ok(await svc.ListContractOverseasAsync(status, supplier, incoterms, currency, orderMonth, contractNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/contract-overseas/summary", async (IVehicleService svc) =>
+    Results.Ok(await svc.GetContractOverseaSummaryAsync())).RequireAuthorization();
+
+app.MapGet("/api/contract-overseas/{contractNo}", async (string contractNo, IVehicleService svc) =>
+{
+    var r = await svc.GetContractOverseaAsync(contractNo);
+    return r is null ? Results.NotFound(new { contractNo, error = "Không tìm thấy hợp đồng ngoại thương." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/contract-overseas/{contractNo}", async (string contractNo, UpdateContractOverseaHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateContractOverseaHeaderAsync(contractNo, dto);
+        return r is null ? Results.NotFound(new { contractNo, error = "Không tìm thấy hợp đồng ngoại thương hoặc hợp đồng đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/contract-overseas/{contractNo}/{action}", async (string contractNo, string action, ContractOverseaTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "execute" or "in-execution" or "inexecution" or "start" or "inprogress" or "complete" or "finish" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|execute|complete|reject|cancel" });
+    try
+    {
+        var r = await svc.ContractOverseaTransitionAsync(contractNo, action, dto);
+        return r is null ? Results.NotFound(new { contractNo, error = "Không thấy hợp đồng ngoại thương hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/contract-overseas/{contractNo}/lines/{lineId:long}/update", async (string contractNo, long lineId, UpdateContractOverseaLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateContractOverseaLineAsync(contractNo, lineId, dto);
+        return r is null ? Results.NotFound(new { contractNo, lineId, error = "Không tìm thấy dòng xe trong hợp đồng hoặc hợp đồng đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/contract-overseas/{contractNo}/lines/{lineId:long}", async (string contractNo, long lineId, UpdateContractOverseaLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateContractOverseaLineAsync(contractNo, lineId, dto);
+        return r is null ? Results.NotFound(new { contractNo, lineId, error = "Không tìm thấy dòng xe trong hợp đồng hoặc hợp đồng đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/contract-overseas/{contractNo}/lines", async (string contractNo, List<ContractOverseaItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào hợp đồng ngoại thương." });
+    try
+    {
+        var r = await svc.AddContractOverseaLinesAsync(contractNo, items);
+        return r is null ? Results.NotFound(new { contractNo, error = "Không tìm thấy hợp đồng ngoại thương hoặc hợp đồng đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/contract-overseas/{contractNo}/lines/{lineId:long}", async (string contractNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveContractOverseaLineAsync(contractNo, lineId);
+        return r is null ? Results.NotFound(new { contractNo, lineId, error = "Không tìm thấy dòng xe trong hợp đồng hoặc hợp đồng đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/contract-oversea-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleContractOverseaInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
