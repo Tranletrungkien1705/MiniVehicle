@@ -1676,6 +1676,214 @@ public static class Seeder
                 v2.LastOdoKm = ro2.OdoKm;
             }
         }
+
+        if (!await db.ServiceAppointments.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var app1 = new ServiceAppointment
+            {
+                OrgId = org,
+                AppNo = "APP-HN01-2026-0001",
+                AppNoUser = "AP/2026/03/HN01-001",
+                DealerCode = "DLR-HN01",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                EngineNo = "G4LC0001",
+                PlateNo = "30K-988.66",
+                CustomerName = "Nguyễn Văn An",
+                CustomerPhone = "0901234567",
+                ServiceType = "PeriodicMaintenance",
+                AppointmentDate = DateTime.Now.AddDays(-6),
+                AppointmentTime = "08:30",
+                EstimatedDurationMinutes = 120,
+                ServiceAdvisor = "CVDV Trần Quốc Tuấn",
+                Technician = "KTV-Trưởng Phạm Văn Hưng",
+                CustomerRequest = "Bảo dưỡng định kỳ 5.000 km, thay dầu máy, lọc nhớt, kiểm tra phanh và hệ thống điện",
+                TotalEstimatedLabor = 400000m,
+                TotalEstimatedParts = 900000m,
+                TotalEstimatedAmount = 1300000m,
+                Status = "InService",
+                RoNo = "RO-HN01-2026-0001",
+                Remark = "Khách đặt lịch hẹn qua tổng đài Hyundai Hotline, đã tiếp nhận chuyển sang lệnh sửa chữa RO",
+                CreatedBy = "cskh.lananh",
+                CreatedAt = DateTime.Now.AddDays(-7),
+                ConfirmedBy = "CVDV Trần Quốc Tuấn",
+                ConfirmedAt = DateTime.Now.AddDays(-7).AddHours(2),
+                CheckedInBy = "CVDV Trần Quốc Tuấn",
+                CheckedInAt = DateTime.Now.AddDays(-6).AddHours(0)
+            };
+            db.ServiceAppointments.Add(app1);
+            await db.SaveChangesAsync();
+
+            db.ServiceAppointmentServiceLines.AddRange(
+                new ServiceAppointmentServiceLine
+                {
+                    OrgId = org,
+                    ServiceAppointmentId = app1.Id,
+                    AppNo = app1.AppNo,
+                    SerCode = "BD-5K",
+                    SerName = "Bảo dưỡng định kỳ cấp 5.000 km tiêu chuẩn",
+                    ServiceType = "Maintenance",
+                    StandardHours = 1.0m,
+                    LaborPrice = 300000m,
+                    Discount = 0,
+                    LaborAmount = 300000m,
+                    Technician = "KTV-Trưởng Phạm Văn Hưng",
+                    Status = "Completed",
+                    Remark = "Bảo dưỡng cấp 1 tiêu chuẩn"
+                },
+                new ServiceAppointmentServiceLine
+                {
+                    OrgId = org,
+                    ServiceAppointmentId = app1.Id,
+                    AppNo = app1.AppNo,
+                    SerCode = "KT-DIEN",
+                    SerName = "Kiểm tra hệ thống điện, ắc quy & chẩn đoán ECU GDS-Mobile",
+                    ServiceType = "Inspection",
+                    StandardHours = 0.5m,
+                    LaborPrice = 200000m,
+                    Discount = 0,
+                    LaborAmount = 100000m,
+                    Technician = "KTV Điện Bùi Văn Khoa",
+                    Status = "Completed",
+                    Remark = "Chẩn đoán OBD không lỗi"
+                }
+            );
+
+            db.ServiceAppointmentPartLines.AddRange(
+                new ServiceAppointmentPartLine
+                {
+                    OrgId = org,
+                    ServiceAppointmentId = app1.Id,
+                    AppNo = app1.AppNo,
+                    PartCode = "26300-35505",
+                    PartName = "Lọc dầu động cơ chính hãng Mobis",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 120000m,
+                    Discount = 0,
+                    TotalAmount = 120000m,
+                    PaymentType = "Customer",
+                    Status = "Issued",
+                    Remark = "Đặt trước theo lịch hẹn"
+                },
+                new ServiceAppointmentPartLine
+                {
+                    OrgId = org,
+                    ServiceAppointmentId = app1.Id,
+                    AppNo = app1.AppNo,
+                    PartCode = "05100-00441",
+                    PartName = "Dầu nhờn động cơ cao cấp Hyundai Genuine Oil 5W-30 SN/CF",
+                    Unit = "Lít",
+                    Quantity = 3.5m,
+                    UnitPrice = 160000m,
+                    Discount = 0,
+                    TotalAmount = 560000m,
+                    PaymentType = "Customer",
+                    Status = "Issued",
+                    Remark = "Đặt trước 3.5 lít dầu máy"
+                },
+                new ServiceAppointmentPartLine
+                {
+                    OrgId = org,
+                    ServiceAppointmentId = app1.Id,
+                    AppNo = app1.AppNo,
+                    PartCode = "97133-2E210",
+                    PartName = "Lọc gió điều hòa cabin kháng khuẩn",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 220000m,
+                    Discount = 0,
+                    TotalAmount = 220000m,
+                    PaymentType = "Customer",
+                    Status = "Issued",
+                    Remark = "Đặt trước lọc gió"
+                }
+            );
+
+            var app2 = new ServiceAppointment
+            {
+                OrgId = org,
+                AppNo = "APP-HN01-2026-0002",
+                AppNoUser = "AP/2026/03/HN01-002",
+                DealerCode = "DLR-HN01",
+                Vin = "DEMOVIN00000002",
+                Model = "Creta 1.5 Cao cấp",
+                EngineNo = "G4FL0002",
+                PlateNo = "30K-678.90",
+                CustomerName = "Lê Thanh Bình",
+                CustomerPhone = "0912345678",
+                ServiceType = "BodyPaint",
+                AppointmentDate = DateTime.Now.AddDays(2),
+                AppointmentTime = "09:30",
+                EstimatedDurationMinutes = 180,
+                ServiceAdvisor = "CVDV Vũ Hồng Sơn",
+                Technician = "Quản Đốc Sơn Đỗ Mạnh Cường",
+                CustomerRequest = "Kiểm tra sơn phủ bóng nano và căn chỉnh khe hở nắp capo",
+                TotalEstimatedLabor = 600000m,
+                TotalEstimatedParts = 450000m,
+                TotalEstimatedAmount = 1050000m,
+                Status = "Confirmed",
+                Remark = "Lịch hẹn phục vụ chăm sóc xe và phủ ceramic bóng sơn",
+                CreatedBy = "cskh.lananh",
+                CreatedAt = DateTime.Now.AddDays(-1),
+                ConfirmedBy = "CVDV Vũ Hồng Sơn",
+                ConfirmedAt = DateTime.Now.AddHours(-5)
+            };
+            db.ServiceAppointments.Add(app2);
+            await db.SaveChangesAsync();
+
+            db.ServiceAppointmentServiceLines.Add(
+                new ServiceAppointmentServiceLine
+                {
+                    OrgId = org,
+                    ServiceAppointmentId = app2.Id,
+                    AppNo = app2.AppNo,
+                    SerCode = "DS-BONG-NANO",
+                    SerName = "Đánh bóng phủ ceramic nano sơn thân vỏ",
+                    ServiceType = "BodyPaint",
+                    StandardHours = 1.5m,
+                    LaborPrice = 400000m,
+                    Discount = 0,
+                    LaborAmount = 600000m,
+                    Technician = "KTV Sơn Đỗ Mạnh Cường",
+                    Status = "Confirmed",
+                    Remark = "Đã xếp lịch phòng phủ Ceramic"
+                }
+            );
+
+            db.ServiceAppointmentPartLines.Add(
+                new ServiceAppointmentPartLine
+                {
+                    OrgId = org,
+                    ServiceAppointmentId = app2.Id,
+                    AppNo = app2.AppNo,
+                    PartCode = "NANO-CER-01",
+                    PartName = "Bộ dung dịch phủ ceramic Hyundai Care chính hãng",
+                    Unit = "Bộ",
+                    Quantity = 1,
+                    UnitPrice = 450000m,
+                    Discount = 0,
+                    TotalAmount = 450000m,
+                    PaymentType = "Customer",
+                    Status = "Confirmed",
+                    Remark = "Giữ sẵn vật tư trong kho"
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.LastAppointmentNo = app1.AppNo;
+                v1.LastAppointmentDate = app1.AppointmentDate;
+            }
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null)
+            {
+                v2.LastAppointmentNo = app2.AppNo;
+                v2.LastAppointmentDate = app2.AppointmentDate;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -1781,6 +1989,11 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"RepairOrders\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RoNo\" text NOT NULL DEFAULT '', \"RoNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NULL, \"CustomerPhone\" text NULL, \"RoType\" text NOT NULL DEFAULT 'PeriodicMaintenance', \"ServiceAdvisor\" text NULL, \"Technician\" text NULL, \"OdoKm\" integer NOT NULL DEFAULT 0, \"FuelLevel\" text NULL DEFAULT '1/2', \"CarStatus\" text NULL, \"CustomerRequest\" text NULL, \"DiagnosisNotes\" text NULL, \"CheckInDate\" timestamp NOT NULL DEFAULT now(), \"ExpectedDeliveryDate\" timestamp NULL, \"ActualDeliveryDate\" timestamp NULL, \"TotalLaborAmount\" numeric NOT NULL DEFAULT 0, \"TotalPartAmount\" numeric NOT NULL DEFAULT 0, \"DiscountAmount\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PaymentStatus\" text NOT NULL DEFAULT 'Unpaid', \"PaymentMethod\" text NOT NULL DEFAULT 'Cash', \"PaymentNotes\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"RepairedBy\" text NULL, \"RepairedAt\" timestamp NULL, \"DeliveredBy\" text NULL, \"DeliveredAt\" timestamp NULL, \"PaidBy\" text NULL, \"PaidAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"RepairOrderServiceLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RepairOrderId\" bigint NOT NULL, \"RoNo\" text NOT NULL DEFAULT '', \"SerCode\" text NOT NULL DEFAULT '', \"SerName\" text NOT NULL DEFAULT '', \"ServiceType\" text NOT NULL DEFAULT 'Maintenance', \"StandardHours\" numeric NOT NULL DEFAULT 1.0, \"LaborPrice\" numeric NOT NULL DEFAULT 300000, \"Discount\" numeric NOT NULL DEFAULT 0, \"LaborAmount\" numeric NOT NULL DEFAULT 300000, \"Technician\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"RepairOrderPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RepairOrderId\" bigint NOT NULL, \"RoNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"Discount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PaymentType\" text NOT NULL DEFAULT 'Customer', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastAppointmentNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastAppointmentDate\" timestamp NULL",
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceAppointments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AppNo\" text NOT NULL DEFAULT '', \"AppNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"ServiceType\" text NOT NULL DEFAULT 'PeriodicMaintenance', \"AppointmentDate\" timestamp NOT NULL DEFAULT now(), \"AppointmentTime\" text NOT NULL DEFAULT '08:30', \"EstimatedDurationMinutes\" integer NOT NULL DEFAULT 60, \"ServiceAdvisor\" text NULL, \"Technician\" text NULL, \"InsNo\" text NULL, \"CustomerRequest\" text NULL, \"TotalEstimatedLabor\" numeric NOT NULL DEFAULT 0, \"TotalEstimatedParts\" numeric NOT NULL DEFAULT 0, \"TotalEstimatedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Booked', \"RoNo\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ConfirmedBy\" text NULL, \"ConfirmedAt\" timestamp NULL, \"CheckedInBy\" text NULL, \"CheckedInAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL, \"NoShowAt\" timestamp NULL, \"NoShowReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceAppointmentServiceLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceAppointmentId\" bigint NOT NULL, \"AppNo\" text NOT NULL DEFAULT '', \"SerCode\" text NOT NULL DEFAULT '', \"SerName\" text NOT NULL DEFAULT '', \"ServiceType\" text NOT NULL DEFAULT 'Maintenance', \"StandardHours\" numeric NOT NULL DEFAULT 1.0, \"LaborPrice\" numeric NOT NULL DEFAULT 300000, \"Discount\" numeric NOT NULL DEFAULT 0, \"LaborAmount\" numeric NOT NULL DEFAULT 300000, \"Technician\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceAppointmentPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceAppointmentId\" bigint NOT NULL, \"AppNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"Discount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PaymentType\" text NOT NULL DEFAULT 'Customer', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

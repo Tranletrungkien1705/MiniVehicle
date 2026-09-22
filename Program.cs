@@ -1751,6 +1751,155 @@ app.MapGet("/api/vehicles/{vin}/ro-history", async (string vin, IVehicleService 
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Lịch hẹn Dịch vụ & Tiếp nhận xe xưởng (BizCarSv.Appointment / Ser_App) ----
+app.MapPost("/api/service-appointments", async (CreateServiceAppointmentDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode và số khung Vin để đặt lịch hẹn." });
+    try { return Results.Ok(await svc.CreateServiceAppointmentAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/service-appointments", async (IVehicleService svc, string? status, string? dealer, string? serviceType, string? date, string? vin, string? plateNo, string? appNo) =>
+    Results.Ok(await svc.ListServiceAppointmentsAsync(status, dealer, serviceType, date, vin, plateNo, appNo))).RequireAuthorization();
+
+app.MapGet("/api/service-appointments/summary", async (IVehicleService svc) =>
+    Results.Ok(await svc.GetServiceAppointmentSummaryAsync())).RequireAuthorization();
+
+app.MapGet("/api/service-appointments/{appNo}", async (string appNo, IVehicleService svc) =>
+{
+    var r = await svc.GetServiceAppointmentAsync(appNo);
+    return r is null ? Results.NotFound(new { appNo, error = "Không tìm thấy lịch hẹn dịch vụ." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/service-appointments/{appNo}", async (string appNo, UpdateServiceAppointmentHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServiceAppointmentHeaderAsync(appNo, dto);
+        return r is null ? Results.NotFound(new { appNo, error = "Không tìm thấy lịch hẹn hoặc lịch hẹn đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-appointments/{appNo}/{action}", async (string appNo, string action, ServiceAppointmentTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("confirm" or "checkin" or "check-in" or "arrived" or "inservice" or "in-service" or "start" or "complete" or "finish" or "noshow" or "no-show" or "cancel" or "reject"))
+        return Results.BadRequest(new { error = "action = confirm|checkin|inservice|complete|noshow|cancel" });
+    try
+    {
+        var r = await svc.ServiceAppointmentTransitionAsync(appNo, action, dto);
+        return r is null ? Results.NotFound(new { appNo, error = "Không thấy lịch hẹn hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-appointments/{appNo}/create-ro", async (string appNo, CreateRoFromAppointmentDto? dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.CreateRoFromAppointmentAsync(appNo, dto);
+        return r is null ? Results.NotFound(new { appNo, error = "Không tìm thấy lịch hẹn dịch vụ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-appointments/{appNo}/service-lines/{lineId:long}/update", async (string appNo, long lineId, UpdateServiceAppointmentServiceLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServiceAppointmentServiceLineAsync(appNo, lineId, dto);
+        return r is null ? Results.NotFound(new { appNo, lineId, error = "Không tìm thấy dòng dịch vụ hoặc lịch hẹn đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/service-appointments/{appNo}/service-lines/{lineId:long}", async (string appNo, long lineId, UpdateServiceAppointmentServiceLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServiceAppointmentServiceLineAsync(appNo, lineId, dto);
+        return r is null ? Results.NotFound(new { appNo, lineId, error = "Không tìm thấy dòng dịch vụ hoặc lịch hẹn đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-appointments/{appNo}/service-lines", async (string appNo, List<ServiceAppointmentServiceItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items hạng mục dịch vụ để thêm vào lịch hẹn." });
+    try
+    {
+        var r = await svc.AddServiceAppointmentServiceLinesAsync(appNo, items);
+        return r is null ? Results.NotFound(new { appNo, error = "Không tìm thấy lịch hẹn hoặc lịch hẹn đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/service-appointments/{appNo}/service-lines/{lineId:long}", async (string appNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveServiceAppointmentServiceLineAsync(appNo, lineId);
+        return r is null ? Results.NotFound(new { appNo, lineId, error = "Không tìm thấy dòng dịch vụ hoặc lịch hẹn đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-appointments/{appNo}/part-lines/{lineId:long}/update", async (string appNo, long lineId, UpdateServiceAppointmentPartLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServiceAppointmentPartLineAsync(appNo, lineId, dto);
+        return r is null ? Results.NotFound(new { appNo, lineId, error = "Không tìm thấy dòng phụ tùng hoặc lịch hẹn đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/service-appointments/{appNo}/part-lines/{lineId:long}", async (string appNo, long lineId, UpdateServiceAppointmentPartLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServiceAppointmentPartLineAsync(appNo, lineId, dto);
+        return r is null ? Results.NotFound(new { appNo, lineId, error = "Không tìm thấy dòng phụ tùng hoặc lịch hẹn đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-appointments/{appNo}/part-lines", async (string appNo, List<ServiceAppointmentPartItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items phụ tùng để thêm vào lịch hẹn." });
+    try
+    {
+        var r = await svc.AddServiceAppointmentPartLinesAsync(appNo, items);
+        return r is null ? Results.NotFound(new { appNo, error = "Không tìm thấy lịch hẹn hoặc lịch hẹn đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/service-appointments/{appNo}/part-lines/{lineId:long}", async (string appNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveServiceAppointmentPartLineAsync(appNo, lineId);
+        return r is null ? Results.NotFound(new { appNo, lineId, error = "Không tìm thấy dòng phụ tùng hoặc lịch hẹn đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/appointments", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleAppointmentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/appointment-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleAppointmentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

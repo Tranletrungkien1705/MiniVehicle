@@ -55,6 +55,8 @@ public sealed class Vehicle
     public string? LastRoNo { get; set; }           // Mã lệnh sửa chữa xưởng dịch vụ gần nhất (Ser_RO / RepairOrder)
     public DateTime? LastRoDate { get; set; }       // Ngày thực hiện lệnh sửa chữa dịch vụ xưởng gần nhất
     public int? LastOdoKm { get; set; }             // Chỉ số ODO gần nhất ghi nhận tại xưởng dịch vụ
+    public string? LastAppointmentNo { get; set; }  // Mã lịch hẹn dịch vụ gần nhất (Ser_App / ServiceAppointment)
+    public DateTime? LastAppointmentDate { get; set; } // Ngày hẹn làm dịch vụ gần nhất
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -1572,6 +1574,87 @@ public sealed class RepairOrderPartLine
     public decimal TotalAmount { get; set; } = 0;         // Thành tiền = Quantity * UnitPrice - Discount (VNĐ)
     public string PaymentType { get; set; } = "Customer"; // Customer (Khách thanh toán), Warranty (Hãng bảo hành chi trả), Insurance (Bảo hiểm chi trả)
     public string Status { get; set; } = "Pending";       // Pending → Issued (Đã xuất kho xưởng) → Returned (Trả lại kho) (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Lịch hẹn Dịch vụ & Tiếp nhận xe xưởng (BizCarSv.Appointment / Ser_App): quản lý đặt lịch hẹn dịch vụ bảo dưỡng, sửa chữa, đồng sơn, bảo hành và PDI tại xưởng dịch vụ đại lý.</summary>
+public sealed class ServiceAppointment
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string AppNo { get; set; } = "";             // Mã lịch hẹn (APP-HN01-2026-0001)
+    public string? AppNoUser { get; set; }            // Số phiếu hẹn nội bộ đại lý
+    public string DealerCode { get; set; } = "";      // Mã đại lý xưởng dịch vụ tiếp nhận
+    public string Vin { get; set; } = "";             // Số khung xe hẹn làm dịch vụ
+    public string Model { get; set; } = "";           // Dòng xe
+    public string? EngineNo { get; set; }             // Số máy
+    public string? PlateNo { get; set; }              // Biển số xe hẹn dịch vụ
+    public string CustomerName { get; set; } = "";   // Tên khách hàng đặt hẹn
+    public string CustomerPhone { get; set; } = "";  // SĐT khách hàng
+    public string ServiceType { get; set; } = "PeriodicMaintenance"; // PeriodicMaintenance (Bảo dưỡng định kỳ), GeneralRepair (Sửa chữa chung), BodyPaint (Đồng sơn), Warranty (Bảo hành), Recall (Triệu hồi), PdiRepair (Khắc phục PDI), Inspection (Kiểm tra chẩn đoán)
+    public DateTime AppointmentDate { get; set; } = DateTime.Now; // Ngày hẹn làm dịch vụ
+    public string AppointmentTime { get; set; } = "08:30"; // Khung giờ hẹn (08:30, 09:30, 10:30, 13:30, 14:30...)
+    public int EstimatedDurationMinutes { get; set; } = 60; // Thời gian dự kiến thực hiện (phút)
+    public string? ServiceAdvisor { get; set; }       // Cố vấn dịch vụ phân công tiếp đón
+    public string? Technician { get; set; }           // Kỹ thuật viên chính tiếp nhận
+    public string? InsNo { get; set; }                // Số thẻ / hợp đồng bảo hiểm (nếu làm bảo hiểm)
+    public string? CustomerRequest { get; set; }      // Yêu cầu chi tiết của khách hàng khi đặt hẹn
+    public decimal TotalEstimatedLabor { get; set; } = 0; // Tổng tiền công ước tính (VNĐ)
+    public decimal TotalEstimatedParts { get; set; } = 0; // Tổng tiền phụ tùng ước tính (VNĐ)
+    public decimal TotalEstimatedAmount { get; set; } = 0; // Tổng chi phí dự kiến = TotalEstimatedLabor + TotalEstimatedParts (VNĐ)
+    public string Status { get; set; } = "Booked";    // Booked → Confirmed → CheckedIn → InService → Completed (hoặc Cancelled / NoShow)
+    public string? RoNo { get; set; }                 // Mã lệnh sửa chữa xưởng liên kết (Ser_RO / RepairOrder)
+    public string? Remark { get; set; }               // Ghi chú điều hành lịch hẹn
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ConfirmedBy { get; set; }          // CVDV / Tổng đài viên xác nhận lịch hẹn
+    public DateTime? ConfirmedAt { get; set; }
+    public string? CheckedInBy { get; set; }          // Cố vấn dịch vụ tiếp nhận xe thực tế tại xưởng
+    public DateTime? CheckedInAt { get; set; }
+    public string? CompletedBy { get; set; }          // Người xác nhận hoàn thành đợt dịch vụ
+    public DateTime? CompletedAt { get; set; }
+    public string? CancelledBy { get; set; }          // Người hủy lịch hẹn
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+    public DateTime? NoShowAt { get; set; }           // Thời điểm đánh dấu khách vắng mặt
+    public string? NoShowReason { get; set; }
+}
+
+/// <summary>Chi tiết hạng mục công việc / Dịch vụ trong Lịch hẹn (BizCarSv.Appointment / Ser_AppServiceItems / ServiceAppointmentServiceLine): mã gói dịch vụ, tên công việc, giờ công và tiền công ước tính.</summary>
+public sealed class ServiceAppointmentServiceLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ServiceAppointmentId { get; set; }
+    public string AppNo { get; set; } = "";
+    public string SerCode { get; set; } = "";         // Mã công việc / dịch vụ (BD-5K, BD-10K, KT-DIEN, SC-PHANH...)
+    public string SerName { get; set; } = "";         // Tên hạng mục dịch vụ dự kiến
+    public string ServiceType { get; set; } = "Maintenance"; // Maintenance (Bảo dưỡng), Repair (Sửa chữa), BodyPaint (Đồng sơn), Inspection (Kiểm tra)
+    public decimal StandardHours { get; set; } = 1.0m;// Số giờ công định mức
+    public decimal LaborPrice { get; set; } = 300000m;// Đơn giá 1 giờ công (VNĐ)
+    public decimal Discount { get; set; } = 0;        // Giảm giá tiền công (VNĐ)
+    public decimal LaborAmount { get; set; } = 300000m;// Tiền công = StandardHours * LaborPrice - Discount (VNĐ)
+    public string? Technician { get; set; }           // KTV dự kiến phân công
+    public string Status { get; set; } = "Pending";   // Pending → Confirmed → Completed (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Chi tiết phụ tùng / vật tư tiêu hao đặt trước trong Lịch hẹn (BizCarSv.Appointment / Ser_AppPartItems / ServiceAppointmentPartLine): mã phụ tùng Mobis/OEM, tên phụ tùng, số lượng và đơn giá dự kiến.</summary>
+public sealed class ServiceAppointmentPartLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ServiceAppointmentId { get; set; }
+    public string AppNo { get; set; } = "";
+    public string PartCode { get; set; } = "";        // Mã phụ tùng chính hãng (26300-35505, 05100-00441...)
+    public string PartName { get; set; } = "";        // Tên phụ tùng đặt trước
+    public string Unit { get; set; } = "Cái";         // Cái, Lít, Bình, Bộ...
+    public decimal Quantity { get; set; } = 1;        // Số lượng đặt trước
+    public decimal UnitPrice { get; set; } = 0;       // Đơn giá phụ tùng dự kiến (VNĐ)
+    public decimal Discount { get; set; } = 0;        // Giảm giá (VNĐ)
+    public decimal TotalAmount { get; set; } = 0;     // Thành tiền = Quantity * UnitPrice - Discount (VNĐ)
+    public string PaymentType { get; set; } = "Customer"; // Customer (Khách thanh toán), Warranty (Bảo hành OEM), Insurance (Bảo hiểm)
+    public string Status { get; set; } = "Pending";   // Pending → Confirmed → Issued (hoặc Cancelled)
     public string? Remark { get; set; }
 }
 

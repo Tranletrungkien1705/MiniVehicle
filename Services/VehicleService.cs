@@ -885,6 +885,121 @@ public record UpdateRepairOrderPartLineDto(
     string? Remark = null
 );
 
+public record ServiceAppointmentServiceItemInputDto(
+    string SerCode,
+    string SerName,
+    string? ServiceType = "Maintenance",
+    decimal StandardHours = 1.0m,
+    decimal LaborPrice = 300000m,
+    decimal Discount = 0,
+    decimal? LaborAmount = null,
+    string? Technician = null,
+    string? Remark = null
+);
+
+public record ServiceAppointmentPartItemInputDto(
+    string PartCode,
+    string PartName,
+    string? Unit = "Cái",
+    decimal Quantity = 1,
+    decimal UnitPrice = 0,
+    decimal Discount = 0,
+    decimal? TotalAmount = null,
+    string? PaymentType = "Customer",
+    string? Remark = null
+);
+
+public record CreateServiceAppointmentDto(
+    string DealerCode,
+    string Vin,
+    List<ServiceAppointmentServiceItemInputDto>? ServiceItems = null,
+    List<ServiceAppointmentPartItemInputDto>? PartItems = null,
+    string? AppNo = null,
+    string? AppNoUser = null,
+    string? Model = null,
+    string? EngineNo = null,
+    string? PlateNo = null,
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    string? ServiceType = "PeriodicMaintenance",
+    DateTime? AppointmentDate = null,
+    string? AppointmentTime = "08:30",
+    int EstimatedDurationMinutes = 60,
+    string? ServiceAdvisor = null,
+    string? Technician = null,
+    string? InsNo = null,
+    string? CustomerRequest = null,
+    string? Remark = null,
+    string? CreatedBy = null
+);
+
+public record ServiceAppointmentTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? ServiceAdvisor = null,
+    string? Technician = null,
+    string? RoNo = null,
+    DateTime? AppointmentDate = null,
+    string? AppointmentTime = null,
+    string? Reason = null
+);
+
+public record UpdateServiceAppointmentHeaderDto(
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    string? PlateNo = null,
+    string? ServiceType = null,
+    DateTime? AppointmentDate = null,
+    string? AppointmentTime = null,
+    int? EstimatedDurationMinutes = null,
+    string? ServiceAdvisor = null,
+    string? Technician = null,
+    string? InsNo = null,
+    string? CustomerRequest = null,
+    string? Remark = null
+);
+
+public record UpdateServiceAppointmentServiceLineDto(
+    string? SerCode = null,
+    string? SerName = null,
+    string? ServiceType = null,
+    decimal? StandardHours = null,
+    decimal? LaborPrice = null,
+    decimal? Discount = null,
+    decimal? LaborAmount = null,
+    string? Technician = null,
+    string? Status = null,
+    string? Remark = null
+);
+
+public record UpdateServiceAppointmentPartLineDto(
+    string? PartCode = null,
+    string? PartName = null,
+    string? Unit = null,
+    decimal? Quantity = null,
+    decimal? UnitPrice = null,
+    decimal? Discount = null,
+    decimal? TotalAmount = null,
+    string? PaymentType = null,
+    string? Status = null,
+    string? Remark = null
+);
+
+public record CreateRoFromAppointmentDto(
+    string? ServiceAdvisor = null,
+    string? Technician = null,
+    int OdoKm = 0,
+    string? FuelLevel = "1/2",
+    string? CarStatus = null,
+    decimal DiscountAmount = 0,
+    decimal VatRate = 10,
+    string? PaymentMethod = "Cash",
+    string? RoNo = null,
+    string? RoNoUser = null,
+    string? CreatedBy = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -1113,6 +1228,20 @@ public interface IVehicleService
     Task<object?> RemoveRepairOrderPartLineAsync(string roNo, long lineId);
     Task<object?> GetVehicleRepairOrderHistoryAsync(string vin);
     Task<object> GetRepairOrderSummaryAsync();
+    Task<object> CreateServiceAppointmentAsync(CreateServiceAppointmentDto dto);
+    Task<object> ListServiceAppointmentsAsync(string? status, string? dealer, string? serviceType, string? date, string? vin, string? plateNo, string? appNo);
+    Task<object?> GetServiceAppointmentAsync(string appNo);
+    Task<object?> ServiceAppointmentTransitionAsync(string appNo, string action, ServiceAppointmentTransitionDto? dto);
+    Task<object?> UpdateServiceAppointmentHeaderAsync(string appNo, UpdateServiceAppointmentHeaderDto dto);
+    Task<object?> UpdateServiceAppointmentServiceLineAsync(string appNo, long lineId, UpdateServiceAppointmentServiceLineDto dto);
+    Task<object?> AddServiceAppointmentServiceLinesAsync(string appNo, List<ServiceAppointmentServiceItemInputDto> items);
+    Task<object?> RemoveServiceAppointmentServiceLineAsync(string appNo, long lineId);
+    Task<object?> UpdateServiceAppointmentPartLineAsync(string appNo, long lineId, UpdateServiceAppointmentPartLineDto dto);
+    Task<object?> AddServiceAppointmentPartLinesAsync(string appNo, List<ServiceAppointmentPartItemInputDto> items);
+    Task<object?> RemoveServiceAppointmentPartLineAsync(string appNo, long lineId);
+    Task<object?> CreateRoFromAppointmentAsync(string appNo, CreateRoFromAppointmentDto? dto);
+    Task<object?> GetVehicleAppointmentHistoryAsync(string vin);
+    Task<object> GetServiceAppointmentSummaryAsync();
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -16037,6 +16166,886 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byType,
             byDealer,
             byPaymentStatus
+        };
+    }
+
+    public async Task<object> CreateServiceAppointmentAsync(CreateServiceAppointmentDto dto)
+    {
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        var dealerCode = dto.DealerCode.Trim();
+        var model = dto.Model?.Trim() ?? v?.Model ?? "Hyundai Model";
+        var engineNo = dto.EngineNo?.Trim() ?? v?.EngineNo;
+        var plateNo = dto.PlateNo?.Trim() ?? v?.PlateNo;
+        var customerName = dto.CustomerName?.Trim() ?? v?.OwnerName ?? "Khách hàng";
+        var customerPhone = dto.CustomerPhone?.Trim() ?? v?.OwnerPhone ?? "";
+
+        var appNo = string.IsNullOrWhiteSpace(dto.AppNo)
+            ? $"APP-{dealerCode}-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString()[..4].ToUpper()}"
+            : dto.AppNo.Trim().ToUpperInvariant();
+
+        if (await db.ServiceAppointments.AnyAsync(a => a.OrgId == Org && a.AppNo == appNo))
+            throw new InvalidOperationException($"Mã lịch hẹn {appNo} đã tồn tại.");
+
+        var appDate = dto.AppointmentDate ?? DateTime.Now;
+        var appTime = string.IsNullOrWhiteSpace(dto.AppointmentTime) ? "08:30" : dto.AppointmentTime.Trim();
+
+        var app = new ServiceAppointment
+        {
+            OrgId = Org,
+            AppNo = appNo,
+            AppNoUser = dto.AppNoUser?.Trim(),
+            DealerCode = dealerCode,
+            Vin = vin,
+            Model = model,
+            EngineNo = engineNo,
+            PlateNo = plateNo,
+            CustomerName = customerName,
+            CustomerPhone = customerPhone,
+            ServiceType = dto.ServiceType?.Trim() ?? "PeriodicMaintenance",
+            AppointmentDate = appDate,
+            AppointmentTime = appTime,
+            EstimatedDurationMinutes = dto.EstimatedDurationMinutes > 0 ? dto.EstimatedDurationMinutes : 60,
+            ServiceAdvisor = dto.ServiceAdvisor?.Trim(),
+            Technician = dto.Technician?.Trim(),
+            InsNo = dto.InsNo?.Trim(),
+            CustomerRequest = dto.CustomerRequest?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            Status = "Booked",
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        var serviceLines = new List<ServiceAppointmentServiceLine>();
+        decimal totalEstimatedLabor = 0;
+        if (dto.ServiceItems != null && dto.ServiceItems.Count > 0)
+        {
+            foreach (var item in dto.ServiceItems)
+            {
+                var stdHours = item.StandardHours > 0 ? item.StandardHours : 1.0m;
+                var laborPrice = item.LaborPrice >= 0 ? item.LaborPrice : 300000m;
+                var discount = item.Discount >= 0 ? item.Discount : 0m;
+                var laborAmount = item.LaborAmount ?? Math.Max(0, (stdHours * laborPrice) - discount);
+                totalEstimatedLabor += laborAmount;
+                serviceLines.Add(new ServiceAppointmentServiceLine
+                {
+                    OrgId = Org,
+                    AppNo = app.AppNo,
+                    SerCode = item.SerCode.Trim(),
+                    SerName = item.SerName.Trim(),
+                    ServiceType = item.ServiceType?.Trim() ?? "Maintenance",
+                    StandardHours = stdHours,
+                    LaborPrice = laborPrice,
+                    Discount = discount,
+                    LaborAmount = laborAmount,
+                    Technician = item.Technician?.Trim() ?? app.Technician,
+                    Status = "Pending",
+                    Remark = item.Remark?.Trim()
+                });
+            }
+        }
+
+        var partLines = new List<ServiceAppointmentPartLine>();
+        decimal totalEstimatedParts = 0;
+        if (dto.PartItems != null && dto.PartItems.Count > 0)
+        {
+            foreach (var item in dto.PartItems)
+            {
+                var qty = item.Quantity > 0 ? item.Quantity : 1m;
+                var unitPrice = item.UnitPrice >= 0 ? item.UnitPrice : 0m;
+                var discount = item.Discount >= 0 ? item.Discount : 0m;
+                var totalAmount = item.TotalAmount ?? Math.Max(0, (qty * unitPrice) - discount);
+                totalEstimatedParts += totalAmount;
+                partLines.Add(new ServiceAppointmentPartLine
+                {
+                    OrgId = Org,
+                    AppNo = app.AppNo,
+                    PartCode = item.PartCode.Trim(),
+                    PartName = item.PartName.Trim(),
+                    Unit = string.IsNullOrWhiteSpace(item.Unit) ? "Cái" : item.Unit.Trim(),
+                    Quantity = qty,
+                    UnitPrice = unitPrice,
+                    Discount = discount,
+                    TotalAmount = totalAmount,
+                    PaymentType = string.IsNullOrWhiteSpace(item.PaymentType) ? "Customer" : item.PaymentType.Trim(),
+                    Status = "Pending",
+                    Remark = item.Remark?.Trim()
+                });
+            }
+        }
+
+        app.TotalEstimatedLabor = totalEstimatedLabor;
+        app.TotalEstimatedParts = totalEstimatedParts;
+        app.TotalEstimatedAmount = totalEstimatedLabor + totalEstimatedParts;
+
+        db.ServiceAppointments.Add(app);
+        await db.SaveChangesAsync();
+
+        foreach (var s in serviceLines) s.ServiceAppointmentId = app.Id;
+        foreach (var p in partLines) p.ServiceAppointmentId = app.Id;
+        if (serviceLines.Count > 0) db.ServiceAppointmentServiceLines.AddRange(serviceLines);
+        if (partLines.Count > 0) db.ServiceAppointmentPartLines.AddRange(partLines);
+
+        if (v != null)
+        {
+            v.LastAppointmentNo = app.AppNo;
+            v.LastAppointmentDate = app.AppointmentDate;
+        }
+
+        Log(vin, "ServiceAppointmentBooked", $"AppNo={app.AppNo}, Date={app.AppointmentDate:yyyy-MM-dd} {app.AppointmentTime}, Dealer={app.DealerCode}, EstAmount={app.TotalEstimatedAmount:N0}");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            app.Id,
+            app.AppNo,
+            app.AppNoUser,
+            app.DealerCode,
+            app.Vin,
+            app.Model,
+            app.PlateNo,
+            app.CustomerName,
+            app.CustomerPhone,
+            app.ServiceType,
+            app.AppointmentDate,
+            app.AppointmentTime,
+            app.EstimatedDurationMinutes,
+            app.ServiceAdvisor,
+            app.Technician,
+            app.CustomerRequest,
+            app.TotalEstimatedLabor,
+            app.TotalEstimatedParts,
+            app.TotalEstimatedAmount,
+            app.Status,
+            serviceLines = serviceLines.Select(s => new { s.Id, s.SerCode, s.SerName, s.ServiceType, s.StandardHours, s.LaborPrice, s.Discount, s.LaborAmount, s.Technician, s.Status, s.Remark }),
+            partLines = partLines.Select(p => new { p.Id, p.PartCode, p.PartName, p.Unit, p.Quantity, p.UnitPrice, p.Discount, p.TotalAmount, p.PaymentType, p.Status, p.Remark })
+        };
+    }
+
+    public async Task<object> ListServiceAppointmentsAsync(string? status, string? dealer, string? serviceType, string? date, string? vin, string? plateNo, string? appNo)
+    {
+        var q = db.ServiceAppointments.Where(a => a.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var st = status.Trim().ToLowerInvariant();
+            q = q.Where(a => a.Status.ToLower() == st);
+        }
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToLowerInvariant();
+            q = q.Where(a => a.DealerCode.ToLower().Contains(d));
+        }
+        if (!string.IsNullOrWhiteSpace(serviceType))
+        {
+            var stp = serviceType.Trim().ToLowerInvariant();
+            q = q.Where(a => a.ServiceType.ToLower() == stp);
+        }
+        if (!string.IsNullOrWhiteSpace(date) && DateTime.TryParse(date, out var dt))
+        {
+            var start = dt.Date;
+            var end = start.AddDays(1);
+            q = q.Where(a => a.AppointmentDate >= start && a.AppointmentDate < end);
+        }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            q = q.Where(a => a.Vin.Contains(v));
+        }
+        if (!string.IsNullOrWhiteSpace(plateNo))
+        {
+            var p = plateNo.Trim().ToLowerInvariant();
+            q = q.Where(a => a.PlateNo != null && a.PlateNo.ToLower().Contains(p));
+        }
+        if (!string.IsNullOrWhiteSpace(appNo))
+        {
+            var no = appNo.Trim().ToLowerInvariant();
+            q = q.Where(a => a.AppNo.ToLower().Contains(no));
+        }
+
+        var list = await q.OrderByDescending(a => a.AppointmentDate)
+            .ThenByDescending(a => a.AppointmentTime)
+            .ThenByDescending(a => a.CreatedAt)
+            .ToListAsync();
+
+        var appIds = list.Select(a => a.Id).ToList();
+        var sLines = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && appIds.Contains(s.ServiceAppointmentId)).ToListAsync();
+        var pLines = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && appIds.Contains(p.ServiceAppointmentId)).ToListAsync();
+
+        return list.Select(a => new
+        {
+            a.Id,
+            a.AppNo,
+            a.AppNoUser,
+            a.DealerCode,
+            a.Vin,
+            a.Model,
+            a.EngineNo,
+            a.PlateNo,
+            a.CustomerName,
+            a.CustomerPhone,
+            a.ServiceType,
+            a.AppointmentDate,
+            a.AppointmentTime,
+            a.EstimatedDurationMinutes,
+            a.ServiceAdvisor,
+            a.Technician,
+            a.InsNo,
+            a.CustomerRequest,
+            a.TotalEstimatedLabor,
+            a.TotalEstimatedParts,
+            a.TotalEstimatedAmount,
+            a.Status,
+            a.RoNo,
+            a.Remark,
+            a.CreatedBy,
+            a.CreatedAt,
+            a.ConfirmedBy,
+            a.ConfirmedAt,
+            a.CheckedInBy,
+            a.CheckedInAt,
+            a.CompletedBy,
+            a.CompletedAt,
+            a.CancelledBy,
+            a.CancelledAt,
+            a.CancelReason,
+            a.NoShowAt,
+            a.NoShowReason,
+            serviceLinesCount = sLines.Count(s => s.ServiceAppointmentId == a.Id),
+            partLinesCount = pLines.Count(p => p.ServiceAppointmentId == a.Id),
+            serviceLines = sLines.Where(s => s.ServiceAppointmentId == a.Id).Select(s => new { s.Id, s.SerCode, s.SerName, s.ServiceType, s.StandardHours, s.LaborPrice, s.Discount, s.LaborAmount, s.Technician, s.Status, s.Remark }),
+            partLines = pLines.Where(p => p.ServiceAppointmentId == a.Id).Select(p => new { p.Id, p.PartCode, p.PartName, p.Unit, p.Quantity, p.UnitPrice, p.Discount, p.TotalAmount, p.PaymentType, p.Status, p.Remark })
+        });
+    }
+
+    public async Task<object?> GetServiceAppointmentAsync(string appNo)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && (a.AppNo == no || a.AppNo.ToUpper() == no));
+        if (app is null) return null;
+
+        var sLines = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id).ToListAsync();
+        var pLines = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id).ToListAsync();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == app.Vin);
+        var ro = !string.IsNullOrWhiteSpace(app.RoNo)
+            ? await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == app.RoNo)
+            : null;
+
+        return new
+        {
+            app.Id,
+            app.AppNo,
+            app.AppNoUser,
+            app.DealerCode,
+            app.Vin,
+            app.Model,
+            app.EngineNo,
+            app.PlateNo,
+            app.CustomerName,
+            app.CustomerPhone,
+            app.ServiceType,
+            app.AppointmentDate,
+            app.AppointmentTime,
+            app.EstimatedDurationMinutes,
+            app.ServiceAdvisor,
+            app.Technician,
+            app.InsNo,
+            app.CustomerRequest,
+            app.TotalEstimatedLabor,
+            app.TotalEstimatedParts,
+            app.TotalEstimatedAmount,
+            app.Status,
+            app.RoNo,
+            app.Remark,
+            app.CreatedBy,
+            app.CreatedAt,
+            app.ConfirmedBy,
+            app.ConfirmedAt,
+            app.CheckedInBy,
+            app.CheckedInAt,
+            app.CompletedBy,
+            app.CompletedAt,
+            app.CancelledBy,
+            app.CancelledAt,
+            app.CancelReason,
+            app.NoShowAt,
+            app.NoShowReason,
+            vehicle = vehicle is null ? null : new
+            {
+                vehicle.Vin,
+                vehicle.Model,
+                vehicle.EngineNo,
+                vehicle.Color,
+                vehicle.ModelYear,
+                status = vehicle.Status.ToString(),
+                vehicle.PlateNo,
+                vehicle.OwnerName,
+                vehicle.OwnerPhone,
+                vehicle.WarrantyStart,
+                vehicle.WarrantyEnd,
+                vehicle.LastRoNo,
+                vehicle.LastRoDate,
+                vehicle.LastOdoKm
+            },
+            repairOrder = ro is null ? null : new
+            {
+                ro.RoNo,
+                ro.RoNoUser,
+                ro.RoType,
+                ro.Status,
+                ro.PaymentStatus,
+                ro.TotalLaborAmount,
+                ro.TotalPartAmount,
+                ro.TotalAmount,
+                ro.CheckInDate,
+                ro.ExpectedDeliveryDate,
+                ro.ActualDeliveryDate
+            },
+            serviceLines = sLines.Select(s => new { s.Id, s.SerCode, s.SerName, s.ServiceType, s.StandardHours, s.LaborPrice, s.Discount, s.LaborAmount, s.Technician, s.Status, s.Remark }),
+            partLines = pLines.Select(p => new { p.Id, p.PartCode, p.PartName, p.Unit, p.Quantity, p.UnitPrice, p.Discount, p.TotalAmount, p.PaymentType, p.Status, p.Remark })
+        };
+    }
+
+    public async Task<object?> ServiceAppointmentTransitionAsync(string appNo, string action, ServiceAppointmentTransitionDto? dto)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && a.AppNo == no);
+        if (app is null) return null;
+
+        var act = action.Trim().ToLowerInvariant();
+        var user = dto?.User ?? "System";
+        var note = dto?.Note;
+
+        switch (act)
+        {
+            case "confirm":
+                if (app.Status is not "Booked")
+                    throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái {app.Status}, chỉ 'Booked' mới có thể Confirm.");
+                app.Status = "Confirmed";
+                app.ConfirmedBy = user;
+                app.ConfirmedAt = DateTime.Now;
+                if (!string.IsNullOrWhiteSpace(dto?.ServiceAdvisor)) app.ServiceAdvisor = dto.ServiceAdvisor.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.Technician)) app.Technician = dto.Technician.Trim();
+                if (dto?.AppointmentDate != null) app.AppointmentDate = dto.AppointmentDate.Value;
+                if (!string.IsNullOrWhiteSpace(dto?.AppointmentTime)) app.AppointmentTime = dto.AppointmentTime.Trim();
+                var confServices = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id && s.Status == "Pending").ToListAsync();
+                foreach (var s in confServices) s.Status = "Confirmed";
+                var confParts = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id && p.Status == "Pending").ToListAsync();
+                foreach (var p in confParts) p.Status = "Confirmed";
+                Log(app.Vin, "ServiceAppointmentConfirmed", $"AppNo={app.AppNo}, Date={app.AppointmentDate:yyyy-MM-dd} {app.AppointmentTime}, ConfirmedBy={user}, Note={note}");
+                break;
+
+            case "checkin" or "check-in" or "arrived":
+                if (app.Status is not ("Confirmed" or "Booked"))
+                    throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái {app.Status}, chỉ 'Confirmed' hoặc 'Booked' mới có thể Check-In.");
+                app.Status = "CheckedIn";
+                app.CheckedInBy = user;
+                app.CheckedInAt = DateTime.Now;
+                if (!string.IsNullOrWhiteSpace(dto?.ServiceAdvisor)) app.ServiceAdvisor = dto.ServiceAdvisor.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.Technician)) app.Technician = dto.Technician.Trim();
+                Log(app.Vin, "ServiceAppointmentCheckedIn", $"AppNo={app.AppNo}, CheckedInBy={user}, Note={note}");
+                break;
+
+            case "inservice" or "in-service" or "start":
+                if (app.Status is not ("CheckedIn" or "Confirmed"))
+                    throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái {app.Status}, chỉ 'CheckedIn' hoặc 'Confirmed' mới có thể chuyển 'InService'.");
+                app.Status = "InService";
+                if (!string.IsNullOrWhiteSpace(dto?.RoNo)) app.RoNo = dto.RoNo.Trim().ToUpperInvariant();
+                Log(app.Vin, "ServiceAppointmentInService", $"AppNo={app.AppNo}, RoNo={app.RoNo}, User={user}, Note={note}");
+                break;
+
+            case "complete" or "finish":
+                if (app.Status is not ("InService" or "CheckedIn"))
+                    throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái {app.Status}, chỉ 'InService' hoặc 'CheckedIn' mới có thể Complete.");
+                app.Status = "Completed";
+                app.CompletedBy = user;
+                app.CompletedAt = DateTime.Now;
+                var compServices = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id && s.Status != "Cancelled").ToListAsync();
+                foreach (var s in compServices) s.Status = "Completed";
+                var compParts = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id && p.Status != "Cancelled").ToListAsync();
+                foreach (var p in compParts) p.Status = "Issued";
+                Log(app.Vin, "ServiceAppointmentCompleted", $"AppNo={app.AppNo}, CompletedBy={user}, Note={note}");
+                break;
+
+            case "noshow" or "no-show":
+                if (app.Status is not ("Booked" or "Confirmed"))
+                    throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái {app.Status}, chỉ 'Booked' hoặc 'Confirmed' mới có thể đánh dấu NoShow.");
+                app.Status = "NoShow";
+                app.NoShowAt = DateTime.Now;
+                app.NoShowReason = dto?.Reason ?? note ?? "Khách không đến xưởng đúng hẹn";
+                Log(app.Vin, "ServiceAppointmentNoShow", $"AppNo={app.AppNo}, Reason={app.NoShowReason}");
+                break;
+
+            case "cancel" or "reject":
+                if (app.Status is not ("Booked" or "Confirmed"))
+                    throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái {app.Status}, không thể hủy.");
+                app.Status = "Cancelled";
+                app.CancelledBy = user;
+                app.CancelledAt = DateTime.Now;
+                app.CancelReason = dto?.Reason ?? note ?? "Khách hàng hủy hẹn";
+                var cServices = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id).ToListAsync();
+                foreach (var s in cServices) s.Status = "Cancelled";
+                var cParts = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id).ToListAsync();
+                foreach (var p in cParts) p.Status = "Cancelled";
+                Log(app.Vin, "ServiceAppointmentCancelled", $"AppNo={app.AppNo}, CancelledBy={user}, Reason={app.CancelReason}");
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ. Các hành động hỗ trợ: confirm, checkin, inservice, complete, noshow, cancel.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(note))
+        {
+            app.Remark = string.IsNullOrWhiteSpace(app.Remark) ? note : $"{app.Remark} | {note}";
+        }
+
+        await db.SaveChangesAsync();
+        return await GetServiceAppointmentAsync(app.AppNo);
+    }
+
+    public async Task<object?> UpdateServiceAppointmentHeaderAsync(string appNo, UpdateServiceAppointmentHeaderDto dto)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && a.AppNo == no);
+        if (app is null) return null;
+
+        if (app.Status is "Completed" or "Cancelled" or "NoShow")
+            throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái '{app.Status}', không thể chỉnh sửa.");
+
+        if (!string.IsNullOrWhiteSpace(dto.CustomerName)) app.CustomerName = dto.CustomerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerPhone)) app.CustomerPhone = dto.CustomerPhone.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PlateNo)) app.PlateNo = dto.PlateNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.ServiceType)) app.ServiceType = dto.ServiceType.Trim();
+        if (dto.AppointmentDate != null) app.AppointmentDate = dto.AppointmentDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.AppointmentTime)) app.AppointmentTime = dto.AppointmentTime.Trim();
+        if (dto.EstimatedDurationMinutes is > 0) app.EstimatedDurationMinutes = dto.EstimatedDurationMinutes.Value;
+        if (dto.ServiceAdvisor != null) app.ServiceAdvisor = dto.ServiceAdvisor.Trim();
+        if (dto.Technician != null) app.Technician = dto.Technician.Trim();
+        if (dto.InsNo != null) app.InsNo = dto.InsNo.Trim();
+        if (dto.CustomerRequest != null) app.CustomerRequest = dto.CustomerRequest.Trim();
+        if (dto.Remark != null) app.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return await GetServiceAppointmentAsync(app.AppNo);
+    }
+
+    public async Task<object?> UpdateServiceAppointmentServiceLineAsync(string appNo, long lineId, UpdateServiceAppointmentServiceLineDto dto)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && a.AppNo == no);
+        if (app is null) return null;
+
+        if (app.Status is "Completed" or "Cancelled" or "NoShow")
+            throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái '{app.Status}', không thể chỉnh sửa hạng mục dịch vụ.");
+
+        var line = await db.ServiceAppointmentServiceLines.FirstOrDefaultAsync(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id && s.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.SerCode)) line.SerCode = dto.SerCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SerName)) line.SerName = dto.SerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.ServiceType)) line.ServiceType = dto.ServiceType.Trim();
+        if (dto.StandardHours is > 0) line.StandardHours = dto.StandardHours.Value;
+        if (dto.LaborPrice is >= 0) line.LaborPrice = dto.LaborPrice.Value;
+        if (dto.Discount is >= 0) line.Discount = dto.Discount.Value;
+        if (dto.LaborAmount is >= 0) line.LaborAmount = dto.LaborAmount.Value;
+        else line.LaborAmount = Math.Max(0, (line.StandardHours * line.LaborPrice) - line.Discount);
+        if (dto.Technician != null) line.Technician = dto.Technician.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var allServices = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id && s.Status != "Cancelled").ToListAsync();
+        app.TotalEstimatedLabor = allServices.Sum(s => s.LaborAmount);
+        app.TotalEstimatedAmount = app.TotalEstimatedLabor + app.TotalEstimatedParts;
+
+        await db.SaveChangesAsync();
+        return await GetServiceAppointmentAsync(app.AppNo);
+    }
+
+    public async Task<object?> AddServiceAppointmentServiceLinesAsync(string appNo, List<ServiceAppointmentServiceItemInputDto> items)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && a.AppNo == no);
+        if (app is null) return null;
+
+        if (app.Status is "Completed" or "Cancelled" or "NoShow")
+            throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái '{app.Status}', không thể thêm hạng mục dịch vụ.");
+
+        var newLines = new List<ServiceAppointmentServiceLine>();
+        foreach (var item in items)
+        {
+            var stdHours = item.StandardHours > 0 ? item.StandardHours : 1.0m;
+            var laborPrice = item.LaborPrice >= 0 ? item.LaborPrice : 300000m;
+            var discount = item.Discount >= 0 ? item.Discount : 0m;
+            var laborAmount = item.LaborAmount ?? Math.Max(0, (stdHours * laborPrice) - discount);
+            newLines.Add(new ServiceAppointmentServiceLine
+            {
+                OrgId = Org,
+                ServiceAppointmentId = app.Id,
+                AppNo = app.AppNo,
+                SerCode = item.SerCode.Trim(),
+                SerName = item.SerName.Trim(),
+                ServiceType = item.ServiceType?.Trim() ?? "Maintenance",
+                StandardHours = stdHours,
+                LaborPrice = laborPrice,
+                Discount = discount,
+                LaborAmount = laborAmount,
+                Technician = item.Technician?.Trim() ?? app.Technician,
+                Status = app.Status == "Confirmed" ? "Confirmed" : "Pending",
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        db.ServiceAppointmentServiceLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        var allServices = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id && s.Status != "Cancelled").ToListAsync();
+        app.TotalEstimatedLabor = allServices.Sum(s => s.LaborAmount);
+        app.TotalEstimatedAmount = app.TotalEstimatedLabor + app.TotalEstimatedParts;
+
+        await db.SaveChangesAsync();
+        return await GetServiceAppointmentAsync(app.AppNo);
+    }
+
+    public async Task<object?> RemoveServiceAppointmentServiceLineAsync(string appNo, long lineId)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && a.AppNo == no);
+        if (app is null) return null;
+
+        if (app.Status is "Completed" or "Cancelled" or "NoShow")
+            throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái '{app.Status}', không thể xóa hạng mục dịch vụ.");
+
+        var line = await db.ServiceAppointmentServiceLines.FirstOrDefaultAsync(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id && s.Id == lineId);
+        if (line is null) return null;
+
+        db.ServiceAppointmentServiceLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allServices = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id && s.Status != "Cancelled").ToListAsync();
+        app.TotalEstimatedLabor = allServices.Sum(s => s.LaborAmount);
+        app.TotalEstimatedAmount = app.TotalEstimatedLabor + app.TotalEstimatedParts;
+
+        await db.SaveChangesAsync();
+        return await GetServiceAppointmentAsync(app.AppNo);
+    }
+
+    public async Task<object?> UpdateServiceAppointmentPartLineAsync(string appNo, long lineId, UpdateServiceAppointmentPartLineDto dto)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && a.AppNo == no);
+        if (app is null) return null;
+
+        if (app.Status is "Completed" or "Cancelled" or "NoShow")
+            throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái '{app.Status}', không thể chỉnh sửa phụ tùng.");
+
+        var line = await db.ServiceAppointmentPartLines.FirstOrDefaultAsync(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id && p.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.PartCode)) line.PartCode = dto.PartCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PartName)) line.PartName = dto.PartName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Unit)) line.Unit = dto.Unit.Trim();
+        if (dto.Quantity is > 0) line.Quantity = dto.Quantity.Value;
+        if (dto.UnitPrice is >= 0) line.UnitPrice = dto.UnitPrice.Value;
+        if (dto.Discount is >= 0) line.Discount = dto.Discount.Value;
+        if (dto.TotalAmount is >= 0) line.TotalAmount = dto.TotalAmount.Value;
+        else line.TotalAmount = Math.Max(0, (line.Quantity * line.UnitPrice) - line.Discount);
+        if (!string.IsNullOrWhiteSpace(dto.PaymentType)) line.PaymentType = dto.PaymentType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var allParts = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id && p.Status != "Cancelled").ToListAsync();
+        app.TotalEstimatedParts = allParts.Sum(p => p.TotalAmount);
+        app.TotalEstimatedAmount = app.TotalEstimatedLabor + app.TotalEstimatedParts;
+
+        await db.SaveChangesAsync();
+        return await GetServiceAppointmentAsync(app.AppNo);
+    }
+
+    public async Task<object?> AddServiceAppointmentPartLinesAsync(string appNo, List<ServiceAppointmentPartItemInputDto> items)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && a.AppNo == no);
+        if (app is null) return null;
+
+        if (app.Status is "Completed" or "Cancelled" or "NoShow")
+            throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái '{app.Status}', không thể thêm phụ tùng.");
+
+        var newLines = new List<ServiceAppointmentPartLine>();
+        foreach (var item in items)
+        {
+            var qty = item.Quantity > 0 ? item.Quantity : 1m;
+            var unitPrice = item.UnitPrice >= 0 ? item.UnitPrice : 0m;
+            var discount = item.Discount >= 0 ? item.Discount : 0m;
+            var totalAmount = item.TotalAmount ?? Math.Max(0, (qty * unitPrice) - discount);
+            newLines.Add(new ServiceAppointmentPartLine
+            {
+                OrgId = Org,
+                ServiceAppointmentId = app.Id,
+                AppNo = app.AppNo,
+                PartCode = item.PartCode.Trim(),
+                PartName = item.PartName.Trim(),
+                Unit = string.IsNullOrWhiteSpace(item.Unit) ? "Cái" : item.Unit.Trim(),
+                Quantity = qty,
+                UnitPrice = unitPrice,
+                Discount = discount,
+                TotalAmount = totalAmount,
+                PaymentType = string.IsNullOrWhiteSpace(item.PaymentType) ? "Customer" : item.PaymentType.Trim(),
+                Status = app.Status == "Confirmed" ? "Confirmed" : "Pending",
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        db.ServiceAppointmentPartLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        var allParts = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id && p.Status != "Cancelled").ToListAsync();
+        app.TotalEstimatedParts = allParts.Sum(p => p.TotalAmount);
+        app.TotalEstimatedAmount = app.TotalEstimatedLabor + app.TotalEstimatedParts;
+
+        await db.SaveChangesAsync();
+        return await GetServiceAppointmentAsync(app.AppNo);
+    }
+
+    public async Task<object?> RemoveServiceAppointmentPartLineAsync(string appNo, long lineId)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && a.AppNo == no);
+        if (app is null) return null;
+
+        if (app.Status is "Completed" or "Cancelled" or "NoShow")
+            throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái '{app.Status}', không thể xóa phụ tùng.");
+
+        var line = await db.ServiceAppointmentPartLines.FirstOrDefaultAsync(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id && p.Id == lineId);
+        if (line is null) return null;
+
+        db.ServiceAppointmentPartLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allParts = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id && p.Status != "Cancelled").ToListAsync();
+        app.TotalEstimatedParts = allParts.Sum(p => p.TotalAmount);
+        app.TotalEstimatedAmount = app.TotalEstimatedLabor + app.TotalEstimatedParts;
+
+        await db.SaveChangesAsync();
+        return await GetServiceAppointmentAsync(app.AppNo);
+    }
+
+    public async Task<object?> CreateRoFromAppointmentAsync(string appNo, CreateRoFromAppointmentDto? dto)
+    {
+        var no = appNo.Trim().ToUpperInvariant();
+        var app = await db.ServiceAppointments.FirstOrDefaultAsync(a => a.OrgId == Org && a.AppNo == no);
+        if (app is null) return null;
+
+        if (app.Status is "Completed" or "Cancelled" or "NoShow")
+            throw new InvalidOperationException($"Lịch hẹn đang ở trạng thái '{app.Status}', không thể mở lệnh sửa chữa RO.");
+
+        if (!string.IsNullOrWhiteSpace(app.RoNo) && await db.RepairOrders.AnyAsync(r => r.OrgId == Org && r.RoNo == app.RoNo))
+            throw new InvalidOperationException($"Lịch hẹn {app.AppNo} đã liên kết với lệnh sửa chữa {app.RoNo}.");
+
+        var appServices = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && s.ServiceAppointmentId == app.Id && s.Status != "Cancelled").ToListAsync();
+        var appParts = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && p.ServiceAppointmentId == app.Id && p.Status != "Cancelled").ToListAsync();
+
+        var serviceItems = appServices.Select(s => new RepairOrderServiceItemInputDto(
+            s.SerCode,
+            s.SerName,
+            s.ServiceType,
+            s.StandardHours,
+            s.LaborPrice,
+            s.Discount,
+            s.LaborAmount,
+            s.Technician ?? dto?.Technician ?? app.Technician,
+            s.Remark
+        )).ToList();
+
+        var partItems = appParts.Select(p => new RepairOrderPartItemInputDto(
+            p.PartCode,
+            p.PartName,
+            p.Unit,
+            p.Quantity,
+            p.UnitPrice,
+            p.Discount,
+            p.TotalAmount,
+            p.PaymentType,
+            p.Remark
+        )).ToList();
+
+        var createRoDto = new CreateRepairOrderDto(
+            DealerCode: app.DealerCode,
+            Vin: app.Vin,
+            ServiceItems: serviceItems,
+            PartItems: partItems,
+            RoNo: dto?.RoNo,
+            RoNoUser: dto?.RoNoUser,
+            Model: app.Model,
+            EngineNo: app.EngineNo,
+            PlateNo: app.PlateNo,
+            CustomerName: app.CustomerName,
+            CustomerPhone: app.CustomerPhone,
+            RoType: app.ServiceType,
+            ServiceAdvisor: dto?.ServiceAdvisor ?? app.ServiceAdvisor,
+            Technician: dto?.Technician ?? app.Technician,
+            OdoKm: dto?.OdoKm ?? 0,
+            FuelLevel: dto?.FuelLevel ?? "1/2",
+            CarStatus: dto?.CarStatus ?? "Tiếp nhận xe từ Lịch hẹn dịch vụ",
+            CustomerRequest: app.CustomerRequest,
+            DiagnosisNotes: $"Tạo tự động từ Lịch hẹn {app.AppNo}",
+            CheckInDate: DateTime.Now,
+            ExpectedDeliveryDate: DateTime.Now.AddMinutes(app.EstimatedDurationMinutes > 0 ? app.EstimatedDurationMinutes : 60),
+            DiscountAmount: dto?.DiscountAmount ?? 0,
+            VatRate: dto?.VatRate ?? 10,
+            PaymentMethod: dto?.PaymentMethod ?? "Cash",
+            Remark: dto?.Remark ?? $"Lệnh sửa chữa liên kết Lịch hẹn {app.AppNo}",
+            CreatedBy: dto?.CreatedBy ?? app.CreatedBy
+        );
+
+        var roResult = await CreateRepairOrderAsync(createRoDto);
+        var roNoProp = roResult.GetType().GetProperty("RoNo")?.GetValue(roResult)?.ToString();
+        var generatedRoNo = !string.IsNullOrWhiteSpace(dto?.RoNo) ? dto.RoNo.Trim().ToUpperInvariant() : roNoProp;
+
+        app.RoNo = generatedRoNo;
+        app.Status = "InService";
+        if (app.CheckedInAt == null)
+        {
+            app.CheckedInBy = dto?.CreatedBy ?? "Advisor";
+            app.CheckedInAt = DateTime.Now;
+        }
+
+        Log(app.Vin, "RepairOrderCreatedFromApp", $"AppNo={app.AppNo}, RoNo={app.RoNo}, Dealer={app.DealerCode}");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            appointment = await GetServiceAppointmentAsync(app.AppNo),
+            repairOrder = roResult
+        };
+    }
+
+    public async Task<object?> GetVehicleAppointmentHistoryAsync(string vin)
+    {
+        var vVin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vVin);
+        if (vehicle is null) return null;
+
+        var apps = await db.ServiceAppointments.Where(a => a.OrgId == Org && a.Vin == vVin)
+            .OrderByDescending(a => a.AppointmentDate)
+            .ThenByDescending(a => a.CreatedAt)
+            .ToListAsync();
+
+        var appIds = apps.Select(a => a.Id).ToList();
+        var sLines = await db.ServiceAppointmentServiceLines.Where(s => s.OrgId == Org && appIds.Contains(s.ServiceAppointmentId)).ToListAsync();
+        var pLines = await db.ServiceAppointmentPartLines.Where(p => p.OrgId == Org && appIds.Contains(p.ServiceAppointmentId)).ToListAsync();
+        var events = await db.Events.Where(e => e.OrgId == Org && e.Vin == vVin && e.Kind.StartsWith("ServiceAppointment"))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                vehicle.Vin,
+                vehicle.Model,
+                vehicle.EngineNo,
+                vehicle.Color,
+                vehicle.ModelYear,
+                status = vehicle.Status.ToString(),
+                vehicle.PlateNo,
+                vehicle.OwnerName,
+                vehicle.OwnerPhone,
+                vehicle.LastAppointmentNo,
+                vehicle.LastAppointmentDate,
+                vehicle.LastRoNo,
+                vehicle.LastRoDate,
+                vehicle.LastOdoKm
+            },
+            totalAppointments = apps.Count,
+            appointments = apps.Select(a => new
+            {
+                a.Id,
+                a.AppNo,
+                a.AppNoUser,
+                a.DealerCode,
+                a.ServiceType,
+                a.AppointmentDate,
+                a.AppointmentTime,
+                a.EstimatedDurationMinutes,
+                a.ServiceAdvisor,
+                a.Technician,
+                a.CustomerRequest,
+                a.TotalEstimatedLabor,
+                a.TotalEstimatedParts,
+                a.TotalEstimatedAmount,
+                a.Status,
+                a.RoNo,
+                a.CreatedAt,
+                a.ConfirmedAt,
+                a.CheckedInAt,
+                a.CompletedAt,
+                a.CancelledAt,
+                a.CancelReason,
+                a.NoShowAt,
+                serviceLines = sLines.Where(s => s.ServiceAppointmentId == a.Id).Select(s => new { s.Id, s.SerCode, s.SerName, s.ServiceType, s.StandardHours, s.LaborPrice, s.Discount, s.LaborAmount, s.Technician, s.Status, s.Remark }),
+                partLines = pLines.Where(p => p.ServiceAppointmentId == a.Id).Select(p => new { p.Id, p.PartCode, p.PartName, p.Unit, p.Quantity, p.UnitPrice, p.Discount, p.TotalAmount, p.PaymentType, p.Status, p.Remark })
+            }),
+            events = events.Select(e => new
+            {
+                e.Kind,
+                e.Note,
+                e.At
+            })
+        };
+    }
+
+    public async Task<object> GetServiceAppointmentSummaryAsync()
+    {
+        var apps = await db.ServiceAppointments.Where(a => a.OrgId == Org).ToListAsync();
+        var today = DateTime.Today;
+        var tomorrow = today.AddDays(1);
+
+        var todayCount = apps.Count(a => a.AppointmentDate.Date == today);
+        var upcomingCount = apps.Count(a => a.AppointmentDate.Date >= today && a.Status is "Booked" or "Confirmed");
+        var completedCount = apps.Count(a => a.Status == "Completed");
+        var noShowCount = apps.Count(a => a.Status == "NoShow");
+        var cancelledCount = apps.Count(a => a.Status == "Cancelled");
+
+        var byStatus = apps.GroupBy(a => a.Status).Select(g => new
+        {
+            status = g.Key,
+            count = g.Count(),
+            totalEstimatedAmount = g.Sum(a => a.TotalEstimatedAmount)
+        }).ToList();
+
+        var byType = apps.GroupBy(a => a.ServiceType).Select(g => new
+        {
+            serviceType = g.Key,
+            count = g.Count(),
+            totalEstimatedAmount = g.Sum(a => a.TotalEstimatedAmount)
+        }).ToList();
+
+        var byDealer = apps.GroupBy(a => a.DealerCode).Select(g => new
+        {
+            dealerCode = g.Key,
+            count = g.Count(),
+            totalEstimatedAmount = g.Sum(a => a.TotalEstimatedAmount)
+        }).ToList();
+
+        var totalValid = apps.Count(a => a.Status != "Cancelled");
+        var completionRate = totalValid > 0 ? Math.Round((decimal)completedCount / totalValid * 100, 1) : 0;
+        var noShowRate = totalValid > 0 ? Math.Round((decimal)noShowCount / totalValid * 100, 1) : 0;
+
+        return new
+        {
+            totalAppointments = apps.Count,
+            todayAppointments = todayCount,
+            upcomingAppointments = upcomingCount,
+            completedAppointments = completedCount,
+            noShowAppointments = noShowCount,
+            cancelledAppointments = cancelledCount,
+            completionRatePercent = completionRate,
+            noShowRatePercent = noShowRate,
+            totalEstimatedLabor = apps.Where(a => a.Status != "Cancelled").Sum(a => a.TotalEstimatedLabor),
+            totalEstimatedParts = apps.Where(a => a.Status != "Cancelled").Sum(a => a.TotalEstimatedParts),
+            totalEstimatedAmount = apps.Where(a => a.Status != "Cancelled").Sum(a => a.TotalEstimatedAmount),
+            byStatus,
+            byType,
+            byDealer
         };
     }
 }
