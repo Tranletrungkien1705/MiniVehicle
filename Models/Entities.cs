@@ -299,6 +299,48 @@ public sealed class TestCarLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Yêu cầu kiểm tra tiền bàn giao xe PDI (BizHTC.WH.DlrPDIRequest / Dlr_PDIRequest): quy trình kiểm tra chất lượng trước khi bàn giao xe hoặc giao cho khách hàng cuối.</summary>
+public sealed class PdiRequest
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PdiReqNo { get; set; } = "";             // Mã phiếu yêu cầu PDI (PDI...)
+    public string DealerCode { get; set; } = "";          // Đại lý tạo yêu cầu PDI
+    public string? InspectorName { get; set; }            // Kỹ thuật viên / Chuyên viên PDI phụ trách
+    public string? ApprovedBy { get; set; }               // Người phê duyệt / Quản đốc xưởng
+    public string Status { get; set; } = "Pending";       // Pending → Approved → InProgress → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú điều hành / yêu cầu PDI
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong phiếu kiểm tra PDI (Dlr_PDIRequestDtl): danh sách hạng mục kiểm tra chất lượng tiền bàn giao (ắc quy, lốp, mức dầu/nước, điện tử, ngoại thất, nội thất, chẩn đoán OBD, số RO xưởng).</summary>
+public sealed class PdiRequestLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long PdiRequestId { get; set; }
+    public string PdiReqNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? DlrContractNo { get; set; }            // Hợp đồng bán xe liên quan
+    public string? RoNo { get; set; }                     // Số Repair Order / Lệnh dịch vụ xưởng nếu có phát sinh sửa chữa
+    public string RoStatus { get; set; } = "NORE";        // NORE (Chưa tạo), CRE (Mới tạo), FNS (Hoàn thành)
+    public double? BatteryVoltage { get; set; } = 12.6;   // Điện áp bình ắc quy (V)
+    public bool TirePressureOk { get; set; } = true;      // Đạt chuẩn áp suất lốp
+    public bool FluidsOk { get; set; } = true;            // Đạt chuẩn mức dầu mỡ, nước làm mát, nước rửa kính
+    public bool ElectronicsOk { get; set; } = true;       // Đạt chuẩn hệ thống điện tử, đèn, còi, màn hình AVN
+    public bool ExteriorOk { get; set; } = true;          // Đạt chuẩn ngoại thất, thân vỏ, kính không trầy xước
+    public bool InteriorCleanOk { get; set; } = true;     // Đạt chuẩn vệ sinh nội thất & lột bỏ nilon bảo vệ
+    public bool DiagnosticScanOk { get; set; } = true;    // Quét chẩn đoán OBD/ECU không có mã lỗi (No DTC)
+    public string PdiResult { get; set; } = "Pending";    // Pending → Passed / Failed
+    public string Status { get; set; } = "Pending";       // Pending → Approved → Inspected → Completed (hoặc Rejected / Cancelled)
+    public DateTime? InspectedAt { get; set; }            // Thời điểm hoàn tất kiểm tra xe này
+    public string? InspectedBy { get; set; }              // KTV thực hiện kiểm tra xe này
+    public string? DefectNotes { get; set; }              // Ghi chú khiếm khuyết kỹ thuật nếu không đạt
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

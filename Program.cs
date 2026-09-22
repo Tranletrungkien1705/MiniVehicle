@@ -405,6 +405,38 @@ app.MapPost("/api/test-cars/{testCarCode}/lines/{vin}/finish", async (string tes
     return r is null ? Results.NotFound(new { testCarCode, vin, error = "Không tìm thấy dòng chi tiết hoặc sai trạng thái." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Kiểm tra chất lượng tiền bàn giao xe PDI (BizHTC.WH.DlrPDIRequest / Dlr_PDIRequest) ----
+app.MapPost("/api/pdi-requests", async (CreatePdiRequestDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần DealerCode để tạo yêu cầu PDI." });
+    try { return Results.Ok(await svc.CreatePdiRequestAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/pdi-requests", async (IVehicleService svc, string? status, string? dealer, string? vin) =>
+    Results.Ok(await svc.ListPdiRequestsAsync(status, dealer, vin))).RequireAuthorization();
+
+app.MapGet("/api/pdi-requests/{pdiReqNo}", async (string pdiReqNo, IVehicleService svc) =>
+{
+    var r = await svc.GetPdiRequestAsync(pdiReqNo);
+    return r is null ? Results.NotFound(new { pdiReqNo, error = "Không tìm thấy phiếu yêu cầu PDI." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/pdi-requests/{pdiReqNo}/{action}", async (string pdiReqNo, string action, PdiRequestTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "start" or "inspect" or "complete" or "pass" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|start|inspect|complete|pass|reject|cancel" });
+    var r = await svc.PdiRequestTransitionAsync(pdiReqNo, action, dto);
+    return r is null ? Results.NotFound(new { pdiReqNo, error = "Không thấy phiếu PDI hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/pdi-requests/{pdiReqNo}/lines/{vin}/inspect", async (string pdiReqNo, string vin, InspectPdiLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.InspectPdiLineAsync(pdiReqNo, vin, dto);
+    return r is null ? Results.NotFound(new { pdiReqNo, vin, error = "Không tìm thấy dòng chi tiết PDI hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

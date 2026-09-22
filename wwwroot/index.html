@@ -26,6 +26,9 @@
 <li><code>POST /api/test-cars</code> &amp; <code>/api/test-cars/{code}/{action}</code> — đăng ký / quản lý xe lái thử &amp; chạy thử (BizHTC.Car_TestCar)</li>
 <li><code>GET /api/test-cars?status=&dealer=&vin=</code> — tra cứu danh sách đăng ký xe lái thử</li>
 <li><code>POST /api/test-cars/{code}/lines/{vin}/finish</code> — hoàn tất hoàn trả xe lái thử theo từng VIN (ODO &amp; tình trạng xe)</li>
+<li><code>POST /api/pdi-requests</code> &amp; <code>/api/pdi-requests/{no}/{action}</code> — yêu cầu &amp; phê duyệt kiểm tra chất lượng tiền bàn giao PDI (BizHTC.WH.DlrPDIRequest)</li>
+<li><code>GET /api/pdi-requests?status=&dealer=&vin=</code> — tra cứu danh sách phiếu yêu cầu PDI</li>
+<li><code>POST /api/pdi-requests/{no}/lines/{vin}/inspect</code> — kiểm tra hạng mục kỹ thuật PDI theo VIN (ắc quy, áp suất lốp, mức dầu nước, điện tử, thân vỏ, nội thất, quét lỗi OBD, đồng bộ RO)</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

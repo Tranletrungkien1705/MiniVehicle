@@ -32,6 +32,25 @@ public record CreateTestCarDto(string DealerCode, List<string> Vins, string? Eve
 public record TestCarTransitionDto(string? Note = null);
 public record FinishTestCarLineDto(int? OdoEnd = null, string? ConditionEnd = null, string? Remark = null, DateTime? ReturnDate = null);
 
+public record PdiItemInputDto(string Vin, string? DlrContractNo = null, string? Remark = null);
+public record CreatePdiRequestDto(string DealerCode, List<string>? Vins = null, List<PdiItemInputDto>? Items = null, string? InspectorName = null, string? Remark = null, string? PdiReqNo = null);
+public record PdiRequestTransitionDto(string? Note = null, string? InspectorName = null, string? ApprovedBy = null);
+public record InspectPdiLineDto(
+    double? BatteryVoltage = 12.6,
+    bool? TirePressureOk = true,
+    bool? FluidsOk = true,
+    bool? ElectronicsOk = true,
+    bool? ExteriorOk = true,
+    bool? InteriorCleanOk = true,
+    bool? DiagnosticScanOk = true,
+    bool? Passed = true,
+    string? RoNo = null,
+    string? RoStatus = null,
+    string? InspectorName = null,
+    string? DefectNotes = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -82,6 +101,11 @@ public interface IVehicleService
     Task<object?> GetTestCarAsync(string testCarCode);
     Task<object?> TestCarTransitionAsync(string testCarCode, string action, TestCarTransitionDto? dto);
     Task<object?> FinishTestCarLineAsync(string testCarCode, string vin, FinishTestCarLineDto? dto);
+    Task<object> CreatePdiRequestAsync(CreatePdiRequestDto dto);
+    Task<object> ListPdiRequestsAsync(string? status, string? dealer, string? vin);
+    Task<object?> GetPdiRequestAsync(string pdiReqNo);
+    Task<object?> PdiRequestTransitionAsync(string pdiReqNo, string action, PdiRequestTransitionDto? dto);
+    Task<object?> InspectPdiLineAsync(string pdiReqNo, string vin, InspectPdiLineDto dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -1617,6 +1641,355 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             line.Status,
             line.ReturnDate,
             headerStatus = tc.Status
+        };
+    }
+
+    // ===== Yêu cầu & Kiểm tra chất lượng tiền bàn giao xe PDI (BizHTC.WH.DlrPDIRequest / Dlr_PDIRequest) =====
+    public async Task<object> CreatePdiRequestAsync(CreatePdiRequestDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode để tạo yêu cầu PDI.");
+
+        var dealer = dto.DealerCode.Trim();
+
+        // Thu thập danh sách xe (từ Items hoặc Vins)
+        var itemList = new List<PdiItemInputDto>();
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            itemList.AddRange(dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)));
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            itemList.AddRange(dto.Vins.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => new PdiItemInputDto(v.Trim())));
+        }
+
+        if (itemList.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe (VIN) để tạo phiếu yêu cầu PDI.");
+
+        // Khử trùng lặp VIN trong cùng 1 phiếu
+        var distinctItems = itemList
+            .GroupBy(i => i.Vin.Trim().ToUpperInvariant())
+            .Select(g => g.First())
+            .ToList();
+
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        // Kiểm tra xe không được ở trạng thái đã giao cho khách hàng (Delivered)
+        var invalidDelivered = vehicles.Where(v => v.Status == VehicleStatus.Delivered).Select(v => v.Vin).ToList();
+        if (invalidDelivered.Count > 0)
+            throw new InvalidOperationException("Xe đã giao cho khách hàng cuối (Delivered) không thể tạo kiểm tra tiền bàn giao PDI: " + string.Join(", ", invalidDelivered));
+
+        var reqNo = string.IsNullOrWhiteSpace(dto.PdiReqNo)
+            ? "PDI" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.PdiReqNo.Trim().ToUpperInvariant();
+
+        if (await db.PdiRequests.AnyAsync(r => r.OrgId == Org && r.PdiReqNo == reqNo))
+            throw new InvalidOperationException($"Mã phiếu PDI {reqNo} đã tồn tại.");
+
+        var pdi = new PdiRequest
+        {
+            OrgId = Org,
+            PdiReqNo = reqNo,
+            DealerCode = dealer,
+            InspectorName = dto.InspectorName?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            Status = "Pending",
+            CreatedAt = DateTime.Now
+        };
+        db.PdiRequests.Add(pdi);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            db.PdiRequestLines.Add(new PdiRequestLine
+            {
+                OrgId = Org,
+                PdiRequestId = pdi.Id,
+                PdiReqNo = reqNo,
+                Vin = vin,
+                DlrContractNo = item.DlrContractNo?.Trim(),
+                RoStatus = "NORE",
+                BatteryVoltage = 12.6,
+                TirePressureOk = true,
+                FluidsOk = true,
+                ElectronicsOk = true,
+                ExteriorOk = true,
+                InteriorCleanOk = true,
+                DiagnosticScanOk = true,
+                PdiResult = "Pending",
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(vin, "PdiRequested", $"{reqNo} ĐL:{dealer} KTV:{dto.InspectorName ?? "Chưa phân công"}");
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pdi.PdiReqNo,
+            pdi.DealerCode,
+            pdi.InspectorName,
+            pdi.Status,
+            totalVins = distinctItems.Count,
+            vins = distinctItems.Select(i => new { i.Vin, i.DlrContractNo })
+        };
+    }
+
+    public async Task<object> ListPdiRequestsAsync(string? status, string? dealer, string? vin)
+    {
+        var q = db.PdiRequests.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(r => r.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.PdiRequestLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.PdiReqNo).Distinct().ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.PdiReqNo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.PdiReqNo,
+            r.DealerCode,
+            r.InspectorName,
+            r.ApprovedBy,
+            r.Status,
+            r.Remark,
+            r.CreatedAt,
+            r.ApprovedAt,
+            r.CompletedAt,
+            vinCount = db.PdiRequestLines.Count(l => l.OrgId == Org && l.PdiRequestId == r.Id),
+            passedCount = db.PdiRequestLines.Count(l => l.OrgId == Org && l.PdiRequestId == r.Id && l.PdiResult == "Passed"),
+            failedCount = db.PdiRequestLines.Count(l => l.OrgId == Org && l.PdiRequestId == r.Id && l.PdiResult == "Failed")
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetPdiRequestAsync(string pdiReqNo)
+    {
+        pdiReqNo = pdiReqNo.Trim().ToUpperInvariant();
+        var pdi = await db.PdiRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.PdiReqNo == pdiReqNo);
+        if (pdi is null) return null;
+
+        var lines = await db.PdiRequestLines.Where(l => l.OrgId == Org && l.PdiRequestId == pdi.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.DlrContractNo,
+            l.RoNo,
+            l.RoStatus,
+            l.BatteryVoltage,
+            l.TirePressureOk,
+            l.FluidsOk,
+            l.ElectronicsOk,
+            l.ExteriorOk,
+            l.InteriorCleanOk,
+            l.DiagnosticScanOk,
+            l.PdiResult,
+            l.Status,
+            l.InspectedAt,
+            l.InspectedBy,
+            l.DefectNotes,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), v.StorageCode, v.DealerCode } : null
+        }).ToList();
+
+        return new
+        {
+            pdi.PdiReqNo,
+            pdi.DealerCode,
+            pdi.InspectorName,
+            pdi.ApprovedBy,
+            pdi.Status,
+            pdi.Remark,
+            pdi.CreatedAt,
+            pdi.ApprovedAt,
+            pdi.CompletedAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> PdiRequestTransitionAsync(string pdiReqNo, string action, PdiRequestTransitionDto? dto)
+    {
+        pdiReqNo = pdiReqNo.Trim().ToUpperInvariant();
+        var pdi = await db.PdiRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.PdiReqNo == pdiReqNo);
+        if (pdi is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.PdiRequestLines.Where(l => l.OrgId == Org && l.PdiRequestId == pdi.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (pdi.Status != "Pending") return null;
+                pdi.Status = "Approved";
+                pdi.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.ApprovedBy)) pdi.ApprovedBy = dto.ApprovedBy.Trim();
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "PdiApproved", $"{pdiReqNo} Duyệt bởi:{pdi.ApprovedBy ?? "Manager"}");
+                break;
+
+            case "start":
+            case "inspect":
+                if (pdi.Status is not ("Pending" or "Approved")) return null;
+                pdi.Status = "InProgress";
+                pdi.ApprovedAt ??= now;
+                if (!string.IsNullOrWhiteSpace(dto?.InspectorName)) pdi.InspectorName = dto.InspectorName.Trim();
+                foreach (var l in lines)
+                {
+                    if (l.Status is "Pending" or "Approved")
+                        l.Status = "Inspected";
+                }
+                foreach (var v in vehicles) Log(v.Vin, "PdiInProgress", $"{pdiReqNo} Tiến hành kiểm tra PDI");
+                break;
+
+            case "complete":
+            case "pass":
+                if (pdi.Status is not ("Approved" or "InProgress" or "Pending")) return null;
+                pdi.Status = "Completed";
+                pdi.CompletedAt = now;
+                foreach (var l in lines)
+                {
+                    if (l.Status != "Completed")
+                    {
+                        l.Status = "Completed";
+                        l.PdiResult = "Passed";
+                        l.InspectedAt ??= now;
+                        l.InspectedBy ??= dto?.InspectorName ?? pdi.InspectorName ?? "Inspector";
+                    }
+                }
+                foreach (var v in vehicles) Log(v.Vin, "PdiCompleted", $"{pdiReqNo} Hoàn tất kiểm tra PDI đạt chuẩn tiền bàn giao.");
+                break;
+
+            case "reject":
+                if (pdi.Status != "Pending") return null;
+                pdi.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    pdi.Remark = string.IsNullOrWhiteSpace(pdi.Remark) ? dto.Note : $"{pdi.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines)
+                {
+                    l.Status = "Rejected";
+                    l.PdiResult = "Failed";
+                }
+                foreach (var v in vehicles) Log(v.Vin, "PdiRejected", $"{pdiReqNo} Lý do: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (pdi.Status is not ("Pending" or "Approved" or "InProgress")) return null;
+                pdi.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    pdi.Remark = string.IsNullOrWhiteSpace(pdi.Remark) ? dto.Note : $"{pdi.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) if (l.Status != "Completed") l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "PdiCancelled", $"{pdiReqNo} Lý do: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { pdi.PdiReqNo, pdi.DealerCode, status = pdi.Status, pdi.ApprovedAt, pdi.CompletedAt };
+    }
+
+    public async Task<object?> InspectPdiLineAsync(string pdiReqNo, string vin, InspectPdiLineDto dto)
+    {
+        pdiReqNo = pdiReqNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var pdi = await db.PdiRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.PdiReqNo == pdiReqNo);
+        if (pdi is null || pdi.Status is "Cancelled" or "Rejected") return null;
+
+        var line = await db.PdiRequestLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.PdiRequestId == pdi.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        var now = DateTime.Now;
+        line.InspectedAt = now;
+        if (!string.IsNullOrWhiteSpace(dto.InspectorName)) line.InspectedBy = dto.InspectorName.Trim();
+        else if (string.IsNullOrWhiteSpace(line.InspectedBy)) line.InspectedBy = pdi.InspectorName ?? "Inspector";
+
+        if (dto.BatteryVoltage.HasValue) line.BatteryVoltage = dto.BatteryVoltage.Value;
+        if (dto.TirePressureOk.HasValue) line.TirePressureOk = dto.TirePressureOk.Value;
+        if (dto.FluidsOk.HasValue) line.FluidsOk = dto.FluidsOk.Value;
+        if (dto.ElectronicsOk.HasValue) line.ElectronicsOk = dto.ElectronicsOk.Value;
+        if (dto.ExteriorOk.HasValue) line.ExteriorOk = dto.ExteriorOk.Value;
+        if (dto.InteriorCleanOk.HasValue) line.InteriorCleanOk = dto.InteriorCleanOk.Value;
+        if (dto.DiagnosticScanOk.HasValue) line.DiagnosticScanOk = dto.DiagnosticScanOk.Value;
+
+        if (!string.IsNullOrWhiteSpace(dto.RoNo)) line.RoNo = dto.RoNo.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.RoStatus)) line.RoStatus = dto.RoStatus.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DefectNotes)) line.DefectNotes = dto.DefectNotes.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark))
+            line.Remark = string.IsNullOrWhiteSpace(line.Remark) ? dto.Remark : $"{line.Remark} | {dto.Remark}";
+
+        bool isPassed = dto.Passed ?? (
+            line.BatteryVoltage >= 12.0 &&
+            line.TirePressureOk &&
+            line.FluidsOk &&
+            line.ElectronicsOk &&
+            line.ExteriorOk &&
+            line.InteriorCleanOk &&
+            line.DiagnosticScanOk &&
+            string.IsNullOrWhiteSpace(line.DefectNotes)
+        );
+
+        if (isPassed)
+        {
+            line.PdiResult = "Passed";
+            line.Status = "Completed";
+            Log(vin, "PdiLinePassed", $"{pdiReqNo} Kiểm tra PDI ĐẠT. KTV: {line.InspectedBy}. Ắc quy={line.BatteryVoltage}V");
+        }
+        else
+        {
+            line.PdiResult = "Failed";
+            line.Status = "Inspected";
+            Log(vin, "PdiLineFailed", $"{pdiReqNo} Kiểm tra PDI KHÔNG ĐẠT. KTV: {line.InspectedBy}. Lỗi: {line.DefectNotes ?? "Hạng mục không đạt chuẩn"}");
+        }
+
+        // Cập nhật trạng thái tổng thể của phiếu PDI
+        var allLines = await db.PdiRequestLines.Where(l => l.OrgId == Org && l.PdiRequestId == pdi.Id).ToListAsync();
+        if (allLines.All(l => l.Status == "Completed" || l.PdiResult == "Passed"))
+        {
+            pdi.Status = "Completed";
+            pdi.CompletedAt = now;
+        }
+        else if (pdi.Status == "Approved" || pdi.Status == "Pending")
+        {
+            pdi.Status = "InProgress";
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            pdi.PdiReqNo,
+            line.Vin,
+            line.PdiResult,
+            line.Status,
+            line.BatteryVoltage,
+            line.TirePressureOk,
+            line.FluidsOk,
+            line.ElectronicsOk,
+            line.ExteriorOk,
+            line.InteriorCleanOk,
+            line.DiagnosticScanOk,
+            line.RoNo,
+            line.RoStatus,
+            line.InspectedBy,
+            line.InspectedAt,
+            line.DefectNotes,
+            headerStatus = pdi.Status
         };
     }
 }
