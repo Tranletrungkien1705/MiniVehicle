@@ -32,6 +32,11 @@ public sealed class Vehicle
     public decimal PaidAmount { get; set; } = 0;    // Tổng số tiền đã thanh toán cho xe (VNĐ)
     public DateTime? PaidAt { get; set; }           // Thời điểm hoàn tất thanh toán tiền xe
     public string? StorageCode { get; set; }        // vị trí ô đỗ / kho bãi nội bộ OEM (StorageCodeCurrent)
+    public string? PackingListNo { get; set; }      // Mã Packing List xuất xưởng / cập cảng (CT_PackingList)
+    public string? DeclarationNo { get; set; }      // Số tờ khai hải quan thông quan (CT_Declaration / CT_TKHQ)
+    public DateTime? TaxPaymentDate { get; set; }   // Ngày hoàn tất nộp thuế hải quan (ContractTKHQUpdate_TaxPaymentDate)
+    public bool IsCustomsCleared { get; set; } = false; // Đã hoàn tất thủ tục thông quan hải quan
+    public DateTime? CustomsClearanceDate { get; set; } // Ngày hoàn tất thông quan hải quan
     public DateTime? LastStorageMtnDate { get; set; } // Ngày bảo dưỡng lưu kho gần nhất (VIN_MaintainPeriod.MtnLastDate)
     public DateTime? NextStorageMtnDate { get; set; } // Hạn bảo dưỡng lưu kho tiếp theo (VIN_MaintainPeriod.MtnNextDate)
     public int StorageMtnTimes { get; set; } = 0;     // Số lần bảo dưỡng lưu kho đã thực hiện (VIN_MaintainPeriod.MtnTimes)
@@ -872,6 +877,113 @@ public sealed class StorageMaintenanceLine
     public string? Technician { get; set; }             // KTV thực hiện kiểm tra xe này
     public string? DefectNotes { get; set; }            // Ghi chú sự cố / khiếm khuyết kỹ thuật nếu Failed
     public string Status { get; set; } = "Pending";     // Pending → InProgress → Completed (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Packing List xuất xưởng nhà máy & Vận đơn nhập khẩu CBU/CKD (BizHTC.Contract.ContractPackingList / CT_PackingList): quản lý vận đơn đóng gói lô xe xuất xưởng từ nhà máy hoặc tàu biển cập cảng, liên kết hợp đồng/LC và tự động sinh nhập kho xe VIN khi phê duyệt.</summary>
+public sealed class PackingList
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PackingListNo { get; set; } = "";         // Mã Packing List (PL...)
+    public string? ContractNo { get; set; }                // Hợp đồng ngoại thương / đơn hàng sản xuất OEM
+    public string? LCNo { get; set; }                      // Số thư tín dụng L/C ngân hàng
+    public string PortCode { get; set; } = "NHA_MAY_NINH_BINH"; // Cảng cập bến / Bãi xuất xưởng (CANG_HAI_PHONG, NHA_MAY_NINH_BINH, CANG_CAT_LAI...)
+    public string? VesselName { get; set; }                // Tên tàu biển chở hàng / Đoàn xe HTMV
+    public string? VoyageNo { get; set; }                  // Số chuyến tàu / Lô xuất xưởng
+    public DateTime? ShippingDateStart { get; set; }       // Ngày xuất xưởng / Rời cảng
+    public DateTime? ShippingDateEndExpected { get; set; } // Ngày dự kiến cập cảng / Về kho OEM
+    public DateTime? ShippingDateEnd { get; set; }         // Ngày cập cảng / Nhập bãi thực tế
+    public int TotalQuantity { get; set; } = 0;            // Tổng số lượng xe trong lô
+    public decimal TotalAmount { get; set; } = 0;          // Tổng giá trị lô xe (VNĐ)
+    public string Status { get; set; } = "Draft";          // Draft → Submitted → Approved (hoặc Cancelled)
+    public string? Remark { get; set; }                    // Ghi chú vận đơn lô xe
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                // Người duyệt kế hoạch / Thủ kho tiếp nhận
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe trong Packing List (BizHTC.Contract.CT_PackingListDetail / PackingListLine): thông tin xe VIN, phiên bản Spec, số máy EngineNo, màu sắc, năm sản xuất, mã chìa khóa và đơn giá xuất xưởng.</summary>
+public sealed class PackingListLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long PackingListId { get; set; }
+    public string PackingListNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string Model { get; set; } = "";                // Dòng xe (SantaFe, Tucson, Accent, Creta, Elantra, Custin...)
+    public string? SpecCode { get; set; }                  // Phiên bản xe (1.6T, 2.0 AT Tiêu chuẩn, 2.0 AT Đặc biệt, Hybrid...)
+    public string? EngineNo { get; set; }                  // Số máy động cơ
+    public string? Color { get; set; }                     // Màu sắc xe
+    public int? ModelYear { get; set; } = 2026;            // Năm sản xuất / Model Year
+    public string? KeyNo { get; set; }                     // Mã chìa khóa xuất xưởng
+    public DateTime? ProductionDate { get; set; }          // Ngày xuất xưởng nhà máy
+    public decimal UnitPrice { get; set; } = 0;            // Đơn giá xuất xưởng xe (VNĐ)
+    public string Status { get; set; } = "Pending";        // Pending → Approved (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Tờ khai Hải quan nhập khẩu CBU/CKD & Nộp thuế thông quan xe (BizHTC.Contract.ContractDeclaration & CT_TKHQ / CT_Declaration): quản lý tờ khai hải quan, số tờ khai, chi cục hải quan cửa khẩu, tính thuế nhập khẩu, thuế TTĐB, thuế VAT, ngày nộp thuế và thông quan giải phóng xe.</summary>
+public sealed class CustomsDeclaration
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string DeclarationNo { get; set; } = "";             // Số tờ khai hải quan (TKHQ...)
+    public string PortCode { get; set; } = "HQ_HAI_PHONG";      // Chi cục Hải quan cửa khẩu (HQ_HAI_PHONG, HQ_CAT_LAI, HQ_CAI_MEP, HQ_NOI_BAI, NHA_MAY_NINH_BINH...)
+    public string? PortName { get; set; }                       // Tên Chi cục Hải quan cửa khẩu
+    public string? ContractNo { get; set; }                     // Số hợp đồng ngoại thương liên kết (CT_ContractOversea)
+    public string? LCNo { get; set; }                           // Thư tín dụng L/C (CT_LC)
+    public string? BillOfLadingNo { get; set; }                 // Số vận đơn đường biển / hàng hải B/L
+    public string DeclarationType { get; set; } = "CBU";        // CBU (Xe nguyên chiếc), CKD (Linh kiện lắp ráp xe), TEMPORARY (Tạm nhập tái xuất), SPAREPARTS (Phụ tùng)
+    public DateTime OpenDate { get; set; } = DateTime.Now;      // Ngày đăng ký mở tờ khai hải quan
+    public DateTime? TaxPaymentDate { get; set; }               // Ngày hoàn thành nộp thuế vào NSNN
+    public DateTime? ClearanceDate { get; set; }                // Ngày thực tế thông quan giải phóng hàng hóa
+    public string? CustomsOfficer { get; set; }                 // Cán bộ / Công chức hải quan tiếp nhận
+    public string? DeclarantName { get; set; }                  // Người khai hải quan / Đại lý thủ tục hải quan
+    public int TotalVehicleCount { get; set; } = 0;             // Tổng số lượng xe trong tờ khai
+    public decimal TotalTaxValue { get; set; } = 0;             // Tổng trị giá tính thuế (CIF/FOB, VNĐ)
+    public decimal ImportTaxAmount { get; set; } = 0;           // Tổng tiền thuế nhập khẩu (VNĐ)
+    public decimal ExciseTaxAmount { get; set; } = 0;           // Tổng tiền thuế tiêu thụ đặc biệt (VNĐ)
+    public decimal VatAmount { get; set; } = 0;                 // Tổng tiền thuế VAT (VNĐ)
+    public decimal TotalTaxAmount { get; set; } = 0;            // Tổng tiền thuế phải nộp = ImportTax + ExciseTax + VatAmount (VNĐ)
+    public string Status { get; set; } = "Draft";               // Draft → Registered → TaxPaid → Cleared (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                         // Ghi chú tờ khai hải quan
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? ClearedBy { get; set; }
+    public DateTime? ClearedAt { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe trong Tờ khai hải quan (BizHTC.Contract.CT_TKHQ & CT_DeclarationDetail / CustomsDeclarationLine): thông tin xe VIN, trị giá tính thuế CIF/FOB, thuế suất & tiền thuế nhập khẩu, thuế TTĐB, thuế VAT và ngày nộp thuế của từng xe.</summary>
+public sealed class CustomsDeclarationLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long CustomsDeclarationId { get; set; }
+    public string DeclarationNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string Model { get; set; } = "";                     // Dòng xe (SantaFe, Tucson, Accent, Creta, Elantra...)
+    public string? SpecCode { get; set; }                       // Phiên bản xe
+    public string? EngineNo { get; set; }                       // Số máy động cơ
+    public string? Color { get; set; }                          // Màu sắc xe
+    public int? ModelYear { get; set; } = 2026;                 // Năm sản xuất / Model Year
+    public string? PackingListNo { get; set; }                  // Mã Packing List xuất xưởng liên kết (nếu có)
+    public decimal TaxValue { get; set; } = 0;                  // Trị giá tính thuế xe (VNĐ)
+    public decimal ImportTaxRate { get; set; } = 50;            // Thuế suất nhập khẩu (%) (VD: 50% = 50)
+    public decimal ImportTax { get; set; } = 0;                 // Tiền thuế nhập khẩu = TaxValue * ImportTaxRate%
+    public decimal ExciseTaxRate { get; set; } = 35;            // Thuế suất TTĐB (%) (VD: 35% = 35)
+    public decimal ExciseTax { get; set; } = 0;                 // Tiền thuế TTĐB = (TaxValue + ImportTax) * ExciseTaxRate%
+    public decimal VatRate { get; set; } = 10;                  // Thuế suất VAT (%) (VD: 10% = 10)
+    public decimal VatTax { get; set; } = 0;                    // Tiền thuế VAT = (TaxValue + ImportTax + ExciseTax) * VatRate%
+    public decimal TotalTax { get; set; } = 0;                  // Tổng tiền thuế của xe = ImportTax + ExciseTax + VatTax
+    public DateTime? TaxPaymentDate { get; set; }               // Ngày nộp thuế của xe này
+    public DateTime? ClearanceDate { get; set; }                // Ngày thông quan xe này
+    public string Status { get; set; } = "Pending";             // Pending → Registered → TaxPaid → Cleared (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
 }
 

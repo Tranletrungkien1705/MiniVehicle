@@ -68,6 +68,15 @@
 <li><code>POST /api/storage-maintenances/{no}/lines/{vin}/update</code> — cập nhật thông số kiểm tra kỹ thuật dòng xe bảo dưỡng</li>
 <li><code>POST /api/storage-maintenances/{no}/lines</code> &amp; <code>DELETE /api/storage-maintenances/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong phiếu bảo dưỡng</li>
 <li><code>GET /api/vehicles/{vin}/maintenance-history</code> — xem toàn bộ lịch sử các đợt bảo dưỡng lưu kho của số khung VIN</li>
+<li><code>POST /api/packing-lists</code> &amp; <code>/api/packing-lists/{no}/{action}</code> — tạo &amp; phê duyệt Packing List xuất xưởng nhà máy / Vận đơn nhập khẩu CBU/CKD (BizHTC.Contract.ContractPackingList / CT_PackingList: submit, approve, reject, cancel)</li>
+<li><code>GET /api/packing-lists?status=&portCode=&contractNo=&vesselName=&vin=</code> — tra cứu danh sách Packing List xuất xưởng / cập cảng</li>
+<li><code>POST /api/packing-lists/{no}/lines/{vin}/update</code> — cập nhật chi tiết model, số máy, màu sắc, đơn giá xe trong Packing List</li>
+<li><code>POST /api/packing-lists/{no}/lines</code> &amp; <code>DELETE /api/packing-lists/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong Packing List</li>
+<li><code>POST /api/customs-declarations</code> &amp; <code>/api/customs-declarations/{no}/{action}</code> — tạo, đăng ký, nộp thuế &amp; thông quan Tờ khai hải quan xe CBU/CKD (BizHTC.Contract.ContractDeclaration &amp; CT_TKHQ / CT_Declaration: submit/register, pay-tax, clear/approve, reject, cancel)</li>
+<li><code>GET /api/customs-declarations?status=&portCode=&contractNo=&declarationType=&declarationNo=&vin=</code> — tra cứu danh sách tờ khai hải quan (Hải Phòng, Cát Lái, Cái Mép, Nội Bài...)</li>
+<li><code>POST /api/customs-declarations/{no}/lines/{vin}/update</code> — điều chỉnh trị giá tính thuế CIF/FOB, thuế suất &amp; tiền thuế nhập khẩu, thuế TTĐB, thuế VAT theo từng xe VIN</li>
+<li><code>POST /api/customs-declarations/{no}/lines</code> &amp; <code>DELETE /api/customs-declarations/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong tờ khai hải quan</li>
+<li><code>POST /api/customs-declarations/{no}/update-tax-payment</code> — cập nhật ngày nộp thuế hải quan cho các xe trong tờ khai</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

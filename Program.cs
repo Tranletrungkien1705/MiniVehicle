@@ -886,6 +886,112 @@ app.MapGet("/api/vehicles/{vin}/maintenance-history", async (string vin, IVehicl
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Packing List xuất xưởng nhà máy & Vận đơn nhập khẩu CBU/CKD (BizHTC.Contract.ContractPackingList / CT_PackingList) ----
+app.MapPost("/api/packing-lists", async (CreatePackingListDto dto, IVehicleService svc) =>
+{
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong Packing List." });
+    try { return Results.Ok(await svc.CreatePackingListAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/packing-lists", async (IVehicleService svc, string? status, string? portCode, string? contractNo, string? vesselName, string? vin) =>
+    Results.Ok(await svc.ListPackingListsAsync(status, portCode, contractNo, vesselName, vin))).RequireAuthorization();
+
+app.MapGet("/api/packing-lists/{packingListNo}", async (string packingListNo, IVehicleService svc) =>
+{
+    var r = await svc.GetPackingListAsync(packingListNo);
+    return r is null ? Results.NotFound(new { packingListNo, error = "Không tìm thấy Packing List." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/packing-lists/{packingListNo}/{action}", async (string packingListNo, string action, PackingListTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "request" or "approve" or "confirm" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|reject|cancel" });
+    var r = await svc.PackingListTransitionAsync(packingListNo, action, dto);
+    return r is null ? Results.NotFound(new { packingListNo, error = "Không thấy Packing List hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/packing-lists/{packingListNo}/lines/{vin}/update", async (string packingListNo, string vin, UpdatePackingListLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdatePackingListLineAsync(packingListNo, vin, dto);
+    return r is null ? Results.NotFound(new { packingListNo, vin, error = "Không tìm thấy dòng xe trong Packing List hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/packing-lists/{packingListNo}/lines", async (string packingListNo, List<PackingListItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào Packing List." });
+    try
+    {
+        var r = await svc.AddPackingListLinesAsync(packingListNo, items);
+        return r is null ? Results.NotFound(new { packingListNo, error = "Không tìm thấy Packing List hoặc hồ sơ đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/packing-lists/{packingListNo}/lines/{vin}", async (string packingListNo, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemovePackingListLineAsync(packingListNo, vin);
+    return r is null ? Results.NotFound(new { packingListNo, vin, error = "Không tìm thấy dòng xe trong Packing List hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+// ---- Tờ khai Hải quan nhập khẩu CBU/CKD & Nộp thuế thông quan xe (BizHTC.Contract.ContractDeclaration & CT_TKHQ / CT_Declaration) ----
+app.MapPost("/api/customs-declarations", async (CreateCustomsDeclarationDto dto, IVehicleService svc) =>
+{
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong Tờ khai hải quan." });
+    try { return Results.Ok(await svc.CreateCustomsDeclarationAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/customs-declarations", async (IVehicleService svc, string? status, string? portCode, string? contractNo, string? declarationType, string? declarationNo, string? vin) =>
+    Results.Ok(await svc.ListCustomsDeclarationsAsync(status, portCode, contractNo, declarationType, declarationNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/customs-declarations/{declarationNo}", async (string declarationNo, IVehicleService svc) =>
+{
+    var r = await svc.GetCustomsDeclarationAsync(declarationNo);
+    return r is null ? Results.NotFound(new { declarationNo, error = "Không tìm thấy Tờ khai hải quan." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/customs-declarations/{declarationNo}/{action}", async (string declarationNo, string action, CustomsDeclarationTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "register" or "pay-tax" or "paytax" or "clear" or "clearance" or "approve" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|pay-tax|clear|reject|cancel" });
+    var r = await svc.CustomsDeclarationTransitionAsync(declarationNo, action, dto);
+    return r is null ? Results.NotFound(new { declarationNo, error = "Không thấy Tờ khai hải quan hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/customs-declarations/{declarationNo}/lines/{vin}/update", async (string declarationNo, string vin, UpdateCustomsDeclarationLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateCustomsDeclarationLineAsync(declarationNo, vin, dto);
+    return r is null ? Results.NotFound(new { declarationNo, vin, error = "Không tìm thấy dòng xe trong Tờ khai hải quan hoặc tờ khai đã thông quan/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/customs-declarations/{declarationNo}/lines", async (string declarationNo, List<CustomsDeclarationItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào Tờ khai hải quan." });
+    try
+    {
+        var r = await svc.AddCustomsDeclarationLinesAsync(declarationNo, items);
+        return r is null ? Results.NotFound(new { declarationNo, error = "Không tìm thấy Tờ khai hải quan hoặc tờ khai đã thông quan/hủy/xe đã tồn tại." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/customs-declarations/{declarationNo}/lines/{vin}", async (string declarationNo, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveCustomsDeclarationLineAsync(declarationNo, vin);
+    return r is null ? Results.NotFound(new { declarationNo, vin, error = "Không tìm thấy dòng xe trong Tờ khai hải quan hoặc tờ khai đã thông quan/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/customs-declarations/{declarationNo}/update-tax-payment", async (string declarationNo, UpdateCustomsDeclarationTaxPaymentDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateCustomsDeclarationTaxPaymentAsync(declarationNo, dto);
+    return r is null ? Results.NotFound(new { declarationNo, error = "Không tìm thấy Tờ khai hải quan hoặc tờ khai đã bị hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

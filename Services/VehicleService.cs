@@ -189,6 +189,115 @@ public record UpdateStorageMaintenanceLineDto(
     string? Remark = null
 );
 
+public record PackingListItemInputDto(
+    string Vin,
+    string Model,
+    string? SpecCode = null,
+    string? EngineNo = null,
+    string? Color = null,
+    int? ModelYear = 2026,
+    string? KeyNo = null,
+    DateTime? ProductionDate = null,
+    decimal UnitPrice = 0,
+    string? Remark = null
+);
+
+public record CreatePackingListDto(
+    string? PortCode = "NHA_MAY_NINH_BINH",
+    List<PackingListItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? ContractNo = null,
+    string? LCNo = null,
+    string? VesselName = null,
+    string? VoyageNo = null,
+    DateTime? ShippingDateStart = null,
+    DateTime? ShippingDateEndExpected = null,
+    string? Remark = null,
+    string? PackingListNo = null,
+    string? CreatedBy = null
+);
+
+public record PackingListTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? ApprovedBy = null,
+    DateTime? ShippingDateEnd = null
+);
+
+public record UpdatePackingListLineDto(
+    string? Model = null,
+    string? SpecCode = null,
+    string? EngineNo = null,
+    string? Color = null,
+    int? ModelYear = null,
+    string? KeyNo = null,
+    DateTime? ProductionDate = null,
+    decimal? UnitPrice = null,
+    string? Remark = null
+);
+
+public record CustomsDeclarationItemInputDto(
+    string Vin,
+    string? Model = null,
+    string? SpecCode = null,
+    string? EngineNo = null,
+    string? Color = null,
+    int? ModelYear = 2026,
+    string? PackingListNo = null,
+    decimal? TaxValue = null,
+    decimal? ImportTaxRate = 50,
+    decimal? ImportTax = null,
+    decimal? ExciseTaxRate = 35,
+    decimal? ExciseTax = null,
+    decimal? VatRate = 10,
+    decimal? VatTax = null,
+    string? Remark = null
+);
+
+public record CreateCustomsDeclarationDto(
+    string? PortCode = "HQ_HAI_PHONG",
+    string? PortName = null,
+    List<CustomsDeclarationItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? ContractNo = null,
+    string? LCNo = null,
+    string? BillOfLadingNo = null,
+    string? DeclarationType = "CBU",
+    DateTime? OpenDate = null,
+    string? CustomsOfficer = null,
+    string? DeclarantName = null,
+    string? Remark = null,
+    string? DeclarationNo = null,
+    string? CreatedBy = null
+);
+
+public record CustomsDeclarationTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? CustomsOfficer = null,
+    DateTime? TaxPaymentDate = null,
+    DateTime? ClearanceDate = null
+);
+
+public record UpdateCustomsDeclarationLineDto(
+    decimal? TaxValue = null,
+    decimal? ImportTaxRate = null,
+    decimal? ImportTax = null,
+    decimal? ExciseTaxRate = null,
+    decimal? ExciseTax = null,
+    decimal? VatRate = null,
+    decimal? VatTax = null,
+    DateTime? TaxPaymentDate = null,
+    DateTime? ClearanceDate = null,
+    string? Remark = null
+);
+
+public record UpdateCustomsDeclarationTaxPaymentDto(
+    DateTime? TaxPaymentDate = null,
+    string? Note = null,
+    string? User = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -310,6 +419,21 @@ public interface IVehicleService
     Task<object?> RemoveStorageMaintenanceLineAsync(string mtnNo, string vin);
     Task<object> GetDueMaintenanceVehiclesAsync(string? storageCode, int dueWithinDays = 7);
     Task<object?> GetVehicleMaintenanceHistoryAsync(string vin);
+    Task<object> CreatePackingListAsync(CreatePackingListDto dto);
+    Task<object> ListPackingListsAsync(string? status, string? portCode, string? contractNo, string? vesselName, string? vin);
+    Task<object?> GetPackingListAsync(string packingListNo);
+    Task<object?> PackingListTransitionAsync(string packingListNo, string action, PackingListTransitionDto? dto);
+    Task<object?> UpdatePackingListLineAsync(string packingListNo, string vin, UpdatePackingListLineDto dto);
+    Task<object?> AddPackingListLinesAsync(string packingListNo, List<PackingListItemInputDto> items);
+    Task<object?> RemovePackingListLineAsync(string packingListNo, string vin);
+    Task<object> CreateCustomsDeclarationAsync(CreateCustomsDeclarationDto dto);
+    Task<object> ListCustomsDeclarationsAsync(string? status, string? portCode, string? contractNo, string? declarationType, string? declarationNo, string? vin);
+    Task<object?> GetCustomsDeclarationAsync(string declarationNo);
+    Task<object?> CustomsDeclarationTransitionAsync(string declarationNo, string action, CustomsDeclarationTransitionDto? dto);
+    Task<object?> UpdateCustomsDeclarationLineAsync(string declarationNo, string vin, UpdateCustomsDeclarationLineDto dto);
+    Task<object?> AddCustomsDeclarationLinesAsync(string declarationNo, List<CustomsDeclarationItemInputDto> items);
+    Task<object?> RemoveCustomsDeclarationLineAsync(string declarationNo, string vin);
+    Task<object?> UpdateCustomsDeclarationTaxPaymentAsync(string declarationNo, UpdateCustomsDeclarationTaxPaymentDto dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -349,7 +473,7 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             v.Vin, v.Model, v.Color, v.ModelYear, status = v.Status.ToString(),
             v.IsTestCar, v.IsMortgaged, v.MortgageBankCode,
             v.IsPaid, v.PaidAmount, v.PaidAt,
-            v.StorageCode, v.DealerCode, v.OwnerName, v.PlateNo, v.DeliveredAt, v.WarrantyEnd
+            v.StorageCode, v.PackingListNo, v.DealerCode, v.OwnerName, v.PlateNo, v.DeliveredAt, v.WarrantyEnd
         }).ToListAsync();
         return new { count = items.Count, items };
     }
@@ -6823,6 +6947,1163 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 h.Status,
                 h.Remark
             })
+        };
+    }
+
+    // ===== Packing List xuất xưởng nhà máy & Vận đơn nhập khẩu CBU/CKD (BizHTC.Contract.ContractPackingList / CT_PackingList) =====
+    public async Task<object> CreatePackingListAsync(CreatePackingListDto dto)
+    {
+        var today = DateTime.Today;
+        var plNo = string.IsNullOrWhiteSpace(dto.PackingListNo)
+            ? $"PL{today:yyyyMMdd}-{(await db.PackingLists.CountAsync(p => p.OrgId == Org && p.CreatedAt.Date == today) + 1):000}"
+            : dto.PackingListNo.Trim().ToUpperInvariant();
+
+        if (await db.PackingLists.AnyAsync(p => p.OrgId == Org && p.PackingListNo == plNo))
+            throw new InvalidOperationException($"Số Packing List {plNo} đã tồn tại.");
+
+        var distinctItems = new List<PackingListItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (dto.Items is { Count: > 0 })
+        {
+            foreach (var it in dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+            {
+                var cleanVin = it.Vin.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+                if (seenVins.Add(cleanVin))
+                {
+                    distinctItems.Add(it with { Vin = cleanVin, Model = it.Model?.Trim() ?? "Hyundai" });
+                }
+            }
+        }
+        else if (dto.Vins is { Count: > 0 })
+        {
+            foreach (var rawVin in dto.Vins.Where(v => !string.IsNullOrWhiteSpace(v)))
+            {
+                var cleanVin = rawVin.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+                if (seenVins.Add(cleanVin))
+                {
+                    distinctItems.Add(new PackingListItemInputDto(cleanVin, "Hyundai", null, null, null, 2026, null, null, 600000000m, null));
+                }
+            }
+        }
+
+        if (distinctItems.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất một số khung VIN trong danh sách Packing List.");
+
+        var portCode = !string.IsNullOrWhiteSpace(dto.PortCode) ? dto.PortCode.Trim().ToUpperInvariant() : "NHA_MAY_NINH_BINH";
+        var totalAmount = distinctItems.Sum(i => i.UnitPrice);
+
+        var pl = new PackingList
+        {
+            OrgId = Org,
+            PackingListNo = plNo,
+            ContractNo = dto.ContractNo?.Trim(),
+            LCNo = dto.LCNo?.Trim(),
+            PortCode = portCode,
+            VesselName = dto.VesselName?.Trim(),
+            VoyageNo = dto.VoyageNo?.Trim(),
+            ShippingDateStart = dto.ShippingDateStart ?? DateTime.Now,
+            ShippingDateEndExpected = dto.ShippingDateEndExpected ?? DateTime.Now.AddDays(7),
+            ShippingDateEnd = null,
+            TotalQuantity = distinctItems.Count,
+            TotalAmount = totalAmount,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.PackingLists.Add(pl);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            var line = new PackingListLine
+            {
+                OrgId = Org,
+                PackingListId = pl.Id,
+                PackingListNo = plNo,
+                Vin = item.Vin,
+                Model = string.IsNullOrWhiteSpace(item.Model) ? "Hyundai" : item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                EngineNo = item.EngineNo?.Trim(),
+                Color = item.Color?.Trim(),
+                ModelYear = item.ModelYear ?? 2026,
+                KeyNo = item.KeyNo?.Trim(),
+                ProductionDate = item.ProductionDate ?? DateTime.Now,
+                UnitPrice = item.UnitPrice,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            };
+            db.PackingListLines.Add(line);
+
+            Log(item.Vin, "PackingListCreated", $"{plNo} Đóng gói xuất xưởng / Lập vận đơn Packing List tại {portCode}. Tàu/Đoàn xe: {pl.VesselName ?? "N/A"}. Đơn giá: {item.UnitPrice:N0} VNĐ");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pl.PackingListNo,
+            pl.ContractNo,
+            pl.LCNo,
+            pl.PortCode,
+            pl.VesselName,
+            pl.VoyageNo,
+            pl.ShippingDateStart,
+            pl.ShippingDateEndExpected,
+            pl.TotalQuantity,
+            pl.TotalAmount,
+            pl.Status,
+            linesCount = distinctItems.Count
+        };
+    }
+
+    public async Task<object> ListPackingListsAsync(string? status, string? portCode, string? contractNo, string? vesselName, string? vin)
+    {
+        var q = db.PackingLists.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(p => p.Status == status);
+        if (!string.IsNullOrWhiteSpace(portCode)) { var p = portCode.Trim().ToUpperInvariant(); q = q.Where(x => x.PortCode == p); }
+        if (!string.IsNullOrWhiteSpace(contractNo)) { var c = contractNo.Trim().ToUpperInvariant(); q = q.Where(x => x.ContractNo != null && x.ContractNo.Contains(c)); }
+        if (!string.IsNullOrWhiteSpace(vesselName)) { var v = vesselName.Trim().ToLower(); q = q.Where(x => x.VesselName != null && x.VesselName.ToLower().Contains(v)); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.PackingListLines
+                .Where(l => l.OrgId == Org && l.Vin == vv)
+                .Select(l => l.PackingListNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(p => matchedNos.Contains(p.PackingListNo));
+        }
+
+        var items = await q.OrderByDescending(p => p.Id).Take(500).Select(p => new
+        {
+            p.PackingListNo,
+            p.ContractNo,
+            p.LCNo,
+            p.PortCode,
+            p.VesselName,
+            p.VoyageNo,
+            p.ShippingDateStart,
+            p.ShippingDateEndExpected,
+            p.ShippingDateEnd,
+            p.TotalQuantity,
+            p.TotalAmount,
+            p.Status,
+            p.Remark,
+            p.CreatedBy,
+            p.CreatedAt,
+            p.ApprovedBy,
+            p.ApprovedAt,
+            p.CancelledAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetPackingListAsync(string packingListNo)
+    {
+        var plNo = packingListNo.Trim().ToUpperInvariant();
+        var pl = await db.PackingLists.FirstOrDefaultAsync(p => p.OrgId == Org && p.PackingListNo == plNo);
+        if (pl is null) return null;
+
+        var lines = await db.PackingListLines
+            .Where(l => l.OrgId == Org && l.PackingListId == pl.Id)
+            .OrderBy(l => l.Id)
+            .ToListAsync();
+
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.PackingListNo,
+            l.Vin,
+            l.Model,
+            l.SpecCode,
+            l.EngineNo,
+            l.Color,
+            l.ModelYear,
+            l.KeyNo,
+            l.ProductionDate,
+            l.UnitPrice,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { status = v.Status.ToString(), v.StorageCode, v.DealerCode, v.OwnerName, v.PlateNo } : null
+        }).ToList();
+
+        return new
+        {
+            pl.PackingListNo,
+            pl.ContractNo,
+            pl.LCNo,
+            pl.PortCode,
+            pl.VesselName,
+            pl.VoyageNo,
+            pl.ShippingDateStart,
+            pl.ShippingDateEndExpected,
+            pl.ShippingDateEnd,
+            pl.TotalQuantity,
+            pl.TotalAmount,
+            pl.Status,
+            pl.Remark,
+            pl.CreatedBy,
+            pl.CreatedAt,
+            pl.ApprovedBy,
+            pl.ApprovedAt,
+            pl.CancelledAt,
+            lines = details
+        };
+    }
+
+    public async Task<object?> PackingListTransitionAsync(string packingListNo, string action, PackingListTransitionDto? dto)
+    {
+        var plNo = packingListNo.Trim().ToUpperInvariant();
+        var pl = await db.PackingLists.FirstOrDefaultAsync(p => p.OrgId == Org && p.PackingListNo == plNo);
+        if (pl is null) return null;
+
+        var lines = await db.PackingListLines.Where(l => l.OrgId == Org && l.PackingListId == pl.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var act = action.Trim().ToLowerInvariant();
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "submit" or "request":
+                if (pl.Status != "Draft") return null;
+                pl.Status = "Submitted";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) pl.Remark = (pl.Remark + " | " + dto.Note).Trim(' ', '|');
+                break;
+
+            case "approve" or "confirm":
+                if (pl.Status is not ("Draft" or "Submitted")) return null;
+                pl.Status = "Approved";
+                pl.ApprovedBy = dto?.ApprovedBy ?? dto?.User ?? "Admin";
+                pl.ApprovedAt = now;
+                pl.ShippingDateEnd = dto?.ShippingDateEnd ?? now;
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Approved";
+
+                    if (!vehicles.TryGetValue(line.Vin, out var v))
+                    {
+                        v = new Vehicle
+                        {
+                            OrgId = Org,
+                            Vin = line.Vin,
+                            Model = line.Model,
+                            EngineNo = line.EngineNo,
+                            Color = line.Color,
+                            ModelYear = line.ModelYear,
+                            StorageCode = pl.PortCode,
+                            PackingListNo = pl.PackingListNo,
+                            Status = VehicleStatus.InStock,
+                            WarrantyMonths = 36,
+                            CreatedAt = now
+                        };
+                        db.Vehicles.Add(v);
+                        vehicles[line.Vin] = v;
+                    }
+                    else
+                    {
+                        v.StorageCode ??= pl.PortCode;
+                        v.PackingListNo ??= pl.PackingListNo;
+                        v.EngineNo ??= line.EngineNo;
+                        v.Color ??= line.Color;
+                        v.ModelYear ??= line.ModelYear;
+                    }
+
+                    Log(line.Vin, "PackingListApproved",
+                        $"{plNo} Phê duyệt nhập kho OEM từ Packing List (Cảng/Kho: {pl.PortCode}, Tàu/Chuyến: {pl.VesselName ?? "N/A"}). Trạng thái xe: InStock");
+                }
+                break;
+
+            case "reject":
+                if (pl.Status is "Approved" or "Cancelled") return null;
+                pl.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) pl.Remark = (pl.Remark + " | Từ chối: " + dto.Note).Trim(' ', '|');
+                foreach (var line in lines) line.Status = "Rejected";
+                break;
+
+            case "cancel":
+                if (pl.Status is "Approved" or "Cancelled") return null;
+                pl.Status = "Cancelled";
+                pl.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) pl.Remark = (pl.Remark + " | Hủy: " + dto.Note).Trim(' ', '|');
+                foreach (var line in lines) line.Status = "Cancelled";
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pl.PackingListNo,
+            pl.Status,
+            pl.TotalQuantity,
+            pl.TotalAmount,
+            pl.ApprovedBy,
+            pl.ApprovedAt,
+            pl.ShippingDateEnd,
+            pl.CancelledAt,
+            action = act
+        };
+    }
+
+    public async Task<object?> UpdatePackingListLineAsync(string packingListNo, string vin, UpdatePackingListLineDto dto)
+    {
+        var plNo = packingListNo.Trim().ToUpperInvariant();
+        var vVin = vin.Trim().ToUpperInvariant();
+
+        var pl = await db.PackingLists.FirstOrDefaultAsync(p => p.OrgId == Org && p.PackingListNo == plNo);
+        if (pl is null || pl.Status is "Approved" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.PackingListLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.PackingListId == pl.Id && l.Vin == vVin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.Model)) line.Model = dto.Model.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SpecCode)) line.SpecCode = dto.SpecCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.EngineNo)) line.EngineNo = dto.EngineNo.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Color)) line.Color = dto.Color.Trim();
+        if (dto.ModelYear.HasValue && dto.ModelYear.Value > 1990) line.ModelYear = dto.ModelYear.Value;
+        if (!string.IsNullOrWhiteSpace(dto.KeyNo)) line.KeyNo = dto.KeyNo.Trim();
+        if (dto.ProductionDate.HasValue) line.ProductionDate = dto.ProductionDate.Value;
+        if (dto.UnitPrice.HasValue && dto.UnitPrice.Value >= 0) line.UnitPrice = dto.UnitPrice.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.PackingListLines.Where(l => l.OrgId == Org && l.PackingListId == pl.Id).ToListAsync();
+        pl.TotalAmount = allLines.Sum(l => l.UnitPrice);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pl.PackingListNo,
+            line.Vin,
+            line.Model,
+            line.SpecCode,
+            line.EngineNo,
+            line.Color,
+            line.ModelYear,
+            line.KeyNo,
+            line.UnitPrice,
+            line.Remark,
+            totalAmount = pl.TotalAmount
+        };
+    }
+
+    public async Task<object?> AddPackingListLinesAsync(string packingListNo, List<PackingListItemInputDto> items)
+    {
+        var plNo = packingListNo.Trim().ToUpperInvariant();
+        var pl = await db.PackingLists.FirstOrDefaultAsync(p => p.OrgId == Org && p.PackingListNo == plNo);
+        if (pl is null || pl.Status is "Approved" or "Cancelled" or "Rejected") return null;
+
+        var distinctItems = new List<PackingListItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+            if (seenVins.Add(cleanVin))
+            {
+                distinctItems.Add(it with { Vin = cleanVin, Model = it.Model?.Trim() ?? "Hyundai" });
+            }
+        }
+
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.PackingListLines
+            .Where(l => l.OrgId == Org && l.PackingListId == pl.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin)).ToList();
+        if (newItems.Count == 0) return null;
+
+        foreach (var item in newItems)
+        {
+            db.PackingListLines.Add(new PackingListLine
+            {
+                OrgId = Org,
+                PackingListId = pl.Id,
+                PackingListNo = pl.PackingListNo,
+                Vin = item.Vin,
+                Model = string.IsNullOrWhiteSpace(item.Model) ? "Hyundai" : item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                EngineNo = item.EngineNo?.Trim(),
+                Color = item.Color?.Trim(),
+                ModelYear = item.ModelYear ?? 2026,
+                KeyNo = item.KeyNo?.Trim(),
+                ProductionDate = item.ProductionDate ?? DateTime.Now,
+                UnitPrice = item.UnitPrice,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(item.Vin, "PackingListLineAdded", $"{plNo} Bổ sung xe vào Packing List {pl.PortCode}");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.PackingListLines.Where(l => l.OrgId == Org && l.PackingListId == pl.Id).ToListAsync();
+        pl.TotalQuantity = allLines.Count;
+        pl.TotalAmount = allLines.Sum(l => l.UnitPrice);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pl.PackingListNo,
+            addedCount = newItems.Count,
+            pl.TotalQuantity,
+            pl.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemovePackingListLineAsync(string packingListNo, string vin)
+    {
+        var plNo = packingListNo.Trim().ToUpperInvariant();
+        var vVin = vin.Trim().ToUpperInvariant();
+
+        var pl = await db.PackingLists.FirstOrDefaultAsync(p => p.OrgId == Org && p.PackingListNo == plNo);
+        if (pl is null || pl.Status is "Approved" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.PackingListLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.PackingListId == pl.Id && l.Vin == vVin);
+        if (line is null) return null;
+
+        db.PackingListLines.Remove(line);
+        Log(vVin, "PackingListLineRemoved", $"{plNo} Rút xe khỏi Packing List {pl.PortCode}");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.PackingListLines.Where(l => l.OrgId == Org && l.PackingListId == pl.Id).ToListAsync();
+        pl.TotalQuantity = allLines.Count;
+        pl.TotalAmount = allLines.Sum(l => l.UnitPrice);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pl.PackingListNo,
+            vin = vVin,
+            pl.TotalQuantity,
+            pl.TotalAmount
+        };
+    }
+
+    // ===== Tờ khai Hải quan nhập khẩu CBU/CKD & Nộp thuế thông quan xe (BizHTC.Contract.ContractDeclaration & CT_TKHQ / CT_Declaration) =====
+    public async Task<object> CreateCustomsDeclarationAsync(CreateCustomsDeclarationDto dto)
+    {
+        var items = new List<CustomsDeclarationItemInputDto>();
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            items.AddRange(dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)));
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            items.AddRange(dto.Vins.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => new CustomsDeclarationItemInputDto(v)));
+        }
+
+        if (items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe (VIN) trong Tờ khai hải quan.");
+
+        var distinctItems = new List<CustomsDeclarationItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var it in items)
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+            if (seenVins.Add(cleanVin))
+            {
+                distinctItems.Add(it with { Vin = cleanVin });
+            }
+        }
+
+        var declNo = string.IsNullOrWhiteSpace(dto.DeclarationNo)
+            ? "TKHQ" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.DeclarationNo.Trim().ToUpperInvariant();
+
+        if (await db.CustomsDeclarations.AnyAsync(d => d.OrgId == Org && d.DeclarationNo == declNo))
+            throw new InvalidOperationException($"Số tờ khai Hải quan '{declNo}' đã tồn tại trong hệ thống.");
+
+        var portCode = string.IsNullOrWhiteSpace(dto.PortCode) ? "HQ_HAI_PHONG" : dto.PortCode.Trim().ToUpperInvariant();
+        var portName = !string.IsNullOrWhiteSpace(dto.PortName)
+            ? dto.PortName.Trim()
+            : portCode switch
+            {
+                "HQ_HAI_PHONG" => "Chi cục Hải quan Cửa khẩu Cảng Hải Phòng",
+                "HQ_CAT_LAI" => "Chi cục Hải quan Cửa khẩu Cảng Sài Gòn KV1 (Cát Lái)",
+                "HQ_CAI_MEP" => "Chi cục Hải quan Cửa khẩu Cảng Cái Mép - Bà Rịa Vũng Tàu",
+                "HQ_NOI_BAI" => "Chi cục Hải quan Sân bay Quốc tế Nội Bài",
+                "HQ_HUU_NGHI" => "Chi cục Hải quan Cửa khẩu Quốc tế Hữu Nghị",
+                "NHA_MAY_NINH_BINH" => "Hải quan Quản lý Đầu tư Gia công Ninh Bình (Nhà máy HTMV)",
+                _ => portCode
+            };
+
+        var declType = string.IsNullOrWhiteSpace(dto.DeclarationType) ? "CBU" : dto.DeclarationType.Trim().ToUpperInvariant();
+        var openDate = dto.OpenDate ?? DateTime.Now;
+
+        // Load existing vehicles if already registered in system
+        var vins = distinctItems.Select(i => i.Vin).ToList();
+        var existingVehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        decimal totalTaxValue = 0;
+        decimal totalImportTax = 0;
+        decimal totalExciseTax = 0;
+        decimal totalVatTax = 0;
+
+        var lineList = new List<CustomsDeclarationLine>();
+        foreach (var it in distinctItems)
+        {
+            existingVehicles.TryGetValue(it.Vin, out var v);
+
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : (v?.Model ?? "Hyundai");
+            var specCode = it.SpecCode?.Trim() ?? v?.Model;
+            var engineNo = it.EngineNo?.Trim() ?? v?.EngineNo;
+            var color = it.Color?.Trim() ?? v?.Color;
+            var modelYear = it.ModelYear ?? v?.ModelYear ?? 2026;
+            var plNo = it.PackingListNo?.Trim() ?? v?.PackingListNo;
+
+            // Thuế hải quan ô tô:
+            // 1. Trị giá tính thuế CIF/FOB (TaxValue)
+            var taxValue = it.TaxValue.HasValue && it.TaxValue.Value > 0
+                ? it.TaxValue.Value
+                : (v != null && v.PaidAmount > 0 ? v.PaidAmount : 500000000m);
+
+            // 2. Thuế nhập khẩu: TaxValue * (ImportTaxRate / 100)
+            var impRate = it.ImportTaxRate.HasValue && it.ImportTaxRate.Value >= 0 ? it.ImportTaxRate.Value : (declType == "CKD" ? 10m : 50m);
+            var impTax = it.ImportTax.HasValue && it.ImportTax.Value >= 0
+                ? it.ImportTax.Value
+                : Math.Round(taxValue * (impRate / 100m), 0);
+
+            // 3. Thuế tiêu thụ đặc biệt (TTĐB): (TaxValue + ImportTax) * (ExciseTaxRate / 100)
+            var excRate = it.ExciseTaxRate.HasValue && it.ExciseTaxRate.Value >= 0 ? it.ExciseTaxRate.Value : 35m;
+            var excTax = it.ExciseTax.HasValue && it.ExciseTax.Value >= 0
+                ? it.ExciseTax.Value
+                : Math.Round((taxValue + impTax) * (excRate / 100m), 0);
+
+            // 4. Thuế GTGT (VAT): (TaxValue + ImportTax + ExciseTax) * (VatRate / 100)
+            var vatRate = it.VatRate.HasValue && it.VatRate.Value >= 0 ? it.VatRate.Value : 10m;
+            var vatTax = it.VatTax.HasValue && it.VatTax.Value >= 0
+                ? it.VatTax.Value
+                : Math.Round((taxValue + impTax + excTax) * (vatRate / 100m), 0);
+
+            var lineTotalTax = impTax + excTax + vatTax;
+
+            totalTaxValue += taxValue;
+            totalImportTax += impTax;
+            totalExciseTax += excTax;
+            totalVatTax += vatTax;
+
+            lineList.Add(new CustomsDeclarationLine
+            {
+                OrgId = Org,
+                DeclarationNo = declNo,
+                Vin = it.Vin,
+                Model = model,
+                SpecCode = specCode,
+                EngineNo = engineNo,
+                Color = color,
+                ModelYear = modelYear,
+                PackingListNo = plNo,
+                TaxValue = taxValue,
+                ImportTaxRate = impRate,
+                ImportTax = impTax,
+                ExciseTaxRate = excRate,
+                ExciseTax = excTax,
+                VatRate = vatRate,
+                VatTax = vatTax,
+                TotalTax = lineTotalTax,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            });
+        }
+
+        var totalTaxAmount = totalImportTax + totalExciseTax + totalVatTax;
+
+        var cd = new CustomsDeclaration
+        {
+            OrgId = Org,
+            DeclarationNo = declNo,
+            PortCode = portCode,
+            PortName = portName,
+            ContractNo = dto.ContractNo?.Trim(),
+            LCNo = dto.LCNo?.Trim(),
+            BillOfLadingNo = dto.BillOfLadingNo?.Trim(),
+            DeclarationType = declType,
+            OpenDate = openDate,
+            CustomsOfficer = dto.CustomsOfficer?.Trim(),
+            DeclarantName = dto.DeclarantName?.Trim() ?? "Công ty Cổ phần Liên doanh Ô tô Hyundai Thành Công Việt Nam",
+            TotalVehicleCount = distinctItems.Count,
+            TotalTaxValue = totalTaxValue,
+            ImportTaxAmount = totalImportTax,
+            ExciseTaxAmount = totalExciseTax,
+            VatAmount = totalVatTax,
+            TotalTaxAmount = totalTaxAmount,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.CustomsDeclarations.Add(cd);
+        await db.SaveChangesAsync();
+
+        foreach (var line in lineList)
+        {
+            line.CustomsDeclarationId = cd.Id;
+            db.CustomsDeclarationLines.Add(line);
+
+            Log(line.Vin, "CustomsDeclarationCreated",
+                $"{declNo} Lập tờ khai hải quan {portCode} ({declType}). Trị giá: {line.TaxValue:N0} VNĐ, Thuế NK: {line.ImportTax:N0} VNĐ, TTĐB: {line.ExciseTax:N0} VNĐ, VAT: {line.VatTax:N0} VNĐ (Tổng thuế: {line.TotalTax:N0} VNĐ)");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cd.DeclarationNo,
+            cd.PortCode,
+            cd.PortName,
+            cd.ContractNo,
+            cd.LCNo,
+            cd.BillOfLadingNo,
+            cd.DeclarationType,
+            cd.OpenDate,
+            cd.TotalVehicleCount,
+            cd.TotalTaxValue,
+            cd.ImportTaxAmount,
+            cd.ExciseTaxAmount,
+            cd.VatAmount,
+            cd.TotalTaxAmount,
+            cd.Status,
+            linesCount = lineList.Count
+        };
+    }
+
+    public async Task<object> ListCustomsDeclarationsAsync(string? status, string? portCode, string? contractNo, string? declarationType, string? declarationNo, string? vin)
+    {
+        var q = db.CustomsDeclarations.Where(d => d.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(d => d.Status == status);
+        if (!string.IsNullOrWhiteSpace(portCode)) { var p = portCode.Trim().ToUpperInvariant(); q = q.Where(d => d.PortCode == p); }
+        if (!string.IsNullOrWhiteSpace(contractNo)) { var c = contractNo.Trim().ToUpperInvariant(); q = q.Where(d => d.ContractNo != null && d.ContractNo.ToUpper().Contains(c)); }
+        if (!string.IsNullOrWhiteSpace(declarationType)) { var dt = declarationType.Trim().ToUpperInvariant(); q = q.Where(d => d.DeclarationType == dt); }
+        if (!string.IsNullOrWhiteSpace(declarationNo)) { var dn = declarationNo.Trim().ToUpperInvariant(); q = q.Where(d => d.DeclarationNo.ToUpper().Contains(dn)); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.CustomsDeclarationLines
+                .Where(l => l.OrgId == Org && l.Vin == vv)
+                .Select(l => l.DeclarationNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(d => matchedNos.Contains(d.DeclarationNo));
+        }
+
+        var items = await q.OrderByDescending(d => d.Id).Take(500).Select(d => new
+        {
+            d.DeclarationNo,
+            d.PortCode,
+            d.PortName,
+            d.ContractNo,
+            d.LCNo,
+            d.BillOfLadingNo,
+            d.DeclarationType,
+            d.OpenDate,
+            d.TaxPaymentDate,
+            d.ClearanceDate,
+            d.CustomsOfficer,
+            d.DeclarantName,
+            d.TotalVehicleCount,
+            d.TotalTaxValue,
+            d.ImportTaxAmount,
+            d.ExciseTaxAmount,
+            d.VatAmount,
+            d.TotalTaxAmount,
+            d.Status,
+            d.CreatedBy,
+            d.CreatedAt,
+            d.ApprovedBy,
+            d.ApprovedAt,
+            d.ClearedBy,
+            d.ClearedAt,
+            d.CancelledAt,
+            d.Remark,
+            linesCount = db.CustomsDeclarationLines.Count(l => l.OrgId == Org && l.CustomsDeclarationId == d.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCustomsDeclarationAsync(string declarationNo)
+    {
+        declarationNo = declarationNo.Trim().ToUpperInvariant();
+        var cd = await db.CustomsDeclarations.FirstOrDefaultAsync(d => d.OrgId == Org && d.DeclarationNo == declarationNo);
+        if (cd is null) return null;
+
+        var lines = await db.CustomsDeclarationLines.Where(l => l.OrgId == Org && l.CustomsDeclarationId == cd.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.SpecCode,
+            l.EngineNo,
+            l.Color,
+            l.ModelYear,
+            l.PackingListNo,
+            l.TaxValue,
+            l.ImportTaxRate,
+            l.ImportTax,
+            l.ExciseTaxRate,
+            l.ExciseTax,
+            l.VatRate,
+            l.VatTax,
+            l.TotalTax,
+            l.TaxPaymentDate,
+            l.ClearanceDate,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                status = v.Status.ToString(),
+                v.StorageCode,
+                v.DealerCode,
+                v.IsCustomsCleared,
+                v.CustomsClearanceDate,
+                v.DeclarationNo,
+                v.TaxPaymentDate
+            } : null
+        }).ToList();
+
+        return new
+        {
+            cd.DeclarationNo,
+            cd.PortCode,
+            cd.PortName,
+            cd.ContractNo,
+            cd.LCNo,
+            cd.BillOfLadingNo,
+            cd.DeclarationType,
+            cd.OpenDate,
+            cd.TaxPaymentDate,
+            cd.ClearanceDate,
+            cd.CustomsOfficer,
+            cd.DeclarantName,
+            cd.TotalVehicleCount,
+            cd.TotalTaxValue,
+            cd.ImportTaxAmount,
+            cd.ExciseTaxAmount,
+            cd.VatAmount,
+            cd.TotalTaxAmount,
+            cd.Status,
+            cd.Remark,
+            cd.CreatedBy,
+            cd.CreatedAt,
+            cd.ApprovedBy,
+            cd.ApprovedAt,
+            cd.ClearedBy,
+            cd.ClearedAt,
+            cd.CancelledAt,
+            lines = details
+        };
+    }
+
+    public async Task<object?> CustomsDeclarationTransitionAsync(string declarationNo, string action, CustomsDeclarationTransitionDto? dto)
+    {
+        declarationNo = declarationNo.Trim().ToUpperInvariant();
+        var act = action.Trim().ToLowerInvariant();
+
+        var cd = await db.CustomsDeclarations.FirstOrDefaultAsync(d => d.OrgId == Org && d.DeclarationNo == declarationNo);
+        if (cd is null) return null;
+
+        var lines = await db.CustomsDeclarationLines.Where(l => l.OrgId == Org && l.CustomsDeclarationId == cd.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToListAsync();
+        var vMap = vehicles.ToDictionary(v => v.Vin);
+
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "submit" or "register":
+                if (cd.Status != "Draft") return null;
+                cd.Status = "Registered";
+                cd.ApprovedBy = dto?.User ?? "Declarant";
+                cd.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.CustomsOfficer)) cd.CustomsOfficer = dto.CustomsOfficer.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cd.Remark = (cd.Remark + " | " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    if (line.Status == "Pending") line.Status = "Registered";
+                    Log(line.Vin, "CustomsRegistered", $"{declarationNo} Đã đăng ký tờ khai tại {cd.PortCode} ({cd.PortName}). Cán bộ tiếp nhận: {cd.CustomsOfficer ?? "N/A"}");
+                }
+                break;
+
+            case "pay-tax" or "paytax":
+                if (cd.Status is not ("Draft" or "Registered")) return null;
+                cd.Status = "TaxPaid";
+                cd.TaxPaymentDate = dto?.TaxPaymentDate ?? now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cd.Remark = (cd.Remark + " | Nộp thuế: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "TaxPaid";
+                    line.TaxPaymentDate = cd.TaxPaymentDate;
+
+                    if (vMap.TryGetValue(line.Vin, out var v))
+                    {
+                        v.TaxPaymentDate = cd.TaxPaymentDate;
+                    }
+
+                    Log(line.Vin, "CustomsTaxPaid", $"{declarationNo} Hoàn thành nộp thuế hải quan {line.TotalTax:N0} VNĐ vào NSNN ngày {cd.TaxPaymentDate:yyyy-MM-dd}");
+                }
+                break;
+
+            case "clear" or "clearance" or "approve":
+                if (cd.Status is not ("Draft" or "Registered" or "TaxPaid")) return null;
+
+                cd.Status = "Cleared";
+                cd.TaxPaymentDate ??= dto?.TaxPaymentDate ?? now;
+                cd.ClearanceDate = dto?.ClearanceDate ?? now;
+                cd.ClearedBy = dto?.User ?? dto?.CustomsOfficer ?? "CustomsAuthority";
+                cd.ClearedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.CustomsOfficer)) cd.CustomsOfficer = dto.CustomsOfficer.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cd.Remark = (cd.Remark + " | Thông quan: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Cleared";
+                    line.TaxPaymentDate ??= cd.TaxPaymentDate;
+                    line.ClearanceDate = cd.ClearanceDate;
+
+                    if (vMap.TryGetValue(line.Vin, out var v))
+                    {
+                        v.DeclarationNo = cd.DeclarationNo;
+                        v.TaxPaymentDate = cd.TaxPaymentDate;
+                        v.IsCustomsCleared = true;
+                        v.CustomsClearanceDate = cd.ClearanceDate;
+                    }
+
+                    Log(line.Vin, "CustomsCleared",
+                        $"{declarationNo} Đã hoàn tất thủ tục thông quan hải quan tại {cd.PortCode}. Đủ điều kiện xuất xưởng/phân bổ và lưu thông.");
+                }
+                break;
+
+            case "reject":
+                if (cd.Status is "Cleared" or "Cancelled") return null;
+                cd.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cd.Remark = (cd.Remark + " | Từ chối: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Rejected";
+                    Log(line.Vin, "CustomsRejected", $"{declarationNo} Chi cục HQ từ chối thông quan: {dto?.Note ?? "N/A"}");
+                }
+                break;
+
+            case "cancel":
+                if (cd.Status is "Cleared" or "Cancelled") return null;
+                cd.Status = "Cancelled";
+                cd.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) cd.Remark = (cd.Remark + " | Hủy: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Cancelled";
+                    Log(line.Vin, "CustomsCancelled", $"{declarationNo} Hủy tờ khai hải quan: {dto?.Note ?? "N/A"}");
+                }
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cd.DeclarationNo,
+            cd.PortCode,
+            cd.DeclarationType,
+            status = cd.Status,
+            cd.TaxPaymentDate,
+            cd.ClearanceDate,
+            cd.ApprovedAt,
+            cd.ClearedAt,
+            cd.CancelledAt,
+            linesCount = lines.Count
+        };
+    }
+
+    public async Task<object?> UpdateCustomsDeclarationLineAsync(string declarationNo, string vin, UpdateCustomsDeclarationLineDto dto)
+    {
+        declarationNo = declarationNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var cd = await db.CustomsDeclarations.FirstOrDefaultAsync(d => d.OrgId == Org && d.DeclarationNo == declarationNo);
+        if (cd is null || cd.Status is "Cleared" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.CustomsDeclarationLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.CustomsDeclarationId == cd.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.TaxValue.HasValue && dto.TaxValue.Value >= 0) line.TaxValue = dto.TaxValue.Value;
+        if (dto.ImportTaxRate.HasValue && dto.ImportTaxRate.Value >= 0) line.ImportTaxRate = dto.ImportTaxRate.Value;
+        if (dto.ExciseTaxRate.HasValue && dto.ExciseTaxRate.Value >= 0) line.ExciseTaxRate = dto.ExciseTaxRate.Value;
+        if (dto.VatRate.HasValue && dto.VatRate.Value >= 0) line.VatRate = dto.VatRate.Value;
+
+        // Recalculate tax amounts
+        line.ImportTax = dto.ImportTax.HasValue && dto.ImportTax.Value >= 0
+            ? dto.ImportTax.Value
+            : Math.Round(line.TaxValue * (line.ImportTaxRate / 100m), 0);
+
+        line.ExciseTax = dto.ExciseTax.HasValue && dto.ExciseTax.Value >= 0
+            ? dto.ExciseTax.Value
+            : Math.Round((line.TaxValue + line.ImportTax) * (line.ExciseTaxRate / 100m), 0);
+
+        line.VatTax = dto.VatTax.HasValue && dto.VatTax.Value >= 0
+            ? dto.VatTax.Value
+            : Math.Round((line.TaxValue + line.ImportTax + line.ExciseTax) * (line.VatRate / 100m), 0);
+
+        line.TotalTax = line.ImportTax + line.ExciseTax + line.VatTax;
+
+        if (dto.TaxPaymentDate.HasValue) line.TaxPaymentDate = dto.TaxPaymentDate.Value;
+        if (dto.ClearanceDate.HasValue) line.ClearanceDate = dto.ClearanceDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.CustomsDeclarationLines.Where(l => l.OrgId == Org && l.CustomsDeclarationId == cd.Id).ToListAsync();
+        cd.TotalTaxValue = allLines.Sum(l => l.TaxValue);
+        cd.ImportTaxAmount = allLines.Sum(l => l.ImportTax);
+        cd.ExciseTaxAmount = allLines.Sum(l => l.ExciseTax);
+        cd.VatAmount = allLines.Sum(l => l.VatTax);
+        cd.TotalTaxAmount = allLines.Sum(l => l.TotalTax);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cd.DeclarationNo,
+            line.Vin,
+            line.TaxValue,
+            line.ImportTaxRate,
+            line.ImportTax,
+            line.ExciseTaxRate,
+            line.ExciseTax,
+            line.VatRate,
+            line.VatTax,
+            line.TotalTax,
+            line.TaxPaymentDate,
+            line.ClearanceDate,
+            line.Remark,
+            declarationTotalTaxAmount = cd.TotalTaxAmount
+        };
+    }
+
+    public async Task<object?> AddCustomsDeclarationLinesAsync(string declarationNo, List<CustomsDeclarationItemInputDto> items)
+    {
+        var declNo = declarationNo.Trim().ToUpperInvariant();
+        var cd = await db.CustomsDeclarations.FirstOrDefaultAsync(d => d.OrgId == Org && d.DeclarationNo == declNo);
+        if (cd is null || cd.Status is "Cleared" or "Cancelled" or "Rejected") return null;
+
+        var distinctItems = new List<CustomsDeclarationItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+            if (seenVins.Add(cleanVin))
+            {
+                distinctItems.Add(it with { Vin = cleanVin });
+            }
+        }
+
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.CustomsDeclarationLines
+            .Where(l => l.OrgId == Org && l.CustomsDeclarationId == cd.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin)).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        foreach (var it in newItems)
+        {
+            vehicles.TryGetValue(it.Vin, out var v);
+
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : (v?.Model ?? "Hyundai");
+            var specCode = it.SpecCode?.Trim() ?? v?.Model;
+            var engineNo = it.EngineNo?.Trim() ?? v?.EngineNo;
+            var color = it.Color?.Trim() ?? v?.Color;
+            var modelYear = it.ModelYear ?? v?.ModelYear ?? 2026;
+            var plNo = it.PackingListNo?.Trim() ?? v?.PackingListNo;
+
+            var taxValue = it.TaxValue.HasValue && it.TaxValue.Value > 0
+                ? it.TaxValue.Value
+                : (v != null && v.PaidAmount > 0 ? v.PaidAmount : 500000000m);
+
+            var impRate = it.ImportTaxRate.HasValue && it.ImportTaxRate.Value >= 0 ? it.ImportTaxRate.Value : (cd.DeclarationType == "CKD" ? 10m : 50m);
+            var impTax = it.ImportTax.HasValue && it.ImportTax.Value >= 0
+                ? it.ImportTax.Value
+                : Math.Round(taxValue * (impRate / 100m), 0);
+
+            var excRate = it.ExciseTaxRate.HasValue && it.ExciseTaxRate.Value >= 0 ? it.ExciseTaxRate.Value : 35m;
+            var excTax = it.ExciseTax.HasValue && it.ExciseTax.Value >= 0
+                ? it.ExciseTax.Value
+                : Math.Round((taxValue + impTax) * (excRate / 100m), 0);
+
+            var vatRate = it.VatRate.HasValue && it.VatRate.Value >= 0 ? it.VatRate.Value : 10m;
+            var vatTax = it.VatTax.HasValue && it.VatTax.Value >= 0
+                ? it.VatTax.Value
+                : Math.Round((taxValue + impTax + excTax) * (vatRate / 100m), 0);
+
+            var lineTotalTax = impTax + excTax + vatTax;
+
+            db.CustomsDeclarationLines.Add(new CustomsDeclarationLine
+            {
+                OrgId = Org,
+                CustomsDeclarationId = cd.Id,
+                DeclarationNo = cd.DeclarationNo,
+                Vin = it.Vin,
+                Model = model,
+                SpecCode = specCode,
+                EngineNo = engineNo,
+                Color = color,
+                ModelYear = modelYear,
+                PackingListNo = plNo,
+                TaxValue = taxValue,
+                ImportTaxRate = impRate,
+                ImportTax = impTax,
+                ExciseTaxRate = excRate,
+                ExciseTax = excTax,
+                VatRate = vatRate,
+                VatTax = vatTax,
+                TotalTax = lineTotalTax,
+                Status = cd.Status == "Registered" ? "Registered" : "Pending",
+                Remark = it.Remark?.Trim()
+            });
+
+            Log(it.Vin, "CustomsDeclarationLineAdded", $"{declNo} Bổ sung xe vào tờ khai hải quan {cd.PortCode}");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.CustomsDeclarationLines.Where(l => l.OrgId == Org && l.CustomsDeclarationId == cd.Id).ToListAsync();
+        cd.TotalVehicleCount = allLines.Count;
+        cd.TotalTaxValue = allLines.Sum(l => l.TaxValue);
+        cd.ImportTaxAmount = allLines.Sum(l => l.ImportTax);
+        cd.ExciseTaxAmount = allLines.Sum(l => l.ExciseTax);
+        cd.VatAmount = allLines.Sum(l => l.VatTax);
+        cd.TotalTaxAmount = allLines.Sum(l => l.TotalTax);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cd.DeclarationNo,
+            addedCount = newItems.Count,
+            cd.TotalVehicleCount,
+            cd.TotalTaxValue,
+            cd.TotalTaxAmount
+        };
+    }
+
+    public async Task<object?> RemoveCustomsDeclarationLineAsync(string declarationNo, string vin)
+    {
+        var declNo = declarationNo.Trim().ToUpperInvariant();
+        var vVin = vin.Trim().ToUpperInvariant();
+
+        var cd = await db.CustomsDeclarations.FirstOrDefaultAsync(d => d.OrgId == Org && d.DeclarationNo == declNo);
+        if (cd is null || cd.Status is "Cleared" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.CustomsDeclarationLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.CustomsDeclarationId == cd.Id && l.Vin == vVin);
+        if (line is null) return null;
+
+        db.CustomsDeclarationLines.Remove(line);
+        Log(vVin, "CustomsDeclarationLineRemoved", $"{declNo} Rút xe khỏi tờ khai hải quan {cd.PortCode}");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.CustomsDeclarationLines.Where(l => l.OrgId == Org && l.CustomsDeclarationId == cd.Id).ToListAsync();
+        cd.TotalVehicleCount = allLines.Count;
+        cd.TotalTaxValue = allLines.Sum(l => l.TaxValue);
+        cd.ImportTaxAmount = allLines.Sum(l => l.ImportTax);
+        cd.ExciseTaxAmount = allLines.Sum(l => l.ExciseTax);
+        cd.VatAmount = allLines.Sum(l => l.VatTax);
+        cd.TotalTaxAmount = allLines.Sum(l => l.TotalTax);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cd.DeclarationNo,
+            vin = vVin,
+            cd.TotalVehicleCount,
+            cd.TotalTaxAmount
+        };
+    }
+
+    public async Task<object?> UpdateCustomsDeclarationTaxPaymentAsync(string declarationNo, UpdateCustomsDeclarationTaxPaymentDto dto)
+    {
+        declarationNo = declarationNo.Trim().ToUpperInvariant();
+        var cd = await db.CustomsDeclarations.FirstOrDefaultAsync(d => d.OrgId == Org && d.DeclarationNo == declarationNo);
+        if (cd is null || cd.Status is "Cancelled" or "Rejected") return null;
+
+        var payDate = dto.TaxPaymentDate ?? DateTime.Now;
+        cd.TaxPaymentDate = payDate;
+        if (cd.Status is "Draft" or "Registered") cd.Status = "TaxPaid";
+        if (!string.IsNullOrWhiteSpace(dto.Note)) cd.Remark = (cd.Remark + " | Cập nhật nộp thuế: " + dto.Note).Trim(' ', '|');
+
+        var lines = await db.CustomsDeclarationLines.Where(l => l.OrgId == Org && l.CustomsDeclarationId == cd.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToListAsync();
+
+        foreach (var line in lines)
+        {
+            line.TaxPaymentDate = payDate;
+            if (line.Status is "Pending" or "Registered") line.Status = "TaxPaid";
+        }
+
+        foreach (var v in vehicles)
+        {
+            v.TaxPaymentDate = payDate;
+            v.DeclarationNo = cd.DeclarationNo;
+            Log(v.Vin, "CustomsTaxPaymentUpdated", $"{declarationNo} Xác nhận nộp thuế hải quan hoàn tất ngày {payDate:yyyy-MM-dd}");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cd.DeclarationNo,
+            cd.Status,
+            cd.TaxPaymentDate,
+            updatedVehiclesCount = vehicles.Count,
+            cd.TotalTaxAmount
         };
     }
 }
