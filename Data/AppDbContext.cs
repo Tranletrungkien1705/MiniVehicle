@@ -30,6 +30,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<MortgageRequestLine> MortgageRequestLines => Set<MortgageRequestLine>();
     public DbSet<RedeemRequest> RedeemRequests => Set<RedeemRequest>();
     public DbSet<RedeemRequestLine> RedeemRequestLines => Set<RedeemRequestLine>();
+    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+    public DbSet<SalesOrderLine> SalesOrderLines => Set<SalesOrderLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -45,5 +47,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<PdiRequest>().HasIndex(x => new { x.OrgId, x.PdiReqNo }).IsUnique();
         b.Entity<MortgageRequest>().HasIndex(x => new { x.OrgId, x.ReqMortgageNo }).IsUnique();
         b.Entity<RedeemRequest>().HasIndex(x => new { x.OrgId, x.RedeemReqNo }).IsUnique();
+        b.Entity<SalesOrder>().HasIndex(x => new { x.OrgId, x.SOCode }).IsUnique();
     }
 }

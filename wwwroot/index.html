@@ -33,6 +33,9 @@
 <li><code>GET /api/mortgages?status=&bank=&vin=</code> — tra cứu danh sách yêu cầu thế chấp xe</li>
 <li><code>POST /api/redeems</code> &amp; <code>/api/redeems/{no}/{action}</code> — yêu cầu giải chấp xe ngân hàng &amp; giải phóng hồ sơ xuất xưởng (BizHTC.GiaiChap.RD_ReqRedeem)</li>
 <li><code>GET /api/redeems?status=&dealer=&bank=&vin=</code> — tra cứu danh sách yêu cầu giải chấp xe</li>
+<li><code>POST /api/sales-orders</code> &amp; <code>/api/sales-orders/{code}/{action}</code> — tạo &amp; phê duyệt đơn đặt hàng xe ô tô của đại lý (BizHTC.Order.Ord_SalesOrder: submit, approve1, approve2, reject, cancel)</li>
+<li><code>GET /api/sales-orders?status=&dealer=&orderMonth=&model=</code> — tra cứu danh sách đơn đặt hàng xe</li>
+<li><code>POST /api/sales-orders/{code}/allocate-vin</code> &amp; <code>/deallocate-vin/{vin}</code> — phân bổ VIN xe từ kho InStock vào đơn hàng SO &amp; hủy phân bổ</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

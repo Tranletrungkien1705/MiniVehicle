@@ -59,6 +59,12 @@ public record RedeemItemInputDto(string Vin, string? ReleaseDocType = "All", str
 public record CreateRedeemRequestDto(string DealerCode, string BankCode, List<string>? Vins = null, List<RedeemItemInputDto>? Items = null, string? ReqMortgageNo = null, string? Reason = null, string? Remark = null, string? RedeemReqNo = null);
 public record RedeemRequestTransitionDto(string? Note = null);
 
+public record SalesOrderItemInputDto(string Model, string? SpecCode = null, string? Color = null, int OrderQty = 1, decimal UnitPrice = 0, string? Remark = null);
+public record CreateSalesOrderDto(string DealerCode, List<SalesOrderItemInputDto> Items, string? SOType = "Normal", string? SPCode = null, string? OrderMonth = null, string? ProductionMonth = null, string? ExpectedMonth = null, string? Remark = null, string? SOCode = null, string? CreatedBy = null);
+public record SalesOrderApproveItemDto(long? LineId = null, string? Model = null, string? SpecCode = null, string? Color = null, int? ApprovedQty = null, decimal? UnitPrice = null);
+public record SalesOrderTransitionDto(string? Note = null, string? ApprovedBy = null, string? ProductionMonth = null, string? ExpectedMonth = null, List<SalesOrderApproveItemDto>? Items = null);
+public record AllocateSoVinDto(string Vin, long? LineId = null, string? Remark = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -122,6 +128,12 @@ public interface IVehicleService
     Task<object> ListRedeemRequestsAsync(string? status, string? dealer, string? bank, string? vin);
     Task<object?> GetRedeemRequestAsync(string redeemReqNo);
     Task<object?> RedeemRequestTransitionAsync(string redeemReqNo, string action, RedeemRequestTransitionDto? dto);
+    Task<object> CreateSalesOrderAsync(CreateSalesOrderDto dto);
+    Task<object> ListSalesOrdersAsync(string? status, string? dealer, string? orderMonth, string? model);
+    Task<object?> GetSalesOrderAsync(string soCode);
+    Task<object?> SalesOrderTransitionAsync(string soCode, string action, SalesOrderTransitionDto? dto);
+    Task<object?> AllocateSoVinAsync(string soCode, AllocateSoVinDto dto);
+    Task<object?> DeallocateSoVinAsync(string soCode, string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -2412,5 +2424,438 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
 
         await db.SaveChangesAsync();
         return new { rd.RedeemReqNo, rd.DealerCode, rd.BankCode, status = rd.Status, rd.ApprovedAt, rd.CompletedAt };
+    }
+
+    // ===== Đơn đặt hàng xe ô tô của Đại lý (BizHTC.Order.Ord_SalesOrder / SalesOrder) =====
+    public async Task<object> CreateSalesOrderAsync(CreateSalesOrderDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần DealerCode để tạo đơn đặt hàng.");
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng chi tiết xe đặt hàng.");
+
+        foreach (var item in dto.Items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Model))
+                throw new InvalidOperationException("Mỗi dòng đặt hàng phải có Model xe.");
+            if (item.OrderQty <= 0)
+                throw new InvalidOperationException("Số lượng đặt hàng OrderQty phải lớn hơn 0.");
+        }
+
+        var soCode = string.IsNullOrWhiteSpace(dto.SOCode)
+            ? "SO" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.SOCode!.Trim().ToUpperInvariant();
+
+        if (await db.SalesOrders.AnyAsync(s => s.OrgId == Org && s.SOCode == soCode))
+            throw new InvalidOperationException($"Mã đơn đặt hàng {soCode} đã tồn tại.");
+
+        var dealer = dto.DealerCode.Trim();
+        var totalOrderQty = dto.Items.Sum(i => i.OrderQty);
+        var totalAmount = dto.Items.Sum(i => i.OrderQty * i.UnitPrice);
+
+        var so = new SalesOrder
+        {
+            OrgId = Org,
+            SOCode = soCode,
+            SOType = string.IsNullOrWhiteSpace(dto.SOType) ? "Normal" : dto.SOType.Trim(),
+            DealerCode = dealer,
+            SPCode = dto.SPCode?.Trim(),
+            OrderMonth = dto.OrderMonth?.Trim() ?? DateTime.Now.ToString("yyyy-MM"),
+            ProductionMonth = dto.ProductionMonth?.Trim(),
+            ExpectedMonth = dto.ExpectedMonth?.Trim(),
+            TotalOrderQty = totalOrderQty,
+            TotalApprovedQty = 0,
+            TotalAllocatedQty = 0,
+            TotalAmount = totalAmount,
+            Status = "Draft",
+            CreatedBy = dto.CreatedBy?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.SalesOrders.Add(so);
+        await db.SaveChangesAsync();
+
+        foreach (var item in dto.Items)
+        {
+            var lineAmount = item.OrderQty * item.UnitPrice;
+            db.SalesOrderLines.Add(new SalesOrderLine
+            {
+                OrgId = Org,
+                SalesOrderId = so.Id,
+                SOCode = soCode,
+                Model = item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                Color = item.Color?.Trim(),
+                OrderQty = item.OrderQty,
+                ApprovedQty = 0,
+                AllocatedQty = 0,
+                UnitPrice = item.UnitPrice,
+                TotalAmount = lineAmount,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            so.SOCode,
+            so.DealerCode,
+            so.SOType,
+            so.OrderMonth,
+            so.TotalOrderQty,
+            so.TotalAmount,
+            status = so.Status,
+            linesCount = dto.Items.Count
+        };
+    }
+
+    public async Task<object> ListSalesOrdersAsync(string? status, string? dealer, string? orderMonth, string? model)
+    {
+        var q = db.SalesOrders.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(s => s.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(s => s.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(orderMonth)) q = q.Where(s => s.OrderMonth == orderMonth);
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var m = model.Trim();
+            var matchedCodes = await db.SalesOrderLines
+                .Where(l => l.OrgId == Org && l.Model.Contains(m))
+                .Select(l => l.SOCode)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(s => matchedCodes.Contains(s.SOCode));
+        }
+
+        var items = await q.OrderByDescending(s => s.Id).Take(500).Select(s => new
+        {
+            s.SOCode,
+            s.SOType,
+            s.DealerCode,
+            s.SPCode,
+            s.OrderMonth,
+            s.ProductionMonth,
+            s.ExpectedMonth,
+            s.TotalOrderQty,
+            s.TotalApprovedQty,
+            s.TotalAllocatedQty,
+            s.TotalAmount,
+            s.Status,
+            s.CreatedBy,
+            s.ApprovedBy1,
+            s.ApprovedAt1,
+            s.ApprovedBy2,
+            s.ApprovedAt2,
+            s.CreatedAt,
+            linesCount = db.SalesOrderLines.Count(l => l.OrgId == Org && l.SalesOrderId == s.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetSalesOrderAsync(string soCode)
+    {
+        soCode = soCode.Trim().ToUpperInvariant();
+        var so = await db.SalesOrders.FirstOrDefaultAsync(s => s.OrgId == Org && s.SOCode == soCode);
+        if (so is null) return null;
+
+        var lines = await db.SalesOrderLines.Where(l => l.OrgId == Org && l.SalesOrderId == so.Id).ToListAsync();
+        var allocatedVehicles = await db.Vehicles
+            .Where(v => v.OrgId == Org && v.SOCode == soCode)
+            .Select(v => new
+            {
+                v.Vin,
+                v.Model,
+                v.Color,
+                v.EngineNo,
+                v.ModelYear,
+                v.StorageCode,
+                v.DealerCode,
+                status = v.Status.ToString()
+            })
+            .ToListAsync();
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Model,
+            l.SpecCode,
+            l.Color,
+            l.OrderQty,
+            l.ApprovedQty,
+            l.AllocatedQty,
+            l.UnitPrice,
+            l.TotalAmount,
+            l.Status,
+            l.Remark
+        }).ToList();
+
+        return new
+        {
+            so.SOCode,
+            so.SOType,
+            so.DealerCode,
+            so.SPCode,
+            so.OrderMonth,
+            so.ProductionMonth,
+            so.ExpectedMonth,
+            so.TotalOrderQty,
+            so.TotalApprovedQty,
+            so.TotalAllocatedQty,
+            so.TotalAmount,
+            so.Status,
+            so.CreatedBy,
+            so.ApprovedBy1,
+            so.ApprovedAt1,
+            so.ApprovedBy2,
+            so.ApprovedAt2,
+            so.Remark,
+            so.CreatedAt,
+            lines = details,
+            allocatedVehicles
+        };
+    }
+
+    public async Task<object?> SalesOrderTransitionAsync(string soCode, string action, SalesOrderTransitionDto? dto)
+    {
+        soCode = soCode.Trim().ToUpperInvariant();
+        var so = await db.SalesOrders.FirstOrDefaultAsync(s => s.OrgId == Org && s.SOCode == soCode);
+        if (so is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.SalesOrderLines.Where(l => l.OrgId == Org && l.SalesOrderId == so.Id).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+                if (so.Status != "Draft") return null;
+                so.Status = "Submitted";
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Submitted";
+                break;
+
+            case "approve1":
+                if (so.Status is not ("Draft" or "Submitted")) return null;
+                so.Status = "Approved1";
+                so.ApprovedBy1 = dto?.ApprovedBy?.Trim() ?? "PlanningDept";
+                so.ApprovedAt1 = now;
+                if (!string.IsNullOrWhiteSpace(dto?.ProductionMonth)) so.ProductionMonth = dto.ProductionMonth.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.ExpectedMonth)) so.ExpectedMonth = dto.ExpectedMonth.Trim();
+
+                if (dto?.Items != null && dto.Items.Count > 0)
+                {
+                    foreach (var itemDto in dto.Items)
+                    {
+                        var line = lines.FirstOrDefault(l => (itemDto.LineId.HasValue && l.Id == itemDto.LineId.Value) || (l.Model == itemDto.Model && (itemDto.Color == null || l.Color == itemDto.Color)));
+                        if (line != null)
+                        {
+                            if (itemDto.ApprovedQty.HasValue) line.ApprovedQty = Math.Max(0, itemDto.ApprovedQty.Value);
+                            if (itemDto.UnitPrice.HasValue && itemDto.UnitPrice.Value > 0) line.UnitPrice = itemDto.UnitPrice.Value;
+                            line.TotalAmount = line.ApprovedQty * line.UnitPrice;
+                            line.Status = "Approved1";
+                        }
+                    }
+                }
+                else
+                {
+                    foreach (var l in lines)
+                    {
+                        if (l.ApprovedQty == 0) l.ApprovedQty = l.OrderQty;
+                        l.TotalAmount = l.ApprovedQty * l.UnitPrice;
+                        l.Status = "Approved1";
+                    }
+                }
+                so.TotalApprovedQty = lines.Sum(l => l.ApprovedQty);
+                so.TotalAmount = lines.Sum(l => l.TotalAmount);
+                break;
+
+            case "approve2":
+            case "approve":
+                if (so.Status is not ("Draft" or "Submitted" or "Approved1")) return null;
+                so.Status = "Approved";
+                so.ApprovedBy2 = dto?.ApprovedBy?.Trim() ?? "Director";
+                so.ApprovedAt2 = now;
+                if (string.IsNullOrWhiteSpace(so.ApprovedBy1))
+                {
+                    so.ApprovedBy1 = so.ApprovedBy2;
+                    so.ApprovedAt1 = now;
+                }
+                if (!string.IsNullOrWhiteSpace(dto?.ProductionMonth)) so.ProductionMonth = dto.ProductionMonth.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.ExpectedMonth)) so.ExpectedMonth = dto.ExpectedMonth.Trim();
+
+                foreach (var l in lines)
+                {
+                    if (l.ApprovedQty == 0) l.ApprovedQty = l.OrderQty;
+                    l.TotalAmount = l.ApprovedQty * l.UnitPrice;
+                    l.Status = l.AllocatedQty >= l.ApprovedQty ? "FullyAllocated" : (l.AllocatedQty > 0 ? "PartiallyAllocated" : "Approved");
+                }
+                so.TotalApprovedQty = lines.Sum(l => l.ApprovedQty);
+                so.TotalAmount = lines.Sum(l => l.TotalAmount);
+                break;
+
+            case "reject":
+                if (so.Status is "Approved" or "Cancelled") return null;
+                so.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    so.Remark = string.IsNullOrWhiteSpace(so.Remark) ? dto.Note : $"{so.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                break;
+
+            case "cancel":
+                if (so.Status is "Cancelled" or "Rejected") return null;
+                so.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    so.Remark = string.IsNullOrWhiteSpace(so.Remark) ? dto.Note : $"{so.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) l.Status = "Cancelled";
+
+                // Deallocate any currently allocated vehicles
+                var allocatedVehicles = await db.Vehicles.Where(v => v.OrgId == Org && v.SOCode == soCode).ToListAsync();
+                foreach (var v in allocatedVehicles)
+                {
+                    if (v.Status != VehicleStatus.Delivered)
+                    {
+                        v.SOCode = null;
+                        v.DealerCode = null;
+                        v.Status = VehicleStatus.InStock;
+                        Log(v.Vin, "DeallocatedFromSO", $"{soCode} Hủy phân bổ do hủy đơn đặt hàng SO.");
+                    }
+                }
+                so.TotalAllocatedQty = 0;
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            so.SOCode,
+            so.DealerCode,
+            status = so.Status,
+            so.TotalOrderQty,
+            so.TotalApprovedQty,
+            so.TotalAllocatedQty,
+            so.TotalAmount,
+            so.ApprovedAt1,
+            so.ApprovedAt2
+        };
+    }
+
+    public async Task<object?> AllocateSoVinAsync(string soCode, AllocateSoVinDto dto)
+    {
+        soCode = soCode.Trim().ToUpperInvariant();
+        var so = await db.SalesOrders.FirstOrDefaultAsync(s => s.OrgId == Org && s.SOCode == soCode);
+        if (so is null) return null;
+        if (so.Status is not ("Approved" or "Approved1" or "Approved2"))
+            throw new InvalidOperationException($"Đơn hàng {soCode} đang ở trạng thái '{so.Status}', chỉ có thể phân bổ VIN khi đơn hàng đã được phê duyệt.");
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) throw new InvalidOperationException($"Không tìm thấy xe VIN {vin}.");
+        if (v.Status != VehicleStatus.InStock)
+            throw new InvalidOperationException($"Xe {vin} đang ở trạng thái '{v.Status}', chỉ có thể phân bổ xe trong kho (InStock).");
+
+        var lines = await db.SalesOrderLines.Where(l => l.OrgId == Org && l.SalesOrderId == so.Id).ToListAsync();
+        SalesOrderLine? targetLine = null;
+
+        if (dto.LineId.HasValue)
+        {
+            targetLine = lines.FirstOrDefault(l => l.Id == dto.LineId.Value);
+            if (targetLine is null)
+                throw new InvalidOperationException($"Không tìm thấy dòng chi tiết đơn hàng ID {dto.LineId}.");
+        }
+        else
+        {
+            // Tự động tìm dòng khớp Model và Color (hoặc dòng khớp Model nếu dòng không chỉ định màu)
+            targetLine = lines.FirstOrDefault(l =>
+                l.Model.Equals(v.Model, StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(l.Color) || (v.Color != null && l.Color.Equals(v.Color, StringComparison.OrdinalIgnoreCase))) &&
+                l.AllocatedQty < (l.ApprovedQty > 0 ? l.ApprovedQty : l.OrderQty)
+            );
+
+            targetLine ??= lines.FirstOrDefault(l =>
+                l.Model.Equals(v.Model, StringComparison.OrdinalIgnoreCase) &&
+                l.AllocatedQty < (l.ApprovedQty > 0 ? l.ApprovedQty : l.OrderQty)
+            );
+        }
+
+        if (targetLine is null)
+            throw new InvalidOperationException($"Không tìm thấy dòng đặt hàng phù hợp với xe {v.Model} ({v.Color ?? "N/A"}) hoặc dòng đã phân bổ đủ số lượng.");
+
+        // Phân bổ xe
+        v.DealerCode = so.DealerCode;
+        v.Status = VehicleStatus.Allocated;
+        v.SOCode = so.SOCode;
+
+        targetLine.AllocatedQty++;
+        var targetCapacity = targetLine.ApprovedQty > 0 ? targetLine.ApprovedQty : targetLine.OrderQty;
+        targetLine.Status = targetLine.AllocatedQty >= targetCapacity ? "FullyAllocated" : "PartiallyAllocated";
+
+        so.TotalAllocatedQty = lines.Sum(l => l.AllocatedQty);
+
+        Log(v.Vin, "AllocatedBySO", $"{soCode} Phân bổ cho ĐL {so.DealerCode} theo đơn hàng SO (Dòng: {targetLine.Model}{(string.IsNullOrEmpty(targetLine.SpecCode) ? "" : $" - {targetLine.SpecCode}")}). {dto.Remark ?? ""}".Trim());
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            so.SOCode,
+            v.Vin,
+            v.Model,
+            v.Color,
+            v.DealerCode,
+            status = v.Status.ToString(),
+            lineId = targetLine.Id,
+            lineAllocatedQty = targetLine.AllocatedQty,
+            lineApprovedQty = targetLine.ApprovedQty,
+            soTotalAllocated = so.TotalAllocatedQty,
+            soTotalApproved = so.TotalApprovedQty
+        };
+    }
+
+    public async Task<object?> DeallocateSoVinAsync(string soCode, string vin)
+    {
+        soCode = soCode.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var so = await db.SalesOrders.FirstOrDefaultAsync(s => s.OrgId == Org && s.SOCode == soCode);
+        if (so is null) return null;
+
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) throw new InvalidOperationException($"Không tìm thấy xe VIN {vin}.");
+        if (v.SOCode != soCode)
+            throw new InvalidOperationException($"Xe {vin} không thuộc đơn hàng {soCode}.");
+        if (v.Status == VehicleStatus.Delivered)
+            throw new InvalidOperationException($"Xe {vin} đã giao cho khách hàng cuối (Delivered), không thể hủy phân bổ.");
+
+        var lines = await db.SalesOrderLines.Where(l => l.OrgId == Org && l.SalesOrderId == so.Id).ToListAsync();
+        var targetLine = lines.FirstOrDefault(l => l.Model.Equals(v.Model, StringComparison.OrdinalIgnoreCase) && l.AllocatedQty > 0)
+            ?? lines.FirstOrDefault(l => l.AllocatedQty > 0);
+
+        if (targetLine != null)
+        {
+            targetLine.AllocatedQty = Math.Max(0, targetLine.AllocatedQty - 1);
+            var targetCapacity = targetLine.ApprovedQty > 0 ? targetLine.ApprovedQty : targetLine.OrderQty;
+            targetLine.Status = targetLine.AllocatedQty == 0 ? "Approved" : (targetLine.AllocatedQty >= targetCapacity ? "FullyAllocated" : "PartiallyAllocated");
+        }
+
+        v.SOCode = null;
+        v.DealerCode = null;
+        v.Status = VehicleStatus.InStock;
+
+        so.TotalAllocatedQty = lines.Sum(l => l.AllocatedQty);
+
+        Log(v.Vin, "DeallocatedFromSO", $"{soCode} Hủy phân bổ khỏi đơn đặt hàng SO.");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            so.SOCode,
+            v.Vin,
+            status = v.Status.ToString(),
+            soTotalAllocated = so.TotalAllocatedQty,
+            soTotalApproved = so.TotalApprovedQty
+        };
     }
 }

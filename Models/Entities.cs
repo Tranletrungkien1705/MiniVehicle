@@ -29,6 +29,7 @@ public sealed class Vehicle
     public DateTime? MortgageDate { get; set; }     // Ngày bắt đầu thế chấp ngân hàng
     public DateTime? RedeemDate { get; set; }       // Ngày giải chấp / rút thế chấp (RD_ReqRedeem)
     public string? StorageCode { get; set; }        // vị trí ô đỗ / kho bãi nội bộ OEM (StorageCodeCurrent)
+    public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
     public string? OwnerPhone { get; set; }
@@ -399,6 +400,51 @@ public sealed class RedeemRequestLine
     public string Vin { get; set; } = "";
     public string ReleaseDocType { get; set; } = "All";    // All, COC, Invoice, QualityCert, Registration
     public string Status { get; set; } = "Pending";        // Pending → Approved → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Đơn đặt hàng xe ô tô của Đại lý (BizHTC.Order.Ord_SalesOrder / SalesOrder): kế hoạch đặt xe theo tháng/quý của đại lý gửi lên hãng xe OEM.</summary>
+public sealed class SalesOrder
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SOCode { get; set; } = "";             // Mã đơn đặt hàng (SO...)
+    public string SOType { get; set; } = "Normal";       // Loại đơn: Normal (Kế hoạch tháng), Urgent (Giao khẩn), Special (Dự án/Lô lớn), Display (Trưng bày showroom)
+    public string DealerCode { get; set; } = "";         // Đại lý đặt mua xe
+    public string? SPCode { get; set; }                  // Mã chính sách bán hàng / Sales Policy
+    public string? OrderMonth { get; set; }              // Tháng đặt hàng (yyyy-MM)
+    public string? ProductionMonth { get; set; }         // Tháng kế hoạch sản xuất (yyyy-MM)
+    public string? ExpectedMonth { get; set; }           // Tháng dự kiến giao xe (yyyy-MM)
+    public int TotalOrderQty { get; set; } = 0;          // Tổng số lượng xe đặt
+    public int TotalApprovedQty { get; set; } = 0;       // Tổng số lượng xe duyệt cấp
+    public int TotalAllocatedQty { get; set; } = 0;      // Tổng số lượng xe đã gán/phân bổ VIN thực tế
+    public decimal TotalAmount { get; set; } = 0;        // Tổng giá trị đơn hàng
+    public string Status { get; set; } = "Draft";        // Draft → Submitted → Approved1 → Approved2 / Approved (hoặc Rejected / Cancelled)
+    public string? CreatedBy { get; set; }
+    public string? ApprovedBy1 { get; set; }             // Người duyệt cấp 1 (Kế hoạch kinh doanh/sản xuất)
+    public DateTime? ApprovedAt1 { get; set; }
+    public string? ApprovedBy2 { get; set; }             // Người duyệt cấp 2 (Ban Giám Đốc/Tài chính)
+    public DateTime? ApprovedAt2 { get; set; }
+    public string? Remark { get; set; }                  // Ghi chú đơn đặt hàng
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Chi tiết dòng xe trong đơn đặt hàng (BizHTC.Order.Ord_SalesOrderDetail / SalesOrderLine): dòng model, phiên bản spec, màu sắc, số lượng và đơn giá.</summary>
+public sealed class SalesOrderLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long SalesOrderId { get; set; }
+    public string SOCode { get; set; } = "";
+    public string Model { get; set; } = "";              // Dòng xe (SantaFe, Tucson, Accent, Creta, Elantra, Custin, Palisade...)
+    public string? SpecCode { get; set; }                // Phiên bản xe (1.6T, 2.0 AT Tiêu chuẩn, 2.0 AT Đặc biệt, Hybrid...)
+    public string? Color { get; set; }                   // Màu xe (Trắng, Đen, Đỏ, Bạc, Xanh, Vàng cát...)
+    public int OrderQty { get; set; } = 1;               // Số lượng xe đại lý đặt
+    public int ApprovedQty { get; set; } = 0;            // Số lượng xe hãng duyệt
+    public int AllocatedQty { get; set; } = 0;           // Số lượng VIN thực tế đã gán
+    public decimal UnitPrice { get; set; } = 0;          // Đơn giá xe (VNĐ)
+    public decimal TotalAmount { get; set; } = 0;        // Thành tiền (VNĐ)
+    public string Status { get; set; } = "Pending";      // Pending → Approved → PartiallyAllocated → FullyAllocated (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
 }
 
