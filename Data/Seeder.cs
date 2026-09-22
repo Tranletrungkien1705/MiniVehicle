@@ -1884,6 +1884,109 @@ public static class Seeder
                 v2.LastAppointmentDate = app2.AppointmentDate;
             }
         }
+
+        if (!await db.TechnicalBulletins.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var tsb1 = new TechnicalBulletin
+            {
+                OrgId = org,
+                BulletinNo = "TSB-2026-001",
+                BulletinNoUser = "TSB/2026/03/TCU-01",
+                Title = "Cập nhật phần mềm điều khiển hộp số tự động TCU 8 cấp và chống rung giật dải tốc độ thấp",
+                Category = "SoftwareUpdate",
+                Model = "Creta 1.5 Cao cấp",
+                Severity = "High",
+                ReleaseDate = DateTime.Now.AddDays(-10),
+                ExpiryDate = DateTime.Now.AddDays(180),
+                Description = "Một số xe ghi nhận hiện tượng chuyển số từ cấp 1 sang cấp 2 hơi giật khi vận hành ở tốc độ thấp dưới 20km/h trong điều kiện đường đô thị đông đúc.",
+                Remedy = "Tiến hành kết nối máy chẩn đoán GDS Mobile, tải bản nâng cấp phần mềm ROM TCU phiên bản V2.4 và nạp vào hộp số, thực hiện hiệu chỉnh học lại vị trí ly hợp (Clutch Adaptation).",
+                AttachmentFileName = "TSB-2026-001-TCU-UPDATE.pdf",
+                AttachmentUrl = "https://doc.hyundai.thanhcong.vn/tsb/TSB-2026-001-TCU-UPDATE.pdf",
+                TotalVehicleCount = 1,
+                CompletedVehicleCount = 1,
+                Status = "Published",
+                Remark = "Áp dụng kiểm tra và cập nhật miễn phí cho toàn bộ xe trong dải số khung áp dụng",
+                CreatedBy = "OEM.SeniorEngineer",
+                CreatedAt = DateTime.Now.AddDays(-12),
+                PublishedBy = "OEM.TechnicalDirector",
+                PublishedAt = DateTime.Now.AddDays(-10)
+            };
+            db.TechnicalBulletins.Add(tsb1);
+            await db.SaveChangesAsync();
+
+            db.TechnicalBulletinLines.Add(
+                new TechnicalBulletinLine
+                {
+                    OrgId = org,
+                    TechnicalBulletinId = tsb1.Id,
+                    BulletinNo = tsb1.BulletinNo,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    EngineNo = "G4FL0002",
+                    PlateNo = "30K-678.90",
+                    DealerCode = "DLR-HN01",
+                    Status = "Completed",
+                    InspectedAt = DateTime.Now.AddDays(-3),
+                    CompletedAt = DateTime.Now.AddDays(-3),
+                    Technician = "KTV Chẩn đoán Nguyễn Hữu Toàn",
+                    OdoKm = 3200,
+                    RoNo = "RO-HN01-2026-0001",
+                    ResultNotes = "Đã nạp bản ROM TCU V2.4, xóa mã lỗi và chạy thử xe chuyển số rất mượt mà",
+                    Remark = "Nghiệm thu đạt yêu cầu kỹ thuật"
+                }
+            );
+
+            var tsb2 = new TechnicalBulletin
+            {
+                OrgId = org,
+                BulletinNo = "TSB-2026-002",
+                BulletinNoUser = "TSB/2026/03/STEER-02",
+                Title = "Kiểm tra siết lực bu-lông cụm thước lái điện MDPS và cân chỉnh góc đặt bánh xe",
+                Category = "TechnicalGuideline",
+                Model = "Accent 1.4 AT",
+                Severity = "Medium",
+                ReleaseDate = DateTime.Now.AddDays(-5),
+                ExpiryDate = DateTime.Now.AddDays(120),
+                Description = "Kiểm tra lực siết đai ốc trục lái trung gian và bu-lông cố định mô-tơ trợ lực lái MDPS nhằm loại trừ tiếng kêu lách cách khi đánh hết lái.",
+                Remedy = "Sử dụng cờ-lê cân lực kiểm tra siết đạt mô-men 45-50 Nm, bôi mỡ chuyên dụng mỡ trắng chống rung và cân chỉnh độ chụm bánh xe.",
+                AttachmentFileName = "TSB-2026-002-STEERING-TORQUE.pdf",
+                AttachmentUrl = "https://doc.hyundai.thanhcong.vn/tsb/TSB-2026-002-STEERING-TORQUE.pdf",
+                TotalVehicleCount = 1,
+                CompletedVehicleCount = 0,
+                Status = "Published",
+                Remark = "Chiến dịch hướng dẫn kỹ thuật bảo dưỡng xưởng",
+                CreatedBy = "OEM.SeniorEngineer",
+                CreatedAt = DateTime.Now.AddDays(-6),
+                PublishedBy = "OEM.TechnicalDirector",
+                PublishedAt = DateTime.Now.AddDays(-5)
+            };
+            db.TechnicalBulletins.Add(tsb2);
+            await db.SaveChangesAsync();
+
+            db.TechnicalBulletinLines.Add(
+                new TechnicalBulletinLine
+                {
+                    OrgId = org,
+                    TechnicalBulletinId = tsb2.Id,
+                    BulletinNo = tsb2.BulletinNo,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    EngineNo = "G4LC0001",
+                    PlateNo = "30K-123.45",
+                    DealerCode = "DLR-HN01",
+                    Status = "Notified",
+                    Remark = "Đã phát thông báo nhắc nhở kiểm tra khi xe vào xưởng làm dịch vụ"
+                }
+            );
+
+            var v2Vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Vehicle != null)
+            {
+                v2Vehicle.LastBulletinNo = tsb1.BulletinNo;
+                v2Vehicle.LastBulletinDate = DateTime.Now.AddDays(-3);
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -1994,6 +2097,10 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"ServiceAppointments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AppNo\" text NOT NULL DEFAULT '', \"AppNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"ServiceType\" text NOT NULL DEFAULT 'PeriodicMaintenance', \"AppointmentDate\" timestamp NOT NULL DEFAULT now(), \"AppointmentTime\" text NOT NULL DEFAULT '08:30', \"EstimatedDurationMinutes\" integer NOT NULL DEFAULT 60, \"ServiceAdvisor\" text NULL, \"Technician\" text NULL, \"InsNo\" text NULL, \"CustomerRequest\" text NULL, \"TotalEstimatedLabor\" numeric NOT NULL DEFAULT 0, \"TotalEstimatedParts\" numeric NOT NULL DEFAULT 0, \"TotalEstimatedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Booked', \"RoNo\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ConfirmedBy\" text NULL, \"ConfirmedAt\" timestamp NULL, \"CheckedInBy\" text NULL, \"CheckedInAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL, \"NoShowAt\" timestamp NULL, \"NoShowReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"ServiceAppointmentServiceLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceAppointmentId\" bigint NOT NULL, \"AppNo\" text NOT NULL DEFAULT '', \"SerCode\" text NOT NULL DEFAULT '', \"SerName\" text NOT NULL DEFAULT '', \"ServiceType\" text NOT NULL DEFAULT 'Maintenance', \"StandardHours\" numeric NOT NULL DEFAULT 1.0, \"LaborPrice\" numeric NOT NULL DEFAULT 300000, \"Discount\" numeric NOT NULL DEFAULT 0, \"LaborAmount\" numeric NOT NULL DEFAULT 300000, \"Technician\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"ServiceAppointmentPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceAppointmentId\" bigint NOT NULL, \"AppNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"Discount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PaymentType\" text NOT NULL DEFAULT 'Customer', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastBulletinNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastBulletinDate\" timestamp NULL",
+            "CREATE TABLE IF NOT EXISTS public.\"TechnicalBulletins\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"BulletinNo\" text NOT NULL DEFAULT '', \"BulletinNoUser\" text NULL, \"Title\" text NOT NULL DEFAULT '', \"Category\" text NOT NULL DEFAULT 'SoftwareUpdate', \"Model\" text NULL, \"Severity\" text NOT NULL DEFAULT 'Medium', \"ReleaseDate\" timestamp NOT NULL DEFAULT now(), \"ExpiryDate\" timestamp NULL, \"Description\" text NULL, \"Remedy\" text NULL, \"AttachmentFileName\" text NULL, \"AttachmentUrl\" text NULL, \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"CompletedVehicleCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"PublishedBy\" text NULL, \"PublishedAt\" timestamp NULL, \"ArchivedBy\" text NULL, \"ArchivedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"TechnicalBulletinLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TechnicalBulletinId\" bigint NOT NULL, \"BulletinNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"DealerCode\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"InspectedAt\" timestamp NULL, \"CompletedAt\" timestamp NULL, \"Technician\" text NULL, \"OdoKm\" integer NULL, \"RoNo\" text NULL, \"ResultNotes\" text NULL, \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

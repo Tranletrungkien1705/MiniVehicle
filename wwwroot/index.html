@@ -123,6 +123,21 @@
 <li><code>POST /api/repair-orders/{roNo}/service-lines/{lineId}/update</code> &amp; <code>POST /api/repair-orders/{roNo}/service-lines</code> &amp; <code>DELETE /api/repair-orders/{roNo}/service-lines/{lineId}</code> — thêm, sửa, xóa hạng mục công việc dịch vụ / tiền công (Labor)</li>
 <li><code>POST /api/repair-orders/{roNo}/part-lines/{lineId}/update</code> &amp; <code>POST /api/repair-orders/{roNo}/part-lines</code> &amp; <code>DELETE /api/repair-orders/{roNo}/part-lines/{lineId}</code> — thêm, sửa, xóa phụ tùng thay thế chính hãng và nguồn thanh toán (Khách / Bảo hành / Bảo hiểm)</li>
 <li><code>GET /api/vehicles/{vin}/repair-history</code> &amp; <code>GET /api/vehicles/{vin}/ro-history</code> — tra cứu toàn bộ lịch sử các lần vào xưởng bảo dưỡng, sửa chữa và thay thế phụ tùng của số khung VIN</li>
+<li><code>POST /api/service-appointments</code> &amp; <code>/api/service-appointments/{appNo}/{action}</code> — tạo, xác nhận, tiếp nhận check-in, hoàn tất &amp; hủy Lịch hẹn Dịch vụ xưởng đại lý (BizCarSv.Appointment / Ser_App: confirm, checkin, inservice, complete, noshow, cancel)</li>
+<li><code>GET /api/service-appointments?status=&amp;dealer=&amp;serviceType=&amp;date=&amp;vin=&amp;plateNo=&amp;appNo=</code> — tra cứu danh sách lịch hẹn dịch vụ đại lý</li>
+<li><code>GET /api/service-appointments/summary</code> — báo cáo tổng hợp lịch hẹn theo trạng thái, loại dịch vụ và đại lý tiếp nhận</li>
+<li><code>PUT /api/service-appointments/{appNo}</code> — cập nhật thông tin khách hàng, ngày giờ hẹn, cố vấn dịch vụ và yêu cầu khách hàng</li>
+<li><code>POST /api/service-appointments/{appNo}/create-ro</code> — tự động tạo Lệnh sửa chữa xưởng RepairOrder từ lịch hẹn dịch vụ</li>
+<li><code>POST /api/service-appointments/{appNo}/service-lines</code> &amp; <code>/part-lines</code> — thêm, sửa, xóa hạng mục công việc và phụ tùng đặt trước</li>
+<li><code>GET /api/vehicles/{vin}/appointments</code> &amp; <code>/api/vehicles/{vin}/appointment-history</code> — tra cứu toàn bộ lịch sử các lần đặt lịch hẹn dịch vụ của số khung VIN</li>
+<li><code>POST /api/technical-bulletins</code> &amp; <code>/api/technical-bulletins/{bulletinNo}/{action}</code> — tạo, phát hành, tạm dừng, lưu trữ &amp; hủy Bản tin kỹ thuật &amp; Hướng dẫn kỹ thuật dịch vụ xe ô tô (BizCarSv.Bulletin / Blt_Bulletin / TechnicalBulletin: publish, suspend, archive, cancel)</li>
+<li><code>GET /api/technical-bulletins?status=&amp;category=&amp;severity=&amp;model=&amp;bulletinNo=&amp;vin=</code> — tra cứu danh sách bản tin kỹ thuật TSB (SoftwareUpdate, TechnicalGuideline, ServiceCampaign, PartReplacement...)</li>
+<li><code>GET /api/technical-bulletins/summary</code> — báo cáo tổng hợp bản tin kỹ thuật TSB theo trạng thái, phân loại, mức độ nghiêm trọng và tỷ lệ hoàn thành xe</li>
+<li><code>PUT /api/technical-bulletins/{bulletinNo}</code> — điều chỉnh tiêu đề, phân loại, hiện tượng lỗi, hướng dẫn khắc phục và tệp tài liệu PDF đính kèm</li>
+<li><code>POST /api/technical-bulletins/{bulletinNo}/lines/{vin}/complete</code> — đại lý nghiệm thu hoàn tất thực hiện TSB theo từng VIN (ghi nhận KTV, ODO, số RO và kết quả xử lý)</li>
+<li><code>POST /api/technical-bulletins/{bulletinNo}/lines/{vin}/update</code> — cập nhật thông tin dòng xe VIN trong bản tin kỹ thuật</li>
+<li><code>POST /api/technical-bulletins/{bulletinNo}/lines</code> &amp; <code>DELETE /api/technical-bulletins/{bulletinNo}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong phạm vi áp dụng bản tin kỹ thuật</li>
+<li><code>GET /api/vehicles/{vin}/bulletins</code> &amp; <code>/api/vehicles/{vin}/bulletin-history</code> — tra cứu toàn bộ lịch sử các bản tin kỹ thuật TSB áp dụng và kết quả thực hiện của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

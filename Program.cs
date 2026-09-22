@@ -1900,6 +1900,103 @@ app.MapGet("/api/vehicles/{vin}/appointment-history", async (string vin, IVehicl
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Bản tin kỹ thuật & Hướng dẫn kỹ thuật dịch vụ xe ô tô (BizCarSv.Bulletin / Blt_Bulletin / TechnicalBulletin) ----
+app.MapPost("/api/technical-bulletins", async (CreateTechnicalBulletinDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Title))
+        return Results.BadRequest(new { error = "Cần tiêu đề bản tin kỹ thuật Title." });
+    try { return Results.Ok(await svc.CreateTechnicalBulletinAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/technical-bulletins", async (IVehicleService svc, string? status, string? category, string? severity, string? model, string? bulletinNo, string? vin) =>
+    Results.Ok(await svc.ListTechnicalBulletinsAsync(status, category, severity, model, bulletinNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/technical-bulletins/summary", async (IVehicleService svc) =>
+    Results.Ok(await svc.GetTechnicalBulletinSummaryAsync())).RequireAuthorization();
+
+app.MapGet("/api/technical-bulletins/{bulletinNo}", async (string bulletinNo, IVehicleService svc) =>
+{
+    var r = await svc.GetTechnicalBulletinAsync(bulletinNo);
+    return r is null ? Results.NotFound(new { bulletinNo, error = "Không tìm thấy bản tin kỹ thuật." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/technical-bulletins/{bulletinNo}", async (string bulletinNo, UpdateTechnicalBulletinHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateTechnicalBulletinHeaderAsync(bulletinNo, dto);
+        return r is null ? Results.NotFound(new { bulletinNo, error = "Không tìm thấy bản tin kỹ thuật hoặc bản tin đã đóng/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/technical-bulletins/{bulletinNo}/{action}", async (string bulletinNo, string action, TechnicalBulletinTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("publish" or "submit" or "suspend" or "resume" or "archive" or "close" or "cancel"))
+        return Results.BadRequest(new { error = "action = publish|suspend|archive|cancel" });
+    try
+    {
+        var r = await svc.TechnicalBulletinTransitionAsync(bulletinNo, action, dto);
+        return r is null ? Results.NotFound(new { bulletinNo, error = "Không thấy bản tin kỹ thuật hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/technical-bulletins/{bulletinNo}/lines/{vin}/update", async (string bulletinNo, string vin, UpdateTechnicalBulletinLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateTechnicalBulletinLineAsync(bulletinNo, vin, dto);
+        return r is null ? Results.NotFound(new { bulletinNo, vin, error = "Không tìm thấy dòng xe trong bản tin hoặc bản tin đã đóng/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/technical-bulletins/{bulletinNo}/lines/{vin}/complete", async (string bulletinNo, string vin, CompleteBulletinLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.CompleteTechnicalBulletinLineAsync(bulletinNo, vin, dto);
+        return r is null ? Results.NotFound(new { bulletinNo, vin, error = "Không tìm thấy dòng xe trong bản tin hoặc bản tin đã đóng/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/technical-bulletins/{bulletinNo}/lines", async (string bulletinNo, List<TechnicalBulletinItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào bản tin kỹ thuật." });
+    try
+    {
+        var r = await svc.AddTechnicalBulletinLinesAsync(bulletinNo, items);
+        return r is null ? Results.NotFound(new { bulletinNo, error = "Không tìm thấy bản tin kỹ thuật hoặc bản tin đã đóng/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/technical-bulletins/{bulletinNo}/lines/{vin}", async (string bulletinNo, string vin, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveTechnicalBulletinLineAsync(bulletinNo, vin);
+        return r is null ? Results.NotFound(new { bulletinNo, vin, error = "Không tìm thấy dòng xe trong bản tin hoặc bản tin đã đóng/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/bulletins", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleBulletinHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/bulletin-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleBulletinHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

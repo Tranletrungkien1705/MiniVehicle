@@ -76,6 +76,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<ServiceAppointment> ServiceAppointments => Set<ServiceAppointment>();
     public DbSet<ServiceAppointmentServiceLine> ServiceAppointmentServiceLines => Set<ServiceAppointmentServiceLine>();
     public DbSet<ServiceAppointmentPartLine> ServiceAppointmentPartLines => Set<ServiceAppointmentPartLine>();
+    public DbSet<TechnicalBulletin> TechnicalBulletins => Set<TechnicalBulletin>();
+    public DbSet<TechnicalBulletinLine> TechnicalBulletinLines => Set<TechnicalBulletinLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -113,5 +115,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<LetterOfCredit>().HasIndex(x => new { x.OrgId, x.LCNo }).IsUnique();
         b.Entity<RepairOrder>().HasIndex(x => new { x.OrgId, x.RoNo }).IsUnique();
         b.Entity<ServiceAppointment>().HasIndex(x => new { x.OrgId, x.AppNo }).IsUnique();
+        b.Entity<TechnicalBulletin>().HasIndex(x => new { x.OrgId, x.BulletinNo }).IsUnique();
     }
 }

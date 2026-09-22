@@ -1000,6 +1000,75 @@ public record CreateRoFromAppointmentDto(
     string? Remark = null
 );
 
+public record TechnicalBulletinItemInputDto(
+    string Vin,
+    string? Model = null,
+    string? EngineNo = null,
+    string? PlateNo = null,
+    string? DealerCode = null,
+    string? Remark = null
+);
+
+public record CreateTechnicalBulletinDto(
+    string Title,
+    string? Category = "SoftwareUpdate",
+    string? Model = null,
+    string? Severity = "Medium",
+    DateTime? ReleaseDate = null,
+    DateTime? ExpiryDate = null,
+    string? Description = null,
+    string? Remedy = null,
+    string? AttachmentFileName = null,
+    string? AttachmentUrl = null,
+    List<TechnicalBulletinItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? Remark = null,
+    string? BulletinNo = null,
+    string? BulletinNoUser = null,
+    string? CreatedBy = null
+);
+
+public record TechnicalBulletinTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? Reason = null
+);
+
+public record UpdateTechnicalBulletinHeaderDto(
+    string? Title = null,
+    string? Category = null,
+    string? Model = null,
+    string? Severity = null,
+    DateTime? ReleaseDate = null,
+    DateTime? ExpiryDate = null,
+    string? Description = null,
+    string? Remedy = null,
+    string? AttachmentFileName = null,
+    string? AttachmentUrl = null,
+    string? Remark = null
+);
+
+public record UpdateTechnicalBulletinLineDto(
+    string? DealerCode = null,
+    string? PlateNo = null,
+    string? Status = null,
+    string? Technician = null,
+    int? OdoKm = null,
+    string? RoNo = null,
+    string? ResultNotes = null,
+    string? Remark = null
+);
+
+public record CompleteBulletinLineDto(
+    string? Technician = null,
+    int? OdoKm = null,
+    string? RoNo = null,
+    string? DealerCode = null,
+    string? ResultNotes = null,
+    DateTime? CompletedAt = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -1242,6 +1311,17 @@ public interface IVehicleService
     Task<object?> CreateRoFromAppointmentAsync(string appNo, CreateRoFromAppointmentDto? dto);
     Task<object?> GetVehicleAppointmentHistoryAsync(string vin);
     Task<object> GetServiceAppointmentSummaryAsync();
+    Task<object> CreateTechnicalBulletinAsync(CreateTechnicalBulletinDto dto);
+    Task<object> ListTechnicalBulletinsAsync(string? status, string? category, string? severity, string? model, string? bulletinNo, string? vin);
+    Task<object?> GetTechnicalBulletinAsync(string bulletinNo);
+    Task<object?> UpdateTechnicalBulletinHeaderAsync(string bulletinNo, UpdateTechnicalBulletinHeaderDto dto);
+    Task<object?> TechnicalBulletinTransitionAsync(string bulletinNo, string action, TechnicalBulletinTransitionDto? dto);
+    Task<object?> UpdateTechnicalBulletinLineAsync(string bulletinNo, string vin, UpdateTechnicalBulletinLineDto dto);
+    Task<object?> CompleteTechnicalBulletinLineAsync(string bulletinNo, string vin, CompleteBulletinLineDto dto);
+    Task<object?> AddTechnicalBulletinLinesAsync(string bulletinNo, List<TechnicalBulletinItemInputDto> items);
+    Task<object?> RemoveTechnicalBulletinLineAsync(string bulletinNo, string vin);
+    Task<object?> GetVehicleBulletinHistoryAsync(string vin);
+    Task<object> GetTechnicalBulletinSummaryAsync();
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -17046,6 +17126,619 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byStatus,
             byType,
             byDealer
+        };
+    }
+
+    public async Task<object> CreateTechnicalBulletinAsync(CreateTechnicalBulletinDto dto)
+    {
+        var count = await db.TechnicalBulletins.CountAsync(b => b.OrgId == Org);
+        var bulletinNo = !string.IsNullOrWhiteSpace(dto.BulletinNo)
+            ? dto.BulletinNo.Trim().ToUpperInvariant()
+            : $"TSB-{DateTime.Now:yyyyMMdd}-{count + 1:D3}";
+
+        if (await db.TechnicalBulletins.AnyAsync(b => b.OrgId == Org && b.BulletinNo == bulletinNo))
+            throw new InvalidOperationException($"Bản tin kỹ thuật {bulletinNo} đã tồn tại.");
+
+        var b = new TechnicalBulletin
+        {
+            OrgId = Org,
+            BulletinNo = bulletinNo,
+            BulletinNoUser = dto.BulletinNoUser?.Trim(),
+            Title = dto.Title.Trim(),
+            Category = dto.Category?.Trim() ?? "SoftwareUpdate",
+            Model = dto.Model?.Trim(),
+            Severity = dto.Severity?.Trim() ?? "Medium",
+            ReleaseDate = dto.ReleaseDate ?? DateTime.Now,
+            ExpiryDate = dto.ExpiryDate,
+            Description = dto.Description?.Trim(),
+            Remedy = dto.Remedy?.Trim(),
+            AttachmentFileName = dto.AttachmentFileName?.Trim(),
+            AttachmentUrl = dto.AttachmentUrl?.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.TechnicalBulletins.Add(b);
+        await db.SaveChangesAsync();
+
+        var lines = new List<TechnicalBulletinLine>();
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            foreach (var item in dto.Items)
+            {
+                if (string.IsNullOrWhiteSpace(item.Vin)) continue;
+                var vin = item.Vin.Trim().ToUpperInvariant();
+                var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+                lines.Add(new TechnicalBulletinLine
+                {
+                    OrgId = Org,
+                    TechnicalBulletinId = b.Id,
+                    BulletinNo = b.BulletinNo,
+                    Vin = vin,
+                    Model = item.Model ?? v?.Model,
+                    EngineNo = item.EngineNo ?? v?.EngineNo,
+                    PlateNo = item.PlateNo ?? v?.PlateNo,
+                    DealerCode = item.DealerCode ?? v?.DealerCode,
+                    Status = "Pending",
+                    Remark = item.Remark?.Trim()
+                });
+            }
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            foreach (var rawVin in dto.Vins)
+            {
+                if (string.IsNullOrWhiteSpace(rawVin)) continue;
+                var vin = rawVin.Trim().ToUpperInvariant();
+                var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+                lines.Add(new TechnicalBulletinLine
+                {
+                    OrgId = Org,
+                    TechnicalBulletinId = b.Id,
+                    BulletinNo = b.BulletinNo,
+                    Vin = vin,
+                    Model = v?.Model,
+                    EngineNo = v?.EngineNo,
+                    PlateNo = v?.PlateNo,
+                    DealerCode = v?.DealerCode,
+                    Status = "Pending"
+                });
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.Model))
+        {
+            var matchingVehicles = await db.Vehicles.Where(v => v.OrgId == Org && v.Model.Contains(dto.Model.Trim())).ToListAsync();
+            foreach (var v in matchingVehicles)
+            {
+                lines.Add(new TechnicalBulletinLine
+                {
+                    OrgId = Org,
+                    TechnicalBulletinId = b.Id,
+                    BulletinNo = b.BulletinNo,
+                    Vin = v.Vin,
+                    Model = v.Model,
+                    EngineNo = v.EngineNo,
+                    PlateNo = v.PlateNo,
+                    DealerCode = v.DealerCode,
+                    Status = "Pending"
+                });
+            }
+        }
+
+        if (lines.Count > 0)
+        {
+            db.TechnicalBulletinLines.AddRange(lines);
+            b.TotalVehicleCount = lines.Count;
+            await db.SaveChangesAsync();
+        }
+
+        return new
+        {
+            b.Id,
+            b.BulletinNo,
+            b.BulletinNoUser,
+            b.Title,
+            b.Category,
+            b.Model,
+            b.Severity,
+            b.ReleaseDate,
+            b.ExpiryDate,
+            b.Description,
+            b.Remedy,
+            b.AttachmentFileName,
+            b.AttachmentUrl,
+            b.TotalVehicleCount,
+            b.CompletedVehicleCount,
+            b.Status,
+            b.Remark,
+            b.CreatedBy,
+            b.CreatedAt,
+            Lines = lines.Select(l => new
+            {
+                l.Id,
+                l.BulletinNo,
+                l.Vin,
+                l.Model,
+                l.EngineNo,
+                l.PlateNo,
+                l.DealerCode,
+                l.Status,
+                l.InspectedAt,
+                l.CompletedAt,
+                l.Technician,
+                l.OdoKm,
+                l.RoNo,
+                l.ResultNotes,
+                l.Remark
+            })
+        };
+    }
+
+    public async Task<object> ListTechnicalBulletinsAsync(string? status, string? category, string? severity, string? model, string? bulletinNo, string? vin)
+    {
+        var q = db.TechnicalBulletins.Where(b => b.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            q = q.Where(b => b.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(category))
+            q = q.Where(b => b.Category == category.Trim());
+        if (!string.IsNullOrWhiteSpace(severity))
+            q = q.Where(b => b.Severity == severity.Trim());
+        if (!string.IsNullOrWhiteSpace(model))
+            q = q.Where(b => b.Model != null && b.Model.Contains(model.Trim()));
+        if (!string.IsNullOrWhiteSpace(bulletinNo))
+            q = q.Where(b => b.BulletinNo.Contains(bulletinNo.Trim().ToUpperInvariant()));
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var targetVin = vin.Trim().ToUpperInvariant();
+            var bIds = await db.TechnicalBulletinLines
+                .Where(l => l.OrgId == Org && l.Vin.Contains(targetVin))
+                .Select(l => l.TechnicalBulletinId)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(b => bIds.Contains(b.Id));
+        }
+
+        var list = await q.OrderByDescending(b => b.Id).Take(200).ToListAsync();
+        var bIdsAll = list.Select(b => b.Id).ToList();
+        var allLines = await db.TechnicalBulletinLines
+            .Where(l => l.OrgId == Org && bIdsAll.Contains(l.TechnicalBulletinId))
+            .ToListAsync();
+
+        return list.Select(b =>
+        {
+            var lines = allLines.Where(l => l.TechnicalBulletinId == b.Id).ToList();
+            var completedCount = lines.Count(l => l.Status == "Completed");
+            var pendingCount = lines.Count(l => l.Status == "Pending" || l.Status == "Notified" || l.Status == "InProgress");
+            var completionPercent = lines.Count > 0 ? Math.Round((decimal)completedCount / lines.Count * 100, 1) : 0;
+
+            return new
+            {
+                b.Id,
+                b.BulletinNo,
+                b.BulletinNoUser,
+                b.Title,
+                b.Category,
+                b.Model,
+                b.Severity,
+                b.ReleaseDate,
+                b.ExpiryDate,
+                b.Description,
+                b.Remedy,
+                b.AttachmentFileName,
+                b.AttachmentUrl,
+                totalVehicleCount = lines.Count,
+                completedVehicleCount = completedCount,
+                pendingVehicleCount = pendingCount,
+                completionPercent,
+                b.Status,
+                b.Remark,
+                b.CreatedBy,
+                b.CreatedAt,
+                b.PublishedBy,
+                b.PublishedAt,
+                b.ArchivedBy,
+                b.ArchivedAt,
+                b.CancelledBy,
+                b.CancelledAt
+            };
+        });
+    }
+
+    public async Task<object?> GetTechnicalBulletinAsync(string bulletinNo)
+    {
+        var code = bulletinNo.Trim().ToUpperInvariant();
+        var b = await db.TechnicalBulletins.FirstOrDefaultAsync(x => x.OrgId == Org && x.BulletinNo == code);
+        if (b == null) return null;
+
+        var lines = await db.TechnicalBulletinLines
+            .Where(l => l.OrgId == Org && l.TechnicalBulletinId == b.Id)
+            .OrderBy(l => l.Id)
+            .ToListAsync();
+
+        var completedCount = lines.Count(l => l.Status == "Completed");
+        var completionPercent = lines.Count > 0 ? Math.Round((decimal)completedCount / lines.Count * 100, 1) : 0;
+
+        return new
+        {
+            b.Id,
+            b.BulletinNo,
+            b.BulletinNoUser,
+            b.Title,
+            b.Category,
+            b.Model,
+            b.Severity,
+            b.ReleaseDate,
+            b.ExpiryDate,
+            b.Description,
+            b.Remedy,
+            b.AttachmentFileName,
+            b.AttachmentUrl,
+            totalVehicleCount = lines.Count,
+            completedVehicleCount = completedCount,
+            pendingVehicleCount = lines.Count - completedCount,
+            completionPercent,
+            b.Status,
+            b.Remark,
+            b.CreatedBy,
+            b.CreatedAt,
+            b.PublishedBy,
+            b.PublishedAt,
+            b.ArchivedBy,
+            b.ArchivedAt,
+            b.CancelledBy,
+            b.CancelledAt,
+            b.CancelReason,
+            Lines = lines.Select(l => new
+            {
+                l.Id,
+                l.TechnicalBulletinId,
+                l.BulletinNo,
+                l.Vin,
+                l.Model,
+                l.EngineNo,
+                l.PlateNo,
+                l.DealerCode,
+                l.Status,
+                l.InspectedAt,
+                l.CompletedAt,
+                l.Technician,
+                l.OdoKm,
+                l.RoNo,
+                l.ResultNotes,
+                l.Remark
+            })
+        };
+    }
+
+    public async Task<object?> UpdateTechnicalBulletinHeaderAsync(string bulletinNo, UpdateTechnicalBulletinHeaderDto dto)
+    {
+        var code = bulletinNo.Trim().ToUpperInvariant();
+        var b = await db.TechnicalBulletins.FirstOrDefaultAsync(x => x.OrgId == Org && x.BulletinNo == code);
+        if (b == null) return null;
+
+        if (b.Status is "Archived" or "Cancelled")
+            throw new InvalidOperationException($"Bản tin {bulletinNo} đã ở trạng thái {b.Status}, không thể chỉnh sửa.");
+
+        if (dto.Title != null) b.Title = dto.Title.Trim();
+        if (dto.Category != null) b.Category = dto.Category.Trim();
+        if (dto.Model != null) b.Model = dto.Model.Trim();
+        if (dto.Severity != null) b.Severity = dto.Severity.Trim();
+        if (dto.ReleaseDate != null) b.ReleaseDate = dto.ReleaseDate.Value;
+        if (dto.ExpiryDate != null) b.ExpiryDate = dto.ExpiryDate.Value;
+        if (dto.Description != null) b.Description = dto.Description.Trim();
+        if (dto.Remedy != null) b.Remedy = dto.Remedy.Trim();
+        if (dto.AttachmentFileName != null) b.AttachmentFileName = dto.AttachmentFileName.Trim();
+        if (dto.AttachmentUrl != null) b.AttachmentUrl = dto.AttachmentUrl.Trim();
+        if (dto.Remark != null) b.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return await GetTechnicalBulletinAsync(code);
+    }
+
+    public async Task<object?> TechnicalBulletinTransitionAsync(string bulletinNo, string action, TechnicalBulletinTransitionDto? dto)
+    {
+        var code = bulletinNo.Trim().ToUpperInvariant();
+        var b = await db.TechnicalBulletins.FirstOrDefaultAsync(x => x.OrgId == Org && x.BulletinNo == code);
+        if (b == null) return null;
+
+        var act = action.Trim().ToLowerInvariant();
+        switch (act)
+        {
+            case "publish":
+            case "submit":
+                if (b.Status is not ("Draft" or "Suspended"))
+                    throw new InvalidOperationException($"Bản tin đang ở trạng thái {b.Status}, chỉ có thể Publish từ Draft hoặc Suspended.");
+                b.Status = "Published";
+                b.PublishedBy = dto?.User?.Trim() ?? "OEM.TechnicalDirector";
+                b.PublishedAt = DateTime.Now;
+
+                var lines = await db.TechnicalBulletinLines.Where(l => l.OrgId == Org && l.TechnicalBulletinId == b.Id).ToListAsync();
+                foreach (var l in lines)
+                {
+                    if (l.Status == "Pending") l.Status = "Notified";
+                    Log(l.Vin, "BulletinPublished", $"Phát hành bản tin {b.BulletinNo} ({b.Category}): {b.Title}");
+                }
+                break;
+
+            case "suspend":
+                if (b.Status != "Published")
+                    throw new InvalidOperationException($"Chỉ có thể tạm dừng bản tin đang Published.");
+                b.Status = "Suspended";
+                if (dto?.Note != null) b.Remark = (b.Remark != null ? b.Remark + " | " : "") + $"[Tạm dừng: {dto.Note}]";
+                break;
+
+            case "archive":
+            case "close":
+                if (b.Status is not ("Published" or "Suspended"))
+                    throw new InvalidOperationException($"Chỉ có thể lưu trữ/đóng bản tin Published hoặc Suspended.");
+                b.Status = "Archived";
+                b.ArchivedBy = dto?.User?.Trim() ?? "OEM.ServiceManager";
+                b.ArchivedAt = DateTime.Now;
+                if (dto?.Note != null) b.Remark = (b.Remark != null ? b.Remark + " | " : "") + $"[Lưu trữ: {dto.Note}]";
+                break;
+
+            case "cancel":
+                if (b.Status is "Archived" or "Cancelled")
+                    throw new InvalidOperationException($"Bản tin đã ở trạng thái {b.Status}.");
+                b.Status = "Cancelled";
+                b.CancelledBy = dto?.User?.Trim() ?? "Admin";
+                b.CancelledAt = DateTime.Now;
+                b.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hủy phát hành bản tin";
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không được hỗ trợ.");
+        }
+
+        await db.SaveChangesAsync();
+        return await GetTechnicalBulletinAsync(code);
+    }
+
+    public async Task<object?> UpdateTechnicalBulletinLineAsync(string bulletinNo, string vin, UpdateTechnicalBulletinLineDto dto)
+    {
+        var code = bulletinNo.Trim().ToUpperInvariant();
+        var targetVin = vin.Trim().ToUpperInvariant();
+
+        var b = await db.TechnicalBulletins.FirstOrDefaultAsync(x => x.OrgId == Org && x.BulletinNo == code);
+        if (b == null) return null;
+
+        var line = await db.TechnicalBulletinLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TechnicalBulletinId == b.Id && l.Vin == targetVin);
+        if (line == null) return null;
+
+        if (dto.DealerCode != null) line.DealerCode = dto.DealerCode.Trim();
+        if (dto.PlateNo != null) line.PlateNo = dto.PlateNo.Trim();
+        if (dto.Technician != null) line.Technician = dto.Technician.Trim();
+        if (dto.OdoKm != null) line.OdoKm = dto.OdoKm;
+        if (dto.RoNo != null) line.RoNo = dto.RoNo.Trim();
+        if (dto.ResultNotes != null) line.ResultNotes = dto.ResultNotes.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> CompleteTechnicalBulletinLineAsync(string bulletinNo, string vin, CompleteBulletinLineDto dto)
+    {
+        var code = bulletinNo.Trim().ToUpperInvariant();
+        var targetVin = vin.Trim().ToUpperInvariant();
+
+        var b = await db.TechnicalBulletins.FirstOrDefaultAsync(x => x.OrgId == Org && x.BulletinNo == code);
+        if (b == null) return null;
+
+        if (b.Status == "Cancelled")
+            throw new InvalidOperationException($"Bản tin {bulletinNo} đã bị hủy.");
+
+        var line = await db.TechnicalBulletinLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TechnicalBulletinId == b.Id && l.Vin == targetVin);
+        if (line == null) return null;
+
+        line.Status = "Completed";
+        line.CompletedAt = dto.CompletedAt ?? DateTime.Now;
+        line.InspectedAt ??= line.CompletedAt;
+        if (dto.Technician != null) line.Technician = dto.Technician.Trim();
+        if (dto.OdoKm != null) line.OdoKm = dto.OdoKm;
+        if (dto.RoNo != null) line.RoNo = dto.RoNo.Trim();
+        if (dto.DealerCode != null) line.DealerCode = dto.DealerCode.Trim();
+        if (dto.ResultNotes != null) line.ResultNotes = dto.ResultNotes.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        // Cập nhật thông tin trên Vehicle
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == targetVin);
+        if (vehicle != null)
+        {
+            vehicle.LastBulletinNo = b.BulletinNo;
+            vehicle.LastBulletinDate = line.CompletedAt;
+            if (dto.OdoKm.HasValue && dto.OdoKm.Value > (vehicle.LastOdoKm ?? 0))
+                vehicle.LastOdoKm = dto.OdoKm.Value;
+        }
+
+        // Cập nhật số lượng completed trên header
+        var allLines = await db.TechnicalBulletinLines.Where(l => l.OrgId == Org && l.TechnicalBulletinId == b.Id).ToListAsync();
+        b.CompletedVehicleCount = allLines.Count(l => l.Status == "Completed");
+
+        Log(targetVin, "BulletinCompleted", $"Hoàn tất bản tin TSB {b.BulletinNo} ({b.Category}) tại xưởng: {line.ResultNotes ?? "Đã xử lý theo hướng dẫn TSB"}");
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> AddTechnicalBulletinLinesAsync(string bulletinNo, List<TechnicalBulletinItemInputDto> items)
+    {
+        var code = bulletinNo.Trim().ToUpperInvariant();
+        var b = await db.TechnicalBulletins.FirstOrDefaultAsync(x => x.OrgId == Org && x.BulletinNo == code);
+        if (b == null) return null;
+
+        if (b.Status is "Archived" or "Cancelled")
+            throw new InvalidOperationException($"Bản tin {bulletinNo} đã ở trạng thái {b.Status}, không thể bổ sung xe.");
+
+        var existingVins = await db.TechnicalBulletinLines
+            .Where(l => l.OrgId == Org && l.TechnicalBulletinId == b.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var newLines = new List<TechnicalBulletinLine>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Vin)) continue;
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            if (existingVins.Contains(vin)) continue;
+
+            var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+            newLines.Add(new TechnicalBulletinLine
+            {
+                OrgId = Org,
+                TechnicalBulletinId = b.Id,
+                BulletinNo = b.BulletinNo,
+                Vin = vin,
+                Model = item.Model ?? v?.Model,
+                EngineNo = item.EngineNo ?? v?.EngineNo,
+                PlateNo = item.PlateNo ?? v?.PlateNo,
+                DealerCode = item.DealerCode ?? v?.DealerCode,
+                Status = b.Status == "Published" ? "Notified" : "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            if (b.Status == "Published")
+                Log(vin, "BulletinPublished", $"Phát hành bản tin {b.BulletinNo} ({b.Category}): {b.Title}");
+        }
+
+        if (newLines.Count > 0)
+        {
+            db.TechnicalBulletinLines.AddRange(newLines);
+            b.TotalVehicleCount += newLines.Count;
+            await db.SaveChangesAsync();
+        }
+
+        return await GetTechnicalBulletinAsync(code);
+    }
+
+    public async Task<object?> RemoveTechnicalBulletinLineAsync(string bulletinNo, string vin)
+    {
+        var code = bulletinNo.Trim().ToUpperInvariant();
+        var targetVin = vin.Trim().ToUpperInvariant();
+
+        var b = await db.TechnicalBulletins.FirstOrDefaultAsync(x => x.OrgId == Org && x.BulletinNo == code);
+        if (b == null) return null;
+
+        if (b.Status is "Archived" or "Cancelled")
+            throw new InvalidOperationException($"Bản tin {bulletinNo} đã ở trạng thái {b.Status}, không thể xóa xe.");
+
+        var line = await db.TechnicalBulletinLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TechnicalBulletinId == b.Id && l.Vin == targetVin);
+        if (line == null) return null;
+
+        if (line.Status == "Completed")
+            throw new InvalidOperationException($"Xe {targetVin} đã hoàn tất xử lý TSB, không thể xóa khỏi bản tin.");
+
+        db.TechnicalBulletinLines.Remove(line);
+        b.TotalVehicleCount = Math.Max(0, b.TotalVehicleCount - 1);
+        await db.SaveChangesAsync();
+
+        return await GetTechnicalBulletinAsync(code);
+    }
+
+    public async Task<object?> GetVehicleBulletinHistoryAsync(string vin)
+    {
+        var targetVin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == targetVin);
+        if (v == null) return null;
+
+        var lines = await db.TechnicalBulletinLines
+            .Where(l => l.OrgId == Org && l.Vin == targetVin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var bulletinIds = lines.Select(l => l.TechnicalBulletinId).Distinct().ToList();
+        var bulletins = await db.TechnicalBulletins
+            .Where(b => b.OrgId == Org && bulletinIds.Contains(b.Id))
+            .ToDictionaryAsync(b => b.Id);
+
+        return new
+        {
+            vin = v.Vin,
+            model = v.Model,
+            plateNo = v.PlateNo,
+            dealerCode = v.DealerCode,
+            lastBulletinNo = v.LastBulletinNo,
+            lastBulletinDate = v.LastBulletinDate,
+            totalBulletinsCount = lines.Count,
+            completedBulletinsCount = lines.Count(l => l.Status == "Completed"),
+            pendingBulletinsCount = lines.Count(l => l.Status != "Completed"),
+            bulletins = lines.Select(l =>
+            {
+                bulletins.TryGetValue(l.TechnicalBulletinId, out var b);
+                return new
+                {
+                    l.Id,
+                    l.TechnicalBulletinId,
+                    bulletinNo = l.BulletinNo,
+                    title = b?.Title,
+                    category = b?.Category,
+                    severity = b?.Severity,
+                    releaseDate = b?.ReleaseDate,
+                    expiryDate = b?.ExpiryDate,
+                    description = b?.Description,
+                    remedy = b?.Remedy,
+                    attachmentUrl = b?.AttachmentUrl,
+                    bulletinStatus = b?.Status,
+                    lineStatus = l.Status,
+                    dealerCode = l.DealerCode,
+                    technician = l.Technician,
+                    odoKm = l.OdoKm,
+                    roNo = l.RoNo,
+                    resultNotes = l.ResultNotes,
+                    inspectedAt = l.InspectedAt,
+                    completedAt = l.CompletedAt,
+                    remark = l.Remark
+                };
+            })
+        };
+    }
+
+    public async Task<object> GetTechnicalBulletinSummaryAsync()
+    {
+        var bulletins = await db.TechnicalBulletins.Where(b => b.OrgId == Org).ToListAsync();
+        var allLines = await db.TechnicalBulletinLines.Where(l => l.OrgId == Org).ToListAsync();
+
+        var totalBulletins = bulletins.Count;
+        var publishedCount = bulletins.Count(b => b.Status == "Published");
+        var draftCount = bulletins.Count(b => b.Status == "Draft");
+        var archivedCount = bulletins.Count(b => b.Status == "Archived");
+
+        var totalVehicles = allLines.Count;
+        var completedVehicles = allLines.Count(l => l.Status == "Completed");
+        var pendingVehicles = allLines.Count(l => l.Status != "Completed");
+        var overallCompletionPercent = totalVehicles > 0 ? Math.Round((decimal)completedVehicles / totalVehicles * 100, 1) : 0;
+
+        var byCategory = bulletins.GroupBy(b => b.Category).Select(g => new
+        {
+            category = g.Key,
+            count = g.Count(),
+            published = g.Count(x => x.Status == "Published")
+        }).ToList();
+
+        var bySeverity = bulletins.GroupBy(b => b.Severity).Select(g => new
+        {
+            severity = g.Key,
+            count = g.Count(),
+            published = g.Count(x => x.Status == "Published")
+        }).ToList();
+
+        return new
+        {
+            totalBulletins,
+            publishedBulletins = publishedCount,
+            draftBulletins = draftCount,
+            archivedBulletins = archivedCount,
+            totalVehiclesAffected = totalVehicles,
+            completedVehicles,
+            pendingVehicles,
+            overallCompletionPercent,
+            byCategory,
+            bySeverity
         };
     }
 }

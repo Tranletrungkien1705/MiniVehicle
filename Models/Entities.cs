@@ -57,6 +57,8 @@ public sealed class Vehicle
     public int? LastOdoKm { get; set; }             // Chỉ số ODO gần nhất ghi nhận tại xưởng dịch vụ
     public string? LastAppointmentNo { get; set; }  // Mã lịch hẹn dịch vụ gần nhất (Ser_App / ServiceAppointment)
     public DateTime? LastAppointmentDate { get; set; } // Ngày hẹn làm dịch vụ gần nhất
+    public string? LastBulletinNo { get; set; }     // Mã bản tin kỹ thuật TSB gần nhất áp dụng (Blt_Bulletin / TechnicalBulletin)
+    public DateTime? LastBulletinDate { get; set; } // Ngày thực hiện hoàn tất bản tin kỹ thuật gần nhất
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -1655,6 +1657,60 @@ public sealed class ServiceAppointmentPartLine
     public decimal TotalAmount { get; set; } = 0;     // Thành tiền = Quantity * UnitPrice - Discount (VNĐ)
     public string PaymentType { get; set; } = "Customer"; // Customer (Khách thanh toán), Warranty (Bảo hành OEM), Insurance (Bảo hiểm)
     public string Status { get; set; } = "Pending";   // Pending → Confirmed → Issued (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Bản tin kỹ thuật & Hướng dẫn kỹ thuật dịch vụ xe ô tô (BizCarSv.Bulletin / Blt_Bulletin / TechnicalBulletin): hãng xe OEM phát hành các bản tin kỹ thuật TSB hướng dẫn xưởng dịch vụ đại lý cách kiểm tra, xử lý, cập nhật phần mềm hoặc thay thế phụ tùng khắc phục lỗi cho từng model xe hoặc dải VIN cụ thể.</summary>
+public sealed class TechnicalBulletin
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string BulletinNo { get; set; } = "";             // Mã bản tin kỹ thuật TSB (TSB-2026-001...)
+    public string? BulletinNoUser { get; set; }            // Số hiệu bản tin nội bộ / tham chiếu
+    public string Title { get; set; } = "";                  // Tiêu đề bản tin kỹ thuật
+    public string Category { get; set; } = "SoftwareUpdate"; // SoftwareUpdate (Cập nhật phần mềm ECU/TCU), TechnicalGuideline (Hướng dẫn kỹ thuật), ServiceCampaign (Chiến dịch dịch vụ), PartReplacement (Thay thế phụ tùng), QualityNotice (Thông báo chất lượng)
+    public string? Model { get; set; }                      // Dòng xe áp dụng (SantaFe, Tucson, Accent, Creta, Elantra...)
+    public string Severity { get; set; } = "Medium";         // Critical (Khẩn cấp), High (Cao), Medium (Trung bình), Low (Thấp/Khuyến nghị)
+    public DateTime ReleaseDate { get; set; } = DateTime.Now; // Ngày phát hành bản tin
+    public DateTime? ExpiryDate { get; set; }               // Ngày hết hiệu lực
+    public string? Description { get; set; }                // Hiện tượng / Mô tả sự cố kỹ thuật
+    public string? Remedy { get; set; }                     // Hướng dẫn quy trình xử lý kỹ thuật / Khắc phục
+    public string? AttachmentFileName { get; set; }         // Tên tệp tài liệu PDF đính kèm
+    public string? AttachmentUrl { get; set; }              // Link xem / tải tài liệu kỹ thuật
+    public int TotalVehicleCount { get; set; } = 0;         // Tổng số lượng xe VIN trong phạm vi áp dụng
+    public int CompletedVehicleCount { get; set; } = 0;     // Số lượng xe đã hoàn tất kiểm tra / khắc phục
+    public string Status { get; set; } = "Draft";           // Draft → Published → Suspended → Archived (hoặc Cancelled)
+    public string? Remark { get; set; }                     // Ghi chú điều hành bản tin
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? PublishedBy { get; set; }                // Kỹ sư trưởng / Lãnh đạo dịch vụ OEM duyệt phát hành
+    public DateTime? PublishedAt { get; set; }
+    public string? ArchivedBy { get; set; }                 // Người đóng / lưu trữ bản tin
+    public DateTime? ArchivedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe trong bản tin kỹ thuật (BizCarSv.Bulletin / Btl_Bulletin_VIN / TechnicalBulletinLine): danh sách số khung VIN nằm trong phạm vi bản tin kỹ thuật TSB, theo dõi tiến độ đại lý tiếp nhận và kết quả xử lý kỹ thuật trên từng xe.</summary>
+public sealed class TechnicalBulletinLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long TechnicalBulletinId { get; set; }
+    public string BulletinNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? EngineNo { get; set; }
+    public string? PlateNo { get; set; }
+    public string? DealerCode { get; set; }                 // Đại lý được phân công / thực hiện xử lý
+    public string Status { get; set; } = "Pending";         // Pending → Notified → InProgress → Completed (hoặc Waived)
+    public DateTime? InspectedAt { get; set; }              // Ngày giờ thực hiện kiểm tra / xử lý xe
+    public DateTime? CompletedAt { get; set; }              // Ngày giờ hoàn tất
+    public string? Technician { get; set; }                 // KTV trực tiếp thực hiện
+    public int? OdoKm { get; set; }                         // Số km ODO lúc xử lý
+    public string? RoNo { get; set; }                       // Số Repair Order / Lệnh sửa chữa dịch vụ nếu xử lý qua RO xưởng
+    public string? ResultNotes { get; set; }                // Ghi chú kết quả xử lý
     public string? Remark { get; set; }
 }
 
