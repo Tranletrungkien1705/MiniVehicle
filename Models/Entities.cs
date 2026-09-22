@@ -66,6 +66,9 @@ public sealed class Vehicle
     public string? LastWarrantyReportNo { get; set; } // Mã báo cáo bảo hành gần nhất (Ser_ROWarrantyReport / WarrantyReport)
     public DateTime? LastWarrantyReportDate { get; set; } // Ngày báo cáo bảo hành gần nhất
     public int WarrantyClaimCount { get; set; } = 0;   // Tổng số lần xe đã phát sinh yêu cầu bảo hành chính hãng
+    public string? LastQuoteNo { get; set; }           // Mã báo giá dịch vụ & phụ tùng gần nhất (Ser_Quotation / ServiceQuotation)
+    public DateTime? LastQuoteDate { get; set; }       // Ngày lập báo giá dịch vụ gần nhất
+    public int QuotationCount { get; set; } = 0;       // Tổng số lần xe đã lập báo giá dịch vụ & phụ tùng
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -1946,6 +1949,92 @@ public sealed class WarrantyReportPartLine
     public string OldPartReturnStatus { get; set; } = "PendingReturn"; // PendingReturn (Chờ trả về OEM), Returned (Đã nhập kho linh kiện lỗi OEM), ScrappedOnSite (Hủy tại đại lý), Waived (Miễn thu hồi)
     public string Status { get; set; } = "Pending";    // Pending → Approved → Settled (hoặc Rejected)
     public string? RejectReason { get; set; }
+    public string? Remark { get; set; }
+}
+
+/// <summary>Báo giá Dịch vụ & Phụ tùng xưởng sửa chữa xe ô tô (BizCarSv.Inventory.Quote / Ser_Quotation / Ser_Inv_Quote / ServiceQuotation): quản lý lập báo giá dự toán chi phí sửa chữa, bảo dưỡng định kỳ, phụ tùng thay thế và tiền công trước khi khách hàng duyệt thực hiện dịch vụ, luồng phê duyệt & chuyển đổi sang Lệnh sửa chữa xưởng RepairOrder.</summary>
+public sealed class ServiceQuotation
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string QuoteNo { get; set; } = "";             // Mã số báo giá (QT-HN01-2026-0001...)
+    public string? QuoteNoUser { get; set; }            // Số báo giá nội bộ / tham chiếu đại lý
+    public string DealerCode { get; set; } = "";        // Mã đại lý lập báo giá
+    public string? DealerName { get; set; }             // Tên đại lý
+    public string Vin { get; set; } = "";               // Số khung VIN báo giá
+    public string Model { get; set; } = "";             // Dòng xe
+    public string? EngineNo { get; set; }               // Số máy
+    public string? PlateNo { get; set; }                // Biển số xe vào xưởng
+    public int OdoKm { get; set; } = 0;                 // Số km ODO lúc lập báo giá
+    public string CustomerName { get; set; } = "";      // Tên khách hàng / chủ xe
+    public string CustomerPhone { get; set; } = "";     // SĐT liên hệ của khách hàng
+    public string? CustomerAddress { get; set; }        // Địa chỉ khách hàng
+    public string CustomerType { get; set; } = "Individual"; // Individual (Cá nhân), Corporate (Doanh nghiệp), InsuranceCompany (Bảo hiểm)
+    public string QuotationType { get; set; } = "PeriodicMaintenance"; // PeriodicMaintenance (Bảo dưỡng định kỳ), GeneralRepair (Sửa chữa chung), BodyPaint (Đồng sơn), InsuranceClaim (Tổn thất bảo hiểm), WarrantyEstimate (Dự toán bảo hành), Custom (Khác)
+    public string? ServiceAdvisor { get; set; }         // Cố vấn dịch vụ lập báo giá
+    public DateTime QuoteDate { get; set; } = DateTime.Now; // Ngày lập báo giá
+    public DateTime? ValidUntilDate { get; set; }       // Hạn hiệu lực của báo giá (thường 15-30 ngày)
+    public string PaymentMethod { get; set; } = "Cash"; // Cash (Tiền mặt), BankTransfer (Chuyển khoản), Insurance (Bảo hiểm), Warranty (Bảo hành OEM)
+    public decimal TotalLaborAmount { get; set; } = 0;  // Tổng tiền công các hạng mục dịch vụ (VNĐ)
+    public decimal TotalPartAmount { get; set; } = 0;   // Tổng tiền phụ tùng thay thế (VNĐ)
+    public decimal DiscountAmount { get; set; } = 0;    // Tổng tiền giảm giá / chiết khấu ưu đãi (VNĐ)
+    public decimal VatRate { get; set; } = 10;          // Thuế suất VAT (%) (VD: 10% = 10)
+    public decimal TotalVatAmount { get; set; } = 0;    // Tiền thuế VAT = (TotalLaborAmount + TotalPartAmount - DiscountAmount) * VatRate / 100
+    public decimal TotalAmount { get; set; } = 0;       // Tổng tiền thanh toán dự toán = TotalLaborAmount + TotalPartAmount - DiscountAmount + TotalVatAmount
+    public string Status { get; set; } = "Draft";       // Draft → Sent → CustomerApproved → Converted (hoặc CustomerRejected / Cancelled / Expired)
+    public bool ApprovedByCustomer { get; set; } = false; // Khách hàng đã ký duyệt đồng ý sửa chữa
+    public DateTime? CustomerApprovedAt { get; set; }   // Thời điểm khách duyệt
+    public string? CustomerSignature { get; set; }      // Chữ ký số / ghi chú xác nhận của khách hàng
+    public string? ConvertedRoNo { get; set; }          // Mã Lệnh sửa chữa RepairOrder được sinh tự động khi chuyển đổi
+    public DateTime? ConvertedAt { get; set; }          // Thời điểm chuyển đổi thành RO
+    public string? Remark { get; set; }                 // Ghi chú điều khoản / điều kiện báo giá
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? SentBy { get; set; }                 // Cố vấn dịch vụ gửi báo giá cho khách
+    public DateTime? SentAt { get; set; }
+    public string? RejectedBy { get; set; }             // Người từ chối báo giá (khách / đại lý)
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }            // Người hủy báo giá
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết hạng mục công việc / Dịch vụ trong Báo giá (BizCarSv.Inventory.Quote / ServiceQuotationLaborLine): mã công việc, tên dịch vụ, giờ công định mức, đơn giá tiền công, chiết khấu và KTV dự kiến.</summary>
+public sealed class ServiceQuotationLaborLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ServiceQuotationId { get; set; }
+    public string QuoteNo { get; set; } = "";
+    public string SerCode { get; set; } = "";           // Mã công việc (BD-5K, BD-10K, SC-PHANH, DS-CAN-TRUOC, KT-DIEN...)
+    public string SerName { get; set; } = "";           // Tên hạng mục dịch vụ dự toán
+    public string ServiceType { get; set; } = "Maintenance"; // Maintenance (Bảo dưỡng), Repair (Sửa chữa), BodyPaint (Đồng sơn), Inspection (Kiểm tra chẩn đoán)
+    public decimal StandardHours { get; set; } = 1.0m;  // Số giờ công định mức (Flat Rate)
+    public decimal LaborPrice { get; set; } = 300000m;  // Đơn giá 1 giờ công (VNĐ)
+    public decimal Discount { get; set; } = 0;          // Giảm giá tiền công (VNĐ)
+    public decimal LaborAmount { get; set; } = 300000m; // Tiền công thực tế = StandardHours * LaborPrice - Discount (VNĐ)
+    public string? Technician { get; set; }             // KTV dự kiến phân công
+    public string Status { get; set; } = "Pending";     // Pending → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Chi tiết phụ tùng thay thế trong Báo giá (BizCarSv.Inventory.Quote / ServiceQuotationPartLine): mã phụ tùng Mobis/OEM chính hãng, tên phụ tùng, đơn vị tính, số lượng, đơn giá, chiết khấu và nguồn chi trả.</summary>
+public sealed class ServiceQuotationPartLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ServiceQuotationId { get; set; }
+    public string QuoteNo { get; set; } = "";
+    public string PartCode { get; set; } = "";          // Mã phụ tùng chính hãng Mobis/OEM (26300-35505, 05100-00441...)
+    public string PartName { get; set; } = "";          // Tên phụ tùng thay thế
+    public string Unit { get; set; } = "Cái";           // Đơn vị tính: Cái, Lít, Bình, Bộ, Hộp...
+    public decimal Quantity { get; set; } = 1;          // Số lượng phụ tùng dự toán
+    public decimal UnitPrice { get; set; } = 0;         // Đơn giá phụ tùng (VNĐ)
+    public decimal Discount { get; set; } = 0;          // Giảm giá phụ tùng (VNĐ)
+    public decimal TotalAmount { get; set; } = 0;       // Thành tiền = Quantity * UnitPrice - Discount (VNĐ)
+    public string PaymentType { get; set; } = "Customer"; // Customer (Khách thanh toán), Warranty (Bảo hành OEM chi trả), Insurance (Bảo hiểm chi trả)
+    public string Status { get; set; } = "Pending";     // Pending → Approved (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
 }
 

@@ -2345,6 +2345,159 @@ public static class Seeder
                 v1.WarrantyClaimCount = 1;
             }
         }
+        if (!await db.ServiceQuotations.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var quote1 = new ServiceQuotation
+            {
+                OrgId = org,
+                QuoteNo = "QT-DLR-HN01-202603-0001",
+                QuoteNoUser = "BG-2026/03/HN01-008",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                EngineNo = "G4LC0001",
+                PlateNo = "30K-888.88",
+                OdoKm = 20500,
+                CustomerName = "Nguyễn Văn An",
+                CustomerPhone = "0901234567",
+                CustomerAddress = "Số 12 phố Trần Duy Hưng, Cầu Giấy, Hà Nội",
+                CustomerType = "Individual",
+                QuotationType = "PeriodicMaintenance",
+                ServiceAdvisor = "Trần Đình Khang",
+                QuoteDate = DateTime.Now.AddDays(-2),
+                ValidUntilDate = DateTime.Now.AddDays(28),
+                PaymentMethod = "Cash",
+                TotalLaborAmount = 600000m,
+                TotalPartAmount = 1450000m,
+                DiscountAmount = 100000m,
+                VatRate = 10,
+                TotalVatAmount = 195000m,
+                TotalAmount = 2145000m,
+                Status = "CustomerApproved",
+                ApprovedByCustomer = true,
+                CustomerApprovedAt = DateTime.Now.AddDays(-1),
+                CustomerSignature = "Nguyễn Văn An - Ký duyệt qua App KH",
+                Remark = "Báo giá gói bảo dưỡng cấp 2 vạn (20.000 km) tiêu chuẩn chính hãng Hyundai Mobis",
+                CreatedBy = "advisor.khang",
+                CreatedAt = DateTime.Now.AddDays(-2),
+                SentBy = "advisor.khang",
+                SentAt = DateTime.Now.AddDays(-2)
+            };
+            db.ServiceQuotations.Add(quote1);
+            await db.SaveChangesAsync();
+
+            db.ServiceQuotationLaborLines.AddRange(
+                new ServiceQuotationLaborLine
+                {
+                    OrgId = org,
+                    ServiceQuotationId = quote1.Id,
+                    QuoteNo = quote1.QuoteNo,
+                    SerCode = "BD-20K",
+                    SerName = "Bảo dưỡng định kỳ cấp 20.000 km (Kiểm tra 24 hạng mục an toàn)",
+                    ServiceType = "Maintenance",
+                    StandardHours = 1.5m,
+                    LaborPrice = 300000m,
+                    Discount = 50000m,
+                    LaborAmount = 400000m,
+                    Technician = "Nguyễn Văn Tuấn",
+                    Status = "Approved",
+                    Remark = "Bao gồm vệ sinh phanh 4 bánh và kiểm tra hệ thống treo"
+                },
+                new ServiceQuotationLaborLine
+                {
+                    OrgId = org,
+                    ServiceQuotationId = quote1.Id,
+                    QuoteNo = quote1.QuoteNo,
+                    SerCode = "CBD-BANH-XE",
+                    SerName = "Cân bằng động bánh xe & Đảo lốp định kỳ 4 bánh",
+                    ServiceType = "Maintenance",
+                    StandardHours = 0.8m,
+                    LaborPrice = 250000m,
+                    Discount = 0,
+                    LaborAmount = 200000m,
+                    Technician = "Lê Minh Hùng",
+                    Status = "Approved",
+                    Remark = "Cân chì lazang đúc hợp kim nhôm"
+                }
+            );
+
+            db.ServiceQuotationPartLines.AddRange(
+                new ServiceQuotationPartLine
+                {
+                    OrgId = org,
+                    ServiceQuotationId = quote1.Id,
+                    QuoteNo = quote1.QuoteNo,
+                    PartCode = "26300-35505",
+                    PartName = "Lọc dầu động cơ chính hãng Mobis (Oil Filter Element)",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 120000m,
+                    Discount = 0,
+                    TotalAmount = 120000m,
+                    PaymentType = "Customer",
+                    Status = "Approved",
+                    Remark = "Phụ tùng tiêu hao định kỳ"
+                },
+                new ServiceQuotationPartLine
+                {
+                    OrgId = org,
+                    ServiceQuotationId = quote1.Id,
+                    QuoteNo = quote1.QuoteNo,
+                    PartCode = "05100-00441",
+                    PartName = "Dầu động cơ tổng hợp toàn phần Hyundai Premium Gasoline 5W-30 (Can 4L)",
+                    Unit = "Can",
+                    Quantity = 1,
+                    UnitPrice = 680000m,
+                    Discount = 50000m,
+                    TotalAmount = 630000m,
+                    PaymentType = "Customer",
+                    Status = "Approved",
+                    Remark = "Chuẩn API SP / ILSAC GF-6"
+                },
+                new ServiceQuotationPartLine
+                {
+                    OrgId = org,
+                    ServiceQuotationId = quote1.Id,
+                    QuoteNo = quote1.QuoteNo,
+                    PartCode = "28113-H8100",
+                    PartName = "Lọc gió động cơ chính hãng (Air Cleaner Filter)",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 280000m,
+                    Discount = 0,
+                    TotalAmount = 280000m,
+                    PaymentType = "Customer",
+                    Status = "Approved",
+                    Remark = "Thay mới định kỳ 20.000 km"
+                },
+                new ServiceQuotationPartLine
+                {
+                    OrgId = org,
+                    ServiceQuotationId = quote1.Id,
+                    QuoteNo = quote1.QuoteNo,
+                    PartCode = "97133-D1000",
+                    PartName = "Lọc gió điều hòa cabin than hoạt tính PM2.5 (Cabin Air Filter)",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 420000m,
+                    Discount = 0,
+                    TotalAmount = 420000m,
+                    PaymentType = "Customer",
+                    Status = "Approved",
+                    Remark = "Khử mùi diệt khuẩn dàn lạnh"
+                }
+            );
+
+            var v1Quote = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Quote != null)
+            {
+                v1Quote.LastQuoteNo = quote1.QuoteNo;
+                v1Quote.LastQuoteDate = quote1.QuoteDate;
+                v1Quote.QuotationCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -2472,7 +2625,13 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"WarrantyClaimCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"WarrantyReports\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ROWNo\" text NOT NULL DEFAULT '', \"ROWNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RoNo\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"PlateNo\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"OdoKm\" integer NOT NULL DEFAULT 0, \"CheckInDate\" timestamp NOT NULL DEFAULT now(), \"StartDate\" timestamp NULL, \"FinishedDate\" timestamp NULL, \"WarrantyStartDate\" timestamp NULL, \"WarrantyEndDate\" timestamp NULL, \"WarrantyMonths\" integer NOT NULL DEFAULT 36, \"CusName\" text NULL, \"CusTel\" text NULL, \"CusAddress\" text NULL, \"CusRequest\" text NULL, \"DiagnosticResult\" text NULL, \"NaturalCode\" text NOT NULL DEFAULT 'C01', \"CauseCode\" text NOT NULL DEFAULT 'M01', \"MainPartCode\" text NULL, \"MainPartName\" text NULL, \"WarrantyType\" text NOT NULL DEFAULT 'Standard', \"TotalLaborAmount\" numeric NOT NULL DEFAULT 0, \"TotalPartAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"ApprovedLaborAmount\" numeric NOT NULL DEFAULT 0, \"ApprovedPartAmount\" numeric NOT NULL DEFAULT 0, \"ApprovedTotalAmount\" numeric NOT NULL DEFAULT 0, \"ReimbursedAmount\" numeric NOT NULL DEFAULT 0, \"ReimburseDate\" timestamp NULL, \"AccountingRefNo\" text NULL, \"OldPartsInspectionStatus\" text NOT NULL DEFAULT 'PendingReturn', \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ConfirmedBy\" text NULL, \"ConfirmedAt\" timestamp NULL, \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"WarrantyReportLaborLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"WarrantyReportId\" bigint NOT NULL, \"ROWNo\" text NOT NULL DEFAULT '', \"SerCode\" text NOT NULL DEFAULT '', \"SerName\" text NOT NULL DEFAULT '', \"StdManHour\" numeric NOT NULL DEFAULT 1.0, \"LaborPrice\" numeric NOT NULL DEFAULT 300000, \"LaborAmount\" numeric NOT NULL DEFAULT 300000, \"ApprovedManHour\" numeric NOT NULL DEFAULT 1.0, \"ApprovedLaborAmount\" numeric NOT NULL DEFAULT 300000, \"Technician\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"RejectReason\" text NULL, \"Remark\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"WarrantyReportPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"WarrantyReportId\" bigint NOT NULL, \"ROWNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"ApprovedQty\" numeric NOT NULL DEFAULT 1, \"ApprovedAmount\" numeric NOT NULL DEFAULT 0, \"IsMainPart\" boolean NOT NULL DEFAULT false, \"OldPartSerialNo\" text NULL, \"OldPartReturnStatus\" text NOT NULL DEFAULT 'PendingReturn', \"Status\" text NOT NULL DEFAULT 'Pending', \"RejectReason\" text NULL, \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"WarrantyReportPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"WarrantyReportId\" bigint NOT NULL, \"ROWNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"ApprovedQty\" numeric NOT NULL DEFAULT 1, \"ApprovedAmount\" numeric NOT NULL DEFAULT 0, \"IsMainPart\" boolean NOT NULL DEFAULT false, \"OldPartSerialNo\" text NULL, \"OldPartReturnStatus\" text NOT NULL DEFAULT 'PendingReturn', \"Status\" text NOT NULL DEFAULT 'Pending', \"RejectReason\" text NULL, \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastQuoteNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastQuoteDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"QuotationCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceQuotations\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"QuoteNo\" text NOT NULL DEFAULT '', \"QuoteNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"OdoKm\" integer NOT NULL DEFAULT 0, \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"CustomerAddress\" text NULL, \"CustomerType\" text NOT NULL DEFAULT 'Individual', \"QuotationType\" text NOT NULL DEFAULT 'PeriodicMaintenance', \"ServiceAdvisor\" text NULL, \"QuoteDate\" timestamp NOT NULL DEFAULT now(), \"ValidUntilDate\" timestamp NULL, \"PaymentMethod\" text NOT NULL DEFAULT 'Cash', \"TotalLaborAmount\" numeric NOT NULL DEFAULT 0, \"TotalPartAmount\" numeric NOT NULL DEFAULT 0, \"DiscountAmount\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"ApprovedByCustomer\" boolean NOT NULL DEFAULT false, \"CustomerApprovedAt\" timestamp NULL, \"CustomerSignature\" text NULL, \"ConvertedRoNo\" text NULL, \"ConvertedAt\" timestamp NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"SentBy\" text NULL, \"SentAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceQuotationLaborLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceQuotationId\" bigint NOT NULL, \"QuoteNo\" text NOT NULL DEFAULT '', \"SerCode\" text NOT NULL DEFAULT '', \"SerName\" text NOT NULL DEFAULT '', \"ServiceType\" text NOT NULL DEFAULT 'Maintenance', \"StandardHours\" numeric NOT NULL DEFAULT 1.0, \"LaborPrice\" numeric NOT NULL DEFAULT 300000, \"Discount\" numeric NOT NULL DEFAULT 0, \"LaborAmount\" numeric NOT NULL DEFAULT 300000, \"Technician\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceQuotationPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceQuotationId\" bigint NOT NULL, \"QuoteNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"Discount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PaymentType\" text NOT NULL DEFAULT 'Customer', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

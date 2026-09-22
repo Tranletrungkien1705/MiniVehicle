@@ -1345,6 +1345,125 @@ public record UpdateWarrantyReportPartLineDto(
     string? Remark = null
 );
 
+public record ServiceQuotationLaborItemInputDto(
+    string SerCode,
+    string SerName,
+    string? ServiceType = "Maintenance",
+    decimal StandardHours = 1.0m,
+    decimal LaborPrice = 300000m,
+    decimal Discount = 0,
+    string? Technician = null,
+    string? Remark = null
+);
+
+public record ServiceQuotationPartItemInputDto(
+    string PartCode,
+    string PartName,
+    string? Unit = "Cái",
+    decimal Quantity = 1,
+    decimal UnitPrice = 0,
+    decimal Discount = 0,
+    string? PaymentType = "Customer",
+    string? Remark = null
+);
+
+public record CreateQuotationDto(
+    string Vin,
+    string? DealerCode = null,
+    string? DealerName = null,
+    string? Model = null,
+    string? EngineNo = null,
+    string? PlateNo = null,
+    int? OdoKm = 0,
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    string? CustomerAddress = null,
+    string? CustomerType = "Individual",
+    string? QuotationType = "PeriodicMaintenance",
+    string? ServiceAdvisor = null,
+    DateTime? QuoteDate = null,
+    DateTime? ValidUntilDate = null,
+    string? PaymentMethod = "Cash",
+    decimal? DiscountAmount = 0,
+    decimal? VatRate = 10,
+    string? Remark = null,
+    string? QuoteNo = null,
+    string? QuoteNoUser = null,
+    string? CreatedBy = null,
+    List<ServiceQuotationLaborItemInputDto>? LaborLines = null,
+    List<ServiceQuotationPartItemInputDto>? PartLines = null
+);
+
+public record UpdateQuotationDto(
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    string? CustomerAddress = null,
+    string? CustomerType = null,
+    string? ServiceAdvisor = null,
+    string? QuotationType = null,
+    string? PaymentMethod = null,
+    int? OdoKm = null,
+    DateTime? ValidUntilDate = null,
+    decimal? DiscountAmount = null,
+    decimal? VatRate = null,
+    string? Remark = null,
+    string? QuoteNoUser = null
+);
+
+public record SendQuotationDto(
+    string? User = null,
+    string? Note = null
+);
+
+public record CustomerApproveQuotationDto(
+    string? CustomerSignature = null,
+    string? Note = null,
+    string? User = null
+);
+
+public record ConvertQuotationToRoDto(
+    string? RoType = null,
+    string? Technician = null,
+    string? ServiceAdvisor = null,
+    string? User = null,
+    string? Note = null,
+    DateTime? ExpectedDeliveryDate = null
+);
+
+public record RejectQuotationDto(
+    string? Reason = null,
+    string? User = null
+);
+
+public record CancelQuotationDto(
+    string? Reason = null,
+    string? User = null
+);
+
+public record UpdateQuotationLaborLineDto(
+    string? SerCode = null,
+    string? SerName = null,
+    string? ServiceType = null,
+    decimal? StandardHours = null,
+    decimal? LaborPrice = null,
+    decimal? Discount = null,
+    string? Technician = null,
+    string? Status = null,
+    string? Remark = null
+);
+
+public record UpdateQuotationPartLineDto(
+    string? PartCode = null,
+    string? PartName = null,
+    string? Unit = null,
+    decimal? Quantity = null,
+    decimal? UnitPrice = null,
+    decimal? Discount = null,
+    string? PaymentType = null,
+    string? Status = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -1634,6 +1753,23 @@ public interface IVehicleService
     Task<object?> RemoveWarrantyReportPartLineAsync(string rowNo, long lineId);
     Task<object?> GetVehicleWarrantyReportHistoryAsync(string vin);
     Task<object> GetWarrantyReportSummaryAsync();
+    Task<object> CreateQuotationAsync(CreateQuotationDto dto);
+    Task<object> ListQuotationsAsync(string? status, string? dealer, string? vin, string? customer, string? quoteType);
+    Task<object?> GetQuotationAsync(string quoteNo);
+    Task<object?> UpdateQuotationAsync(string quoteNo, UpdateQuotationDto dto);
+    Task<object?> SendQuotationAsync(string quoteNo, SendQuotationDto? dto);
+    Task<object?> CustomerApproveQuotationAsync(string quoteNo, CustomerApproveQuotationDto? dto);
+    Task<object?> ConvertQuotationToRepairOrderAsync(string quoteNo, ConvertQuotationToRoDto? dto);
+    Task<object?> RejectQuotationAsync(string quoteNo, RejectQuotationDto? dto);
+    Task<object?> CancelQuotationAsync(string quoteNo, CancelQuotationDto? dto);
+    Task<object?> AddQuotationLaborLinesAsync(string quoteNo, List<ServiceQuotationLaborItemInputDto> items);
+    Task<object?> UpdateQuotationLaborLineAsync(string quoteNo, long lineId, UpdateQuotationLaborLineDto dto);
+    Task<object?> RemoveQuotationLaborLineAsync(string quoteNo, long lineId);
+    Task<object?> AddQuotationPartLinesAsync(string quoteNo, List<ServiceQuotationPartItemInputDto> items);
+    Task<object?> UpdateQuotationPartLineAsync(string quoteNo, long lineId, UpdateQuotationPartLineDto dto);
+    Task<object?> RemoveQuotationPartLineAsync(string quoteNo, long lineId);
+    Task<object?> GetVehicleQuotationHistoryAsync(string vin);
+    Task<object> GetQuotationSummaryAsync(string? dealerCode, DateTime? fromDate, DateTime? toDate);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -20417,6 +20553,886 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byType,
             byCause,
             byNatural,
+            byDealer
+        };
+    }
+
+    private async Task RecalculateQuotationTotalsAsync(ServiceQuotation q)
+    {
+        var laborLines = await db.ServiceQuotationLaborLines.Where(l => l.OrgId == Org && l.ServiceQuotationId == q.Id && l.Status != "Cancelled" && l.Status != "Rejected").ToListAsync();
+        var partLines = await db.ServiceQuotationPartLines.Where(p => p.OrgId == Org && p.ServiceQuotationId == q.Id && p.Status != "Cancelled" && p.Status != "Rejected").ToListAsync();
+
+        q.TotalLaborAmount = laborLines.Sum(l => l.LaborAmount);
+        q.TotalPartAmount = partLines.Sum(p => p.TotalAmount);
+        var subTotal = Math.Max(0, q.TotalLaborAmount + q.TotalPartAmount - q.DiscountAmount);
+        q.TotalVatAmount = Math.Max(0, Math.Round(subTotal * (q.VatRate / 100m), 0));
+        q.TotalAmount = Math.Max(0, subTotal + q.TotalVatAmount);
+    }
+
+    public async Task<object> CreateQuotationAsync(CreateQuotationDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Vin))
+            throw new InvalidOperationException("Cần cung cấp số khung VIN để lập báo giá.");
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+
+        var dealerCode = !string.IsNullOrWhiteSpace(dto.DealerCode) ? dto.DealerCode.Trim() : (v?.DealerCode ?? "DLR-HN01");
+        var quoteNo = !string.IsNullOrWhiteSpace(dto.QuoteNo) ? dto.QuoteNo.Trim().ToUpperInvariant() :
+            $"QT-{dealerCode}-{DateTime.Now:yyyyMMdd}-{(await db.ServiceQuotations.CountAsync(q => q.OrgId == Org) + 1):D4}";
+
+        if (await db.ServiceQuotations.AnyAsync(q => q.OrgId == Org && q.QuoteNo == quoteNo))
+            throw new InvalidOperationException($"Mã báo giá {quoteNo} đã tồn tại.");
+
+        var quote = new ServiceQuotation
+        {
+            OrgId = Org,
+            QuoteNo = quoteNo,
+            QuoteNoUser = dto.QuoteNoUser?.Trim(),
+            DealerCode = dealerCode,
+            DealerName = dto.DealerName?.Trim(),
+            Vin = vin,
+            Model = !string.IsNullOrWhiteSpace(dto.Model) ? dto.Model.Trim() : (v?.Model ?? "Unknown Model"),
+            EngineNo = dto.EngineNo?.Trim() ?? v?.EngineNo,
+            PlateNo = dto.PlateNo?.Trim() ?? v?.PlateNo,
+            OdoKm = dto.OdoKm ?? v?.LastOdoKm ?? 0,
+            CustomerName = !string.IsNullOrWhiteSpace(dto.CustomerName) ? dto.CustomerName.Trim() : (v?.OwnerName ?? "Khách hàng dịch vụ"),
+            CustomerPhone = !string.IsNullOrWhiteSpace(dto.CustomerPhone) ? dto.CustomerPhone.Trim() : (v?.OwnerPhone ?? ""),
+            CustomerAddress = dto.CustomerAddress?.Trim(),
+            CustomerType = dto.CustomerType?.Trim() ?? "Individual",
+            QuotationType = dto.QuotationType?.Trim() ?? "PeriodicMaintenance",
+            ServiceAdvisor = dto.ServiceAdvisor?.Trim() ?? "CVDV Tiếp nhận",
+            QuoteDate = dto.QuoteDate ?? DateTime.Now,
+            ValidUntilDate = dto.ValidUntilDate ?? DateTime.Now.AddDays(30),
+            PaymentMethod = dto.PaymentMethod?.Trim() ?? "Cash",
+            DiscountAmount = dto.DiscountAmount ?? 0,
+            VatRate = dto.VatRate ?? 10,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "staff",
+            CreatedAt = DateTime.Now
+        };
+
+        db.ServiceQuotations.Add(quote);
+        await db.SaveChangesAsync();
+
+        decimal laborTotal = 0;
+        if (dto.LaborLines != null && dto.LaborLines.Count > 0)
+        {
+            foreach (var l in dto.LaborLines)
+            {
+                var stdHours = l.StandardHours > 0 ? l.StandardHours : 1.0m;
+                var price = l.LaborPrice >= 0 ? l.LaborPrice : 300000m;
+                var discount = l.Discount >= 0 ? l.Discount : 0;
+                var amount = Math.Max(0, (stdHours * price) - discount);
+                laborTotal += amount;
+
+                db.ServiceQuotationLaborLines.Add(new ServiceQuotationLaborLine
+                {
+                    OrgId = Org,
+                    ServiceQuotationId = quote.Id,
+                    QuoteNo = quote.QuoteNo,
+                    SerCode = l.SerCode.Trim(),
+                    SerName = l.SerName.Trim(),
+                    ServiceType = l.ServiceType?.Trim() ?? "Maintenance",
+                    StandardHours = stdHours,
+                    LaborPrice = price,
+                    Discount = discount,
+                    LaborAmount = amount,
+                    Technician = l.Technician?.Trim(),
+                    Status = "Pending",
+                    Remark = l.Remark?.Trim()
+                });
+            }
+        }
+
+        decimal partTotal = 0;
+        if (dto.PartLines != null && dto.PartLines.Count > 0)
+        {
+            foreach (var p in dto.PartLines)
+            {
+                var qty = p.Quantity > 0 ? p.Quantity : 1;
+                var price = p.UnitPrice >= 0 ? p.UnitPrice : 0;
+                var discount = p.Discount >= 0 ? p.Discount : 0;
+                var amount = Math.Max(0, (qty * price) - discount);
+                partTotal += amount;
+
+                db.ServiceQuotationPartLines.Add(new ServiceQuotationPartLine
+                {
+                    OrgId = Org,
+                    ServiceQuotationId = quote.Id,
+                    QuoteNo = quote.QuoteNo,
+                    PartCode = p.PartCode.Trim(),
+                    PartName = p.PartName.Trim(),
+                    Unit = p.Unit?.Trim() ?? "Cái",
+                    Quantity = qty,
+                    UnitPrice = price,
+                    Discount = discount,
+                    TotalAmount = amount,
+                    PaymentType = p.PaymentType?.Trim() ?? "Customer",
+                    Status = "Pending",
+                    Remark = p.Remark?.Trim()
+                });
+            }
+        }
+
+        quote.TotalLaborAmount = laborTotal;
+        quote.TotalPartAmount = partTotal;
+        var subTotal = Math.Max(0, quote.TotalLaborAmount + quote.TotalPartAmount - quote.DiscountAmount);
+        quote.TotalVatAmount = Math.Max(0, Math.Round(subTotal * (quote.VatRate / 100m), 0));
+        quote.TotalAmount = Math.Max(0, subTotal + quote.TotalVatAmount);
+
+        if (v != null)
+        {
+            v.LastQuoteNo = quote.QuoteNo;
+            v.LastQuoteDate = quote.QuoteDate;
+            v.QuotationCount++;
+            if (quote.OdoKm > (v.LastOdoKm ?? 0)) v.LastOdoKm = quote.OdoKm;
+        }
+
+        Log(vin, "QuotationCreated", $"{quote.QuoteNo} ĐL:{quote.DealerCode} KH:{quote.CustomerName} Loại:{quote.QuotationType} Dự toán:{quote.TotalAmount:N0}đ");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            quote.QuoteNo,
+            quote.DealerCode,
+            quote.Vin,
+            quote.Model,
+            quote.CustomerName,
+            quote.CustomerPhone,
+            quote.QuotationType,
+            quote.TotalLaborAmount,
+            quote.TotalPartAmount,
+            quote.DiscountAmount,
+            quote.TotalVatAmount,
+            quote.TotalAmount,
+            quote.Status,
+            laborLineCount = dto.LaborLines?.Count ?? 0,
+            partLineCount = dto.PartLines?.Count ?? 0,
+            quote.CreatedAt
+        };
+    }
+
+    public async Task<object> ListQuotationsAsync(string? status, string? dealer, string? vin, string? customer, string? quoteType)
+    {
+        var q = db.ServiceQuotations.Where(x => x.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(x => x.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            q = q.Where(x => x.Vin == vv);
+        }
+        if (!string.IsNullOrWhiteSpace(customer))
+        {
+            var cc = customer.Trim().ToLowerInvariant();
+            q = q.Where(x => x.CustomerName.ToLower().Contains(cc) || x.CustomerPhone.Contains(cc));
+        }
+        if (!string.IsNullOrWhiteSpace(quoteType)) q = q.Where(x => x.QuotationType == quoteType);
+
+        var items = await q.OrderByDescending(x => x.Id).Take(500).Select(x => new
+        {
+            x.QuoteNo,
+            x.QuoteNoUser,
+            x.DealerCode,
+            x.DealerName,
+            x.Vin,
+            x.Model,
+            x.PlateNo,
+            x.OdoKm,
+            x.CustomerName,
+            x.CustomerPhone,
+            x.CustomerType,
+            x.QuotationType,
+            x.ServiceAdvisor,
+            x.QuoteDate,
+            x.ValidUntilDate,
+            x.PaymentMethod,
+            x.TotalLaborAmount,
+            x.TotalPartAmount,
+            x.DiscountAmount,
+            x.TotalVatAmount,
+            x.TotalAmount,
+            x.Status,
+            x.ApprovedByCustomer,
+            x.CustomerApprovedAt,
+            x.ConvertedRoNo,
+            x.ConvertedAt,
+            x.CreatedAt,
+            laborLineCount = db.ServiceQuotationLaborLines.Count(l => l.OrgId == Org && l.ServiceQuotationId == x.Id),
+            partLineCount = db.ServiceQuotationPartLines.Count(p => p.OrgId == Org && p.ServiceQuotationId == x.Id)
+        }).ToListAsync();
+
+        var totalAmount = items.Sum(x => x.TotalAmount);
+        return new { count = items.Count, totalAmount, items };
+    }
+
+    public async Task<object?> GetQuotationAsync(string quoteNo)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var quote = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (quote is null) return null;
+
+        var laborLines = await db.ServiceQuotationLaborLines
+            .Where(l => l.OrgId == Org && l.ServiceQuotationId == quote.Id)
+            .OrderBy(l => l.Id)
+            .ToListAsync();
+
+        var partLines = await db.ServiceQuotationPartLines
+            .Where(p => p.OrgId == Org && p.ServiceQuotationId == quote.Id)
+            .OrderBy(p => p.Id)
+            .ToListAsync();
+
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == quote.Vin);
+
+        return new
+        {
+            quote.Id,
+            quote.QuoteNo,
+            quote.QuoteNoUser,
+            quote.DealerCode,
+            quote.DealerName,
+            quote.Vin,
+            quote.Model,
+            quote.EngineNo,
+            quote.PlateNo,
+            quote.OdoKm,
+            quote.CustomerName,
+            quote.CustomerPhone,
+            quote.CustomerAddress,
+            quote.CustomerType,
+            quote.QuotationType,
+            quote.ServiceAdvisor,
+            quote.QuoteDate,
+            quote.ValidUntilDate,
+            quote.PaymentMethod,
+            quote.TotalLaborAmount,
+            quote.TotalPartAmount,
+            quote.DiscountAmount,
+            quote.VatRate,
+            quote.TotalVatAmount,
+            quote.TotalAmount,
+            quote.Status,
+            quote.ApprovedByCustomer,
+            quote.CustomerApprovedAt,
+            quote.CustomerSignature,
+            quote.ConvertedRoNo,
+            quote.ConvertedAt,
+            quote.Remark,
+            quote.CreatedBy,
+            quote.CreatedAt,
+            quote.SentBy,
+            quote.SentAt,
+            quote.RejectedBy,
+            quote.RejectedAt,
+            quote.RejectReason,
+            quote.CancelledBy,
+            quote.CancelledAt,
+            quote.CancelReason,
+            vehicle = vehicle is null ? null : new
+            {
+                vehicle.Vin,
+                vehicle.Model,
+                vehicle.Color,
+                vehicle.EngineNo,
+                status = vehicle.Status.ToString(),
+                vehicle.DealerCode,
+                vehicle.OwnerName,
+                vehicle.OwnerPhone,
+                vehicle.LastOdoKm,
+                vehicle.LastRoNo,
+                vehicle.LastQuoteNo,
+                vehicle.QuotationCount
+            },
+            laborLines = laborLines.Select(l => new
+            {
+                l.Id,
+                l.SerCode,
+                l.SerName,
+                l.ServiceType,
+                l.StandardHours,
+                l.LaborPrice,
+                l.Discount,
+                l.LaborAmount,
+                l.Technician,
+                l.Status,
+                l.Remark
+            }),
+            partLines = partLines.Select(p => new
+            {
+                p.Id,
+                p.PartCode,
+                p.PartName,
+                p.Unit,
+                p.Quantity,
+                p.UnitPrice,
+                p.Discount,
+                p.TotalAmount,
+                p.PaymentType,
+                p.Status,
+                p.Remark
+            })
+        };
+    }
+
+    public async Task<object?> UpdateQuotationAsync(string quoteNo, UpdateQuotationDto dto)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status != "Draft")
+            throw new InvalidOperationException($"Chỉ có thể sửa đổi báo giá ở trạng thái Draft (hiện tại là {q.Status}).");
+
+        if (dto.CustomerName != null) q.CustomerName = dto.CustomerName.Trim();
+        if (dto.CustomerPhone != null) q.CustomerPhone = dto.CustomerPhone.Trim();
+        if (dto.CustomerAddress != null) q.CustomerAddress = dto.CustomerAddress.Trim();
+        if (dto.CustomerType != null) q.CustomerType = dto.CustomerType.Trim();
+        if (dto.ServiceAdvisor != null) q.ServiceAdvisor = dto.ServiceAdvisor.Trim();
+        if (dto.QuotationType != null) q.QuotationType = dto.QuotationType.Trim();
+        if (dto.PaymentMethod != null) q.PaymentMethod = dto.PaymentMethod.Trim();
+        if (dto.OdoKm.HasValue) q.OdoKm = dto.OdoKm.Value;
+        if (dto.ValidUntilDate.HasValue) q.ValidUntilDate = dto.ValidUntilDate.Value;
+        if (dto.DiscountAmount.HasValue) q.DiscountAmount = Math.Max(0, dto.DiscountAmount.Value);
+        if (dto.VatRate.HasValue) q.VatRate = Math.Max(0, dto.VatRate.Value);
+        if (dto.Remark != null) q.Remark = dto.Remark.Trim();
+        if (dto.QuoteNoUser != null) q.QuoteNoUser = dto.QuoteNoUser.Trim();
+
+        await RecalculateQuotationTotalsAsync(q);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            q.QuoteNo,
+            q.CustomerName,
+            q.CustomerPhone,
+            q.QuotationType,
+            q.TotalLaborAmount,
+            q.TotalPartAmount,
+            q.DiscountAmount,
+            q.TotalVatAmount,
+            q.TotalAmount,
+            q.Status
+        };
+    }
+
+    public async Task<object?> SendQuotationAsync(string quoteNo, SendQuotationDto? dto)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status != "Draft")
+            throw new InvalidOperationException($"Chỉ có thể gửi báo giá từ trạng thái Draft (hiện tại là {q.Status}).");
+
+        q.Status = "Sent";
+        q.SentAt = DateTime.Now;
+        q.SentBy = dto?.User?.Trim() ?? "service.advisor";
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            q.Remark = (string.IsNullOrWhiteSpace(q.Remark) ? "" : q.Remark + " | ") + "Gửi KH: " + dto.Note.Trim();
+
+        Log(q.Vin, "QuotationSent", $"{q.QuoteNo} Đã gửi báo giá cho KH {q.CustomerName} ({q.TotalAmount:N0}đ)");
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, q.Status, q.SentBy, q.SentAt, q.TotalAmount };
+    }
+
+    public async Task<object?> CustomerApproveQuotationAsync(string quoteNo, CustomerApproveQuotationDto? dto)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status != "Draft" && q.Status != "Sent")
+            throw new InvalidOperationException($"Chỉ có thể duyệt báo giá từ trạng thái Draft hoặc Sent (hiện tại là {q.Status}).");
+
+        q.Status = "CustomerApproved";
+        q.ApprovedByCustomer = true;
+        q.CustomerApprovedAt = DateTime.Now;
+        q.CustomerSignature = dto?.CustomerSignature?.Trim() ?? "Đồng ý sửa chữa theo báo giá";
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            q.Remark = (string.IsNullOrWhiteSpace(q.Remark) ? "" : q.Remark + " | ") + "KH Duyệt: " + dto.Note.Trim();
+
+        var laborLines = await db.ServiceQuotationLaborLines.Where(l => l.OrgId == Org && l.ServiceQuotationId == q.Id).ToListAsync();
+        foreach (var l in laborLines) l.Status = "Approved";
+
+        var partLines = await db.ServiceQuotationPartLines.Where(p => p.OrgId == Org && p.ServiceQuotationId == q.Id).ToListAsync();
+        foreach (var p in partLines) p.Status = "Approved";
+
+        Log(q.Vin, "QuotationApproved", $"{q.QuoteNo} Khách hàng {q.CustomerName} đã duyệt báo giá ({q.TotalAmount:N0}đ)");
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, q.Status, q.ApprovedByCustomer, q.CustomerApprovedAt, q.CustomerSignature, q.TotalAmount };
+    }
+
+    public async Task<object?> ConvertQuotationToRepairOrderAsync(string quoteNo, ConvertQuotationToRoDto? dto)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status == "Converted" || !string.IsNullOrWhiteSpace(q.ConvertedRoNo))
+            throw new InvalidOperationException($"Báo giá {quoteNo} đã được chuyển đổi thành Lệnh sửa chữa {q.ConvertedRoNo} trước đó.");
+
+        if (q.Status != "CustomerApproved" && q.Status != "Draft" && q.Status != "Sent")
+            throw new InvalidOperationException($"Không thể chuyển đổi báo giá ở trạng thái {q.Status} sang Lệnh sửa chữa.");
+
+        var dealerCode = q.DealerCode;
+        var roNo = $"RO-{dealerCode}-{DateTime.Now:yyyyMMdd}-{(await db.RepairOrders.CountAsync(r => r.OrgId == Org) + 1):D4}";
+
+        var ro = new RepairOrder
+        {
+            OrgId = Org,
+            RoNo = roNo,
+            RoNoUser = $"RO/{DateTime.Now:yyyyMMdd}/{q.QuoteNo}",
+            DealerCode = dealerCode,
+            Vin = q.Vin,
+            Model = q.Model,
+            EngineNo = q.EngineNo,
+            PlateNo = q.PlateNo,
+            CustomerName = q.CustomerName,
+            CustomerPhone = q.CustomerPhone,
+            RoType = dto?.RoType?.Trim() ?? q.QuotationType,
+            ServiceAdvisor = dto?.ServiceAdvisor?.Trim() ?? q.ServiceAdvisor,
+            Technician = dto?.Technician?.Trim(),
+            OdoKm = q.OdoKm,
+            CheckInDate = DateTime.Now,
+            ExpectedDeliveryDate = dto?.ExpectedDeliveryDate ?? DateTime.Now.AddDays(1),
+            TotalLaborAmount = q.TotalLaborAmount,
+            TotalPartAmount = q.TotalPartAmount,
+            DiscountAmount = q.DiscountAmount,
+            VatRate = q.VatRate,
+            TotalVatAmount = q.TotalVatAmount,
+            TotalAmount = q.TotalAmount,
+            PaymentStatus = "Unpaid",
+            PaymentMethod = q.PaymentMethod,
+            Status = "InGarage",
+            Remark = $"Chuyển đổi từ Báo giá {q.QuoteNo}. " + (dto?.Note?.Trim() ?? ""),
+            CreatedBy = dto?.User?.Trim() ?? "service.advisor",
+            CreatedAt = DateTime.Now
+        };
+
+        db.RepairOrders.Add(ro);
+        await db.SaveChangesAsync();
+
+        var laborLines = await db.ServiceQuotationLaborLines.Where(l => l.OrgId == Org && l.ServiceQuotationId == q.Id && l.Status != "Cancelled" && l.Status != "Rejected").ToListAsync();
+        foreach (var l in laborLines)
+        {
+            db.RepairOrderServiceLines.Add(new RepairOrderServiceLine
+            {
+                OrgId = Org,
+                RepairOrderId = ro.Id,
+                RoNo = ro.RoNo,
+                SerCode = l.SerCode,
+                SerName = l.SerName,
+                ServiceType = l.ServiceType,
+                StandardHours = l.StandardHours,
+                LaborPrice = l.LaborPrice,
+                Discount = l.Discount,
+                LaborAmount = l.LaborAmount,
+                Technician = l.Technician ?? dto?.Technician?.Trim(),
+                Status = "Pending",
+                Remark = l.Remark
+            });
+            l.Status = "Approved";
+        }
+
+        var partLines = await db.ServiceQuotationPartLines.Where(p => p.OrgId == Org && p.ServiceQuotationId == q.Id && p.Status != "Cancelled" && p.Status != "Rejected").ToListAsync();
+        foreach (var p in partLines)
+        {
+            db.RepairOrderPartLines.Add(new RepairOrderPartLine
+            {
+                OrgId = Org,
+                RepairOrderId = ro.Id,
+                RoNo = ro.RoNo,
+                PartCode = p.PartCode,
+                PartName = p.PartName,
+                Unit = p.Unit,
+                Quantity = p.Quantity,
+                UnitPrice = p.UnitPrice,
+                Discount = p.Discount,
+                TotalAmount = p.TotalAmount,
+                PaymentType = p.PaymentType,
+                Status = "Pending",
+                Remark = p.Remark
+            });
+            p.Status = "Approved";
+        }
+
+        q.Status = "Converted";
+        q.ApprovedByCustomer = true;
+        q.CustomerApprovedAt ??= DateTime.Now;
+        q.ConvertedRoNo = ro.RoNo;
+        q.ConvertedAt = DateTime.Now;
+
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == q.Vin);
+        if (v != null)
+        {
+            v.LastRoNo = ro.RoNo;
+            v.LastRoDate = ro.CheckInDate;
+            if (q.OdoKm > (v.LastOdoKm ?? 0)) v.LastOdoKm = q.OdoKm;
+        }
+
+        Log(q.Vin, "QuotationConvertedToRO", $"{q.QuoteNo} -> {ro.RoNo} Tạo Lệnh sửa chữa xưởng: {ro.RoType} ({ro.TotalAmount:N0}đ)");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            quoteNo = q.QuoteNo,
+            quotationStatus = q.Status,
+            roNo = ro.RoNo,
+            roStatus = ro.Status,
+            dealerCode = ro.DealerCode,
+            vin = ro.Vin,
+            model = ro.Model,
+            totalAmount = ro.TotalAmount,
+            convertedAt = q.ConvertedAt,
+            laborLinesCopied = laborLines.Count,
+            partLinesCopied = partLines.Count
+        };
+    }
+
+    public async Task<object?> RejectQuotationAsync(string quoteNo, RejectQuotationDto? dto)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status == "Converted")
+            throw new InvalidOperationException($"Không thể từ chối báo giá đã chuyển đổi thành Lệnh sửa chữa ({q.ConvertedRoNo}).");
+
+        q.Status = "CustomerRejected";
+        q.RejectedBy = dto?.User?.Trim() ?? "customer";
+        q.RejectedAt = DateTime.Now;
+        q.RejectReason = dto?.Reason?.Trim() ?? "Khách hàng không duyệt báo giá";
+
+        Log(q.Vin, "QuotationRejected", $"{q.QuoteNo} Khách từ chối: {q.RejectReason}");
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, q.Status, q.RejectedBy, q.RejectedAt, q.RejectReason };
+    }
+
+    public async Task<object?> CancelQuotationAsync(string quoteNo, CancelQuotationDto? dto)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status == "Converted")
+            throw new InvalidOperationException($"Không thể hủy báo giá đã chuyển đổi thành Lệnh sửa chữa ({q.ConvertedRoNo}).");
+
+        q.Status = "Cancelled";
+        q.CancelledBy = dto?.User?.Trim() ?? "staff";
+        q.CancelledAt = DateTime.Now;
+        q.CancelReason = dto?.Reason?.Trim() ?? "Hủy báo giá";
+
+        Log(q.Vin, "QuotationCancelled", $"{q.QuoteNo} Đã hủy: {q.CancelReason}");
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, q.Status, q.CancelledBy, q.CancelledAt, q.CancelReason };
+    }
+
+    public async Task<object?> AddQuotationLaborLinesAsync(string quoteNo, List<ServiceQuotationLaborItemInputDto> items)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status == "Converted" || q.Status == "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm hạng mục công việc vào báo giá ở trạng thái {q.Status}.");
+
+        var addedLines = new List<ServiceQuotationLaborLine>();
+        foreach (var l in items)
+        {
+            var stdHours = l.StandardHours > 0 ? l.StandardHours : 1.0m;
+            var price = l.LaborPrice >= 0 ? l.LaborPrice : 300000m;
+            var discount = l.Discount >= 0 ? l.Discount : 0;
+            var amount = Math.Max(0, (stdHours * price) - discount);
+
+            var line = new ServiceQuotationLaborLine
+            {
+                OrgId = Org,
+                ServiceQuotationId = q.Id,
+                QuoteNo = q.QuoteNo,
+                SerCode = l.SerCode.Trim(),
+                SerName = l.SerName.Trim(),
+                ServiceType = l.ServiceType?.Trim() ?? "Maintenance",
+                StandardHours = stdHours,
+                LaborPrice = price,
+                Discount = discount,
+                LaborAmount = amount,
+                Technician = l.Technician?.Trim(),
+                Status = "Pending",
+                Remark = l.Remark?.Trim()
+            };
+            db.ServiceQuotationLaborLines.Add(line);
+            addedLines.Add(line);
+        }
+
+        await db.SaveChangesAsync();
+        await RecalculateQuotationTotalsAsync(q);
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, addedCount = addedLines.Count, q.TotalLaborAmount, q.TotalAmount };
+    }
+
+    public async Task<object?> UpdateQuotationLaborLineAsync(string quoteNo, long lineId, UpdateQuotationLaborLineDto dto)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status == "Converted" || q.Status == "Cancelled")
+            throw new InvalidOperationException($"Không thể sửa hạng mục công việc ở báo giá {q.Status}.");
+
+        var line = await db.ServiceQuotationLaborLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ServiceQuotationId == q.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (dto.SerCode != null) line.SerCode = dto.SerCode.Trim();
+        if (dto.SerName != null) line.SerName = dto.SerName.Trim();
+        if (dto.ServiceType != null) line.ServiceType = dto.ServiceType.Trim();
+        if (dto.StandardHours.HasValue) line.StandardHours = Math.Max(0, dto.StandardHours.Value);
+        if (dto.LaborPrice.HasValue) line.LaborPrice = Math.Max(0, dto.LaborPrice.Value);
+        if (dto.Discount.HasValue) line.Discount = Math.Max(0, dto.Discount.Value);
+        line.LaborAmount = Math.Max(0, (line.StandardHours * line.LaborPrice) - line.Discount);
+        if (dto.Technician != null) line.Technician = dto.Technician.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        await RecalculateQuotationTotalsAsync(q);
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, line.Id, line.SerCode, line.SerName, line.LaborAmount, q.TotalLaborAmount, q.TotalAmount };
+    }
+
+    public async Task<object?> RemoveQuotationLaborLineAsync(string quoteNo, long lineId)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status == "Converted" || q.Status == "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa hạng mục công việc ở báo giá {q.Status}.");
+
+        var line = await db.ServiceQuotationLaborLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ServiceQuotationId == q.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        db.ServiceQuotationLaborLines.Remove(line);
+        await db.SaveChangesAsync();
+        await RecalculateQuotationTotalsAsync(q);
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, removedLineId = lineId, q.TotalLaborAmount, q.TotalAmount };
+    }
+
+    public async Task<object?> AddQuotationPartLinesAsync(string quoteNo, List<ServiceQuotationPartItemInputDto> items)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status == "Converted" || q.Status == "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm phụ tùng vào báo giá ở trạng thái {q.Status}.");
+
+        var addedLines = new List<ServiceQuotationPartLine>();
+        foreach (var p in items)
+        {
+            var qty = p.Quantity > 0 ? p.Quantity : 1;
+            var price = p.UnitPrice >= 0 ? p.UnitPrice : 0;
+            var discount = p.Discount >= 0 ? p.Discount : 0;
+            var amount = Math.Max(0, (qty * price) - discount);
+
+            var line = new ServiceQuotationPartLine
+            {
+                OrgId = Org,
+                ServiceQuotationId = q.Id,
+                QuoteNo = q.QuoteNo,
+                PartCode = p.PartCode.Trim(),
+                PartName = p.PartName.Trim(),
+                Unit = p.Unit?.Trim() ?? "Cái",
+                Quantity = qty,
+                UnitPrice = price,
+                Discount = discount,
+                TotalAmount = amount,
+                PaymentType = p.PaymentType?.Trim() ?? "Customer",
+                Status = "Pending",
+                Remark = p.Remark?.Trim()
+            };
+            db.ServiceQuotationPartLines.Add(line);
+            addedLines.Add(line);
+        }
+
+        await db.SaveChangesAsync();
+        await RecalculateQuotationTotalsAsync(q);
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, addedCount = addedLines.Count, q.TotalPartAmount, q.TotalAmount };
+    }
+
+    public async Task<object?> UpdateQuotationPartLineAsync(string quoteNo, long lineId, UpdateQuotationPartLineDto dto)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status == "Converted" || q.Status == "Cancelled")
+            throw new InvalidOperationException($"Không thể sửa phụ tùng ở báo giá {q.Status}.");
+
+        var line = await db.ServiceQuotationPartLines.FirstOrDefaultAsync(p => p.OrgId == Org && p.ServiceQuotationId == q.Id && p.Id == lineId);
+        if (line is null) return null;
+
+        if (dto.PartCode != null) line.PartCode = dto.PartCode.Trim();
+        if (dto.PartName != null) line.PartName = dto.PartName.Trim();
+        if (dto.Unit != null) line.Unit = dto.Unit.Trim();
+        if (dto.Quantity.HasValue) line.Quantity = Math.Max(0, dto.Quantity.Value);
+        if (dto.UnitPrice.HasValue) line.UnitPrice = Math.Max(0, dto.UnitPrice.Value);
+        if (dto.Discount.HasValue) line.Discount = Math.Max(0, dto.Discount.Value);
+        line.TotalAmount = Math.Max(0, (line.Quantity * line.UnitPrice) - line.Discount);
+        if (dto.PaymentType != null) line.PaymentType = dto.PaymentType.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        await RecalculateQuotationTotalsAsync(q);
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, line.Id, line.PartCode, line.PartName, lineTotalAmount = line.TotalAmount, q.TotalPartAmount, q.TotalAmount };
+    }
+
+    public async Task<object?> RemoveQuotationPartLineAsync(string quoteNo, long lineId)
+    {
+        quoteNo = quoteNo.Trim().ToUpperInvariant();
+        var q = await db.ServiceQuotations.FirstOrDefaultAsync(x => x.OrgId == Org && x.QuoteNo == quoteNo);
+        if (q is null) return null;
+        if (q.Status == "Converted" || q.Status == "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa phụ tùng ở báo giá {q.Status}.");
+
+        var line = await db.ServiceQuotationPartLines.FirstOrDefaultAsync(p => p.OrgId == Org && p.ServiceQuotationId == q.Id && p.Id == lineId);
+        if (line is null) return null;
+
+        db.ServiceQuotationPartLines.Remove(line);
+        await db.SaveChangesAsync();
+        await RecalculateQuotationTotalsAsync(q);
+        await db.SaveChangesAsync();
+
+        return new { q.QuoteNo, removedLineId = lineId, q.TotalPartAmount, q.TotalAmount };
+    }
+
+    public async Task<object?> GetVehicleQuotationHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var quotes = await db.ServiceQuotations
+            .Where(q => q.OrgId == Org && q.Vin == vin)
+            .OrderByDescending(q => q.QuoteDate)
+            .ToListAsync();
+
+        var quoteIds = quotes.Select(q => q.Id).ToList();
+        var laborCounts = await db.ServiceQuotationLaborLines
+            .Where(l => l.OrgId == Org && quoteIds.Contains(l.ServiceQuotationId))
+            .GroupBy(l => l.ServiceQuotationId)
+            .ToDictionaryAsync(g => g.Key, g => g.Count());
+
+        var partCounts = await db.ServiceQuotationPartLines
+            .Where(p => p.OrgId == Org && quoteIds.Contains(p.ServiceQuotationId))
+            .GroupBy(p => p.ServiceQuotationId)
+            .ToDictionaryAsync(g => g.Key, g => g.Count());
+
+        var items = quotes.Select(q => new
+        {
+            q.QuoteNo,
+            q.QuoteNoUser,
+            q.DealerCode,
+            q.DealerName,
+            q.OdoKm,
+            q.CustomerName,
+            q.CustomerPhone,
+            q.QuotationType,
+            q.ServiceAdvisor,
+            q.QuoteDate,
+            q.ValidUntilDate,
+            q.PaymentMethod,
+            q.TotalLaborAmount,
+            q.TotalPartAmount,
+            q.DiscountAmount,
+            q.TotalVatAmount,
+            q.TotalAmount,
+            q.Status,
+            q.ApprovedByCustomer,
+            q.CustomerApprovedAt,
+            q.ConvertedRoNo,
+            q.ConvertedAt,
+            laborLineCount = laborCounts.GetValueOrDefault(q.Id, 0),
+            partLineCount = partCounts.GetValueOrDefault(q.Id, 0)
+        }).ToList();
+
+        return new
+        {
+            vin = v.Vin,
+            model = v.Model,
+            plateNo = v.PlateNo,
+            ownerName = v.OwnerName,
+            v.LastQuoteNo,
+            v.LastQuoteDate,
+            totalQuotations = items.Count,
+            totalEstimatedAmount = items.Sum(x => x.TotalAmount),
+            convertedToRoCount = items.Count(x => x.Status == "Converted"),
+            quotations = items
+        };
+    }
+
+    public async Task<object> GetQuotationSummaryAsync(string? dealerCode, DateTime? fromDate, DateTime? toDate)
+    {
+        var q = db.ServiceQuotations.Where(x => x.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode)) q = q.Where(x => x.DealerCode == dealerCode);
+        if (fromDate.HasValue) q = q.Where(x => x.QuoteDate >= fromDate.Value);
+        if (toDate.HasValue) q = q.Where(x => x.QuoteDate <= toDate.Value);
+
+        var quotes = await q.ToListAsync();
+
+        var totalQuotes = quotes.Count;
+        var draftCount = quotes.Count(x => x.Status == "Draft");
+        var sentCount = quotes.Count(x => x.Status == "Sent");
+        var approvedCount = quotes.Count(x => x.Status == "CustomerApproved");
+        var convertedCount = quotes.Count(x => x.Status == "Converted");
+        var rejectedCount = quotes.Count(x => x.Status == "CustomerRejected");
+        var cancelledCount = quotes.Count(x => x.Status == "Cancelled");
+
+        var totalLaborAmount = quotes.Sum(x => x.TotalLaborAmount);
+        var totalPartAmount = quotes.Sum(x => x.TotalPartAmount);
+        var totalQuotationAmount = quotes.Sum(x => x.TotalAmount);
+        var convertedAmount = quotes.Where(x => x.Status == "Converted").Sum(x => x.TotalAmount);
+
+        var conversionRatePercent = totalQuotes > 0 ? Math.Round((double)convertedCount / totalQuotes * 100, 1) : 0;
+        var customerApprovalRatePercent = totalQuotes > 0 ? Math.Round((double)(approvedCount + convertedCount) / totalQuotes * 100, 1) : 0;
+
+        var byType = quotes.GroupBy(x => x.QuotationType).Select(g => new
+        {
+            quotationType = g.Key,
+            count = g.Count(),
+            convertedCount = g.Count(x => x.Status == "Converted"),
+            totalAmount = g.Sum(x => x.TotalAmount),
+            convertedAmount = g.Where(x => x.Status == "Converted").Sum(x => x.TotalAmount)
+        }).ToList();
+
+        var byDealer = quotes.GroupBy(x => x.DealerCode).Select(g => new
+        {
+            dealerCode = g.Key,
+            count = g.Count(),
+            convertedCount = g.Count(x => x.Status == "Converted"),
+            totalAmount = g.Sum(x => x.TotalAmount),
+            convertedAmount = g.Where(x => x.Status == "Converted").Sum(x => x.TotalAmount)
+        }).ToList();
+
+        return new
+        {
+            totalQuotes,
+            draftCount,
+            sentCount,
+            approvedCount,
+            convertedCount,
+            rejectedCount,
+            cancelledCount,
+            conversionRatePercent,
+            customerApprovalRatePercent,
+            totalLaborAmount,
+            totalPartAmount,
+            totalQuotationAmount,
+            convertedAmount,
+            byType,
             byDealer
         };
     }

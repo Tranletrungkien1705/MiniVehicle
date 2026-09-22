@@ -85,6 +85,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<WarrantyReport> WarrantyReports => Set<WarrantyReport>();
     public DbSet<WarrantyReportLaborLine> WarrantyReportLaborLines => Set<WarrantyReportLaborLine>();
     public DbSet<WarrantyReportPartLine> WarrantyReportPartLines => Set<WarrantyReportPartLine>();
+    public DbSet<ServiceQuotation> ServiceQuotations => Set<ServiceQuotation>();
+    public DbSet<ServiceQuotationLaborLine> ServiceQuotationLaborLines => Set<ServiceQuotationLaborLine>();
+    public DbSet<ServiceQuotationPartLine> ServiceQuotationPartLines => Set<ServiceQuotationPartLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -126,5 +129,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<BankDisbursement>().HasIndex(x => new { x.OrgId, x.RQ_BankingTransNo }).IsUnique();
         b.Entity<ServiceCampaign>().HasIndex(x => new { x.OrgId, x.CamMarketingNo }).IsUnique();
         b.Entity<WarrantyReport>().HasIndex(x => new { x.OrgId, x.ROWNo }).IsUnique();
+        b.Entity<ServiceQuotation>().HasIndex(x => new { x.OrgId, x.QuoteNo }).IsUnique();
     }
 }
