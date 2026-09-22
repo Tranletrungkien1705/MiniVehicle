@@ -16,6 +16,8 @@
 <li><code>GET /api/delivery-minutes?status=&dealer=&vin=</code> — tra cứu danh sách biên bản giao nhận</li>
 <li><code>POST /api/delivery-minutes/{no}/inspect</code> — kiểm tra tình trạng xe, ODO, phụ kiện &amp; giấy tờ</li>
 <li><code>POST /api/delivery-minutes/{no}/confirm</code> — ký nhận hoàn tất biên bản giao nhận</li>
+<li><code>POST /api/retrieves</code> &amp; <code>/api/retrieves/{no}/{action}</code> — lệnh thu hồi/trả xe về kho (Sto_CarRetrieve)</li>
+<li><code>GET /api/retrieves?status=&dealer=&vin=</code> — tra cứu danh sách lệnh thu hồi xe</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

@@ -20,6 +20,8 @@ public record CreateDeliveryMinutesDto(string Vin, string DealerCode, string? Do
 public record InspectDeliveryMinutesDto(int? OdoKm, string? ExteriorCondition, string? InteriorCondition, bool? HasSpareWheel, bool? HasToolKit, int? KeyCount, bool? HasGuarantyBooklet, bool? HasUserManual, bool? HasOriginalCertificate, string? ReceivedBy, string? Remark);
 public record ConfirmDeliveryMinutesDto(string? ConfirmedBy, string? Remark);
 public record RejectDeliveryMinutesDto(string? Reason);
+public record CreateCarRetrieveDto(string DealerCode, List<string> Vins, string? ToStorage, string? Reason, string? RetrieveNo);
+public record CarRetrieveTransitionDto(string? Note);
 
 public interface IVehicleService
 {
@@ -53,6 +55,10 @@ public interface IVehicleService
     Task<object?> InspectDeliveryMinutesAsync(string dlvMnNo, InspectDeliveryMinutesDto dto);
     Task<object?> ConfirmDeliveryMinutesAsync(string dlvMnNo, ConfirmDeliveryMinutesDto dto);
     Task<object?> RejectDeliveryMinutesAsync(string dlvMnNo, string? reason);
+    Task<object> CreateCarRetrieveAsync(CreateCarRetrieveDto dto);
+    Task<object> ListCarRetrievesAsync(string? status, string? dealer, string? vin);
+    Task<object?> GetCarRetrieveAsync(string retrieveNo);
+    Task<object?> CarRetrieveTransitionAsync(string retrieveNo, string action, string? note);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -593,5 +599,180 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         Log(m.Vin, "DeliveryMinutesRejected", $"{dlvMnNo} Lý do: {reason ?? "Không đạt tiêu chuẩn bàn giao"}");
         await db.SaveChangesAsync();
         return new { m.DlvMnNo, m.Vin, status = m.Status, m.Remark };
+    }
+
+    // ===== Lệnh thu hồi xe về kho / Đại lý trả xe (BizHTC.Storage.CarRetrieve / Sto_CarRetrieve) =====
+    public async Task<object> CreateCarRetrieveAsync(CreateCarRetrieveDto dto)
+    {
+        if (dto.Vins is null || dto.Vins.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 VIN để tạo lệnh thu hồi.");
+
+        var dealer = dto.DealerCode.Trim();
+        var vins = dto.Vins.Select(s => s.Trim().ToUpperInvariant()).Distinct().ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        // Kiểm tra xe không được ở trạng thái đã giao cho khách lẻ (Delivered)
+        var invalidDelivered = vehicles.Where(v => v.Status == VehicleStatus.Delivered).Select(v => v.Vin).ToList();
+        if (invalidDelivered.Count > 0)
+            throw new InvalidOperationException("Xe đã giao cho khách hàng cuối (Delivered) không thể thu hồi kho: " + string.Join(", ", invalidDelivered));
+
+        var retrieveNo = string.IsNullOrWhiteSpace(dto.RetrieveNo) ? "RET" + DateTime.Now.ToString("yyMMddHHmmss") : dto.RetrieveNo!.Trim().ToUpperInvariant();
+        if (await db.CarRetrieves.AnyAsync(r => r.OrgId == Org && r.RetrieveNo == retrieveNo))
+            throw new InvalidOperationException($"Mã lệnh thu hồi {retrieveNo} đã tồn tại.");
+
+        var ret = new CarRetrieve
+        {
+            OrgId = Org,
+            RetrieveNo = retrieveNo,
+            DealerCode = dealer,
+            ToStorage = dto.ToStorage?.Trim(),
+            Reason = dto.Reason?.Trim(),
+            Status = "Requested",
+            CreatedAt = DateTime.Now
+        };
+        db.CarRetrieves.Add(ret);
+        await db.SaveChangesAsync();
+
+        foreach (var v in vehicles)
+        {
+            db.CarRetrieveLines.Add(new CarRetrieveLine
+            {
+                OrgId = Org,
+                CarRetrieveId = ret.Id,
+                RetrieveNo = retrieveNo,
+                Vin = v.Vin,
+                StorageCode = dto.ToStorage?.Trim(),
+                Remark = dto.Reason?.Trim()
+            });
+            Log(v.Vin, "RetrieveRequested", $"{retrieveNo} ĐL:{dealer} Lý do:{dto.Reason ?? "N/A"}");
+        }
+        await db.SaveChangesAsync();
+
+        return new { ret.RetrieveNo, ret.DealerCode, ret.ToStorage, ret.Status, totalVins = vins.Count, vins };
+    }
+
+    public async Task<object> ListCarRetrievesAsync(string? status, string? dealer, string? vin)
+    {
+        var q = db.CarRetrieves.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(r => r.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.CarRetrieveLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.RetrieveNo).Distinct().ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.RetrieveNo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.RetrieveNo,
+            r.DealerCode,
+            r.ToStorage,
+            r.Reason,
+            r.Status,
+            r.CreatedAt,
+            r.ApprovedAt,
+            r.ReceivedAt,
+            vinCount = db.CarRetrieveLines.Count(l => l.OrgId == Org && l.CarRetrieveId == r.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCarRetrieveAsync(string retrieveNo)
+    {
+        retrieveNo = retrieveNo.Trim().ToUpperInvariant();
+        var ret = await db.CarRetrieves.FirstOrDefaultAsync(r => r.OrgId == Org && r.RetrieveNo == retrieveNo);
+        if (ret is null) return null;
+
+        var lines = await db.CarRetrieveLines.Where(l => l.OrgId == Org && l.CarRetrieveId == ret.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.StorageCode,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), v.DealerCode } : null
+        }).ToList();
+
+        return new
+        {
+            ret.RetrieveNo,
+            ret.DealerCode,
+            ret.ToStorage,
+            ret.Reason,
+            ret.Status,
+            ret.CreatedAt,
+            ret.ApprovedAt,
+            ret.ReceivedAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> CarRetrieveTransitionAsync(string retrieveNo, string action, string? note)
+    {
+        retrieveNo = retrieveNo.Trim().ToUpperInvariant();
+        var ret = await db.CarRetrieves.FirstOrDefaultAsync(r => r.OrgId == Org && r.RetrieveNo == retrieveNo);
+        if (ret is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.CarRetrieveLines.Where(l => l.OrgId == Org && l.CarRetrieveId == ret.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (ret.Status != "Requested") return null;
+                ret.Status = "Approved";
+                ret.ApprovedAt = now;
+                foreach (var v in vehicles) Log(v.Vin, "RetrieveApproved", retrieveNo);
+                break;
+
+            case "ship":
+            case "dispatch":
+                if (ret.Status != "Approved") return null;
+                ret.Status = "InTransit";
+                foreach (var v in vehicles) Log(v.Vin, "RetrieveInTransit", retrieveNo);
+                break;
+
+            case "receive":
+                if (ret.Status is not ("Approved" or "InTransit")) return null;
+                ret.Status = "Received";
+                ret.ReceivedAt = now;
+                foreach (var v in vehicles)
+                {
+                    v.Status = VehicleStatus.InStock;
+                    v.DealerCode = null; // giải phóng khỏi đại lý, trở về kho trung tâm
+                    Log(v.Vin, "Retrieved", $"{retrieveNo} Trả về kho: {ret.ToStorage ?? "Kho trung tâm"} Note: {note ?? ret.Reason ?? ""}".Trim());
+                }
+                break;
+
+            case "reject":
+                if (ret.Status != "Requested") return null;
+                ret.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(note)) ret.Reason = $"{ret.Reason} | Từ chối: {note}";
+                foreach (var v in vehicles) Log(v.Vin, "RetrieveRejected", $"{retrieveNo} Lý do: {note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (ret.Status is not ("Requested" or "Approved")) return null;
+                ret.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(note)) ret.Reason = $"{ret.Reason} | Hủy: {note}";
+                foreach (var v in vehicles) Log(v.Vin, "RetrieveCancelled", retrieveNo);
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { ret.RetrieveNo, ret.DealerCode, status = ret.Status, ret.ApprovedAt, ret.ReceivedAt };
     }
 }

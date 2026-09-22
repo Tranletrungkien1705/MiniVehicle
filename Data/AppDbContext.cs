@@ -16,6 +16,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<DocRequest> DocRequests => Set<DocRequest>();
     public DbSet<StockTransfer> Transfers => Set<StockTransfer>();
     public DbSet<DeliveryMinutes> DeliveryMinutes => Set<DeliveryMinutes>();
+    public DbSet<CarRetrieve> CarRetrieves => Set<CarRetrieve>();
+    public DbSet<CarRetrieveLine> CarRetrieveLines => Set<CarRetrieveLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -24,5 +26,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<Vehicle>().Property(x => x.Status).HasConversion<int>();
         b.Entity<DeliveryOrder>().HasIndex(x => new { x.OrgId, x.DoNo }).IsUnique();
         b.Entity<DeliveryMinutes>().HasIndex(x => new { x.OrgId, x.DlvMnNo }).IsUnique();
+        b.Entity<CarRetrieve>().HasIndex(x => new { x.OrgId, x.RetrieveNo }).IsUnique();
     }
 }

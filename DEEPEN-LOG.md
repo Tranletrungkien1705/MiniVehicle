@@ -1,1 +1,2 @@
 - Port nghiệp vụ Biên bản giao nhận xe (DeliveryMinutes / Sto_DlvMinutes) từ 2010.HTC (BizHTC.Storage.DlvMinutes): quản lý giao nhận xe, kiểm tra ODO, ngoại thất, nội thất, phụ kiện, hồ sơ xuất xưởng và ký nhận/từ chối biên bản.
+- Port nghiệp vụ Lệnh thu hồi xe về kho / Đại lý trả xe (CarRetrieve / Sto_CarRetrieve) từ 2010.HTC (BizHTC.Storage.CarRetrieve): quản lý thu hồi xe từ đại lý về kho OEM, luồng trạng thái (Requested → Approved → InTransit → Received/Rejected/Cancelled), khôi phục trạng thái InStock cho VIN và ghi nhận audit trail.

@@ -289,6 +289,32 @@ app.MapPost("/api/delivery-minutes/{dlvMnNo}/reject", async (string dlvMnNo, Rej
     return r is null ? Results.NotFound(new { dlvMnNo, error = "Không thấy biên bản hoặc biên bản đã chốt/từ chối." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Lệnh thu hồi xe về kho (Sto_CarRetrieve / CarRetrieve) ----
+app.MapPost("/api/retrieves", async (CreateCarRetrieveDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || dto.Vins is null || dto.Vins.Count == 0)
+        return Results.BadRequest(new { error = "Cần DealerCode và danh sách Vins." });
+    try { return Results.Ok(await svc.CreateCarRetrieveAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/retrieves", async (IVehicleService svc, string? status, string? dealer, string? vin) =>
+    Results.Ok(await svc.ListCarRetrievesAsync(status, dealer, vin))).RequireAuthorization();
+
+app.MapGet("/api/retrieves/{retrieveNo}", async (string retrieveNo, IVehicleService svc) =>
+{
+    var r = await svc.GetCarRetrieveAsync(retrieveNo);
+    return r is null ? Results.NotFound(new { retrieveNo, error = "Không tìm thấy lệnh thu hồi." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/retrieves/{retrieveNo}/{action}", async (string retrieveNo, string action, CarRetrieveTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "ship" or "dispatch" or "receive" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|ship|dispatch|receive|reject|cancel" });
+    var r = await svc.CarRetrieveTransitionAsync(retrieveNo, action, dto?.Note);
+    return r is null ? Results.NotFound(new { retrieveNo, error = "Không thấy lệnh thu hồi hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

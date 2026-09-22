@@ -166,6 +166,33 @@ public sealed class DeliveryMinutes
     public DateTime? ConfirmedAt { get; set; }
 }
 
+/// <summary>Lệnh thu hồi / nhập trả xe về kho (BizHTC.Storage.CarRetrieve / Sto_CarRetrieve): thu hồi xe từ đại lý về lại kho trung tâm OEM.</summary>
+public sealed class CarRetrieve
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string RetrieveNo { get; set; } = "";        // Mã lệnh thu hồi (RET...)
+    public string DealerCode { get; set; } = "";        // Đại lý bị thu hồi / trả xe
+    public string? ToStorage { get; set; }              // Kho tiếp nhận xe thu hồi
+    public string? Reason { get; set; }                 // Lý do thu hồi (quá hạn thanh toán, hoàn kho, hủy phân bổ...)
+    public string Status { get; set; } = "Requested";   // Requested → Approved → InTransit → Received (hoặc Rejected / Cancelled)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? ReceivedAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong lệnh thu hồi (Sto_CarRetrieveDetail): danh sách VIN thu hồi.</summary>
+public sealed class CarRetrieveLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long CarRetrieveId { get; set; }
+    public string RetrieveNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? StorageCode { get; set; }
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {
