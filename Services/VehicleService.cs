@@ -1137,6 +1137,91 @@ public record UpdateBankDisbursementLineDto(
     string? Remark = null
 );
 
+public record ServiceCampaignItemInputDto(
+    string Vin,
+    string? DealerCode = null,
+    string? PlateNo = null,
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    string? RoNo = null,
+    decimal? DiscountLaborAmount = null,
+    decimal? DiscountPartAmount = null,
+    bool? IsGiftDelivered = null,
+    string? GiftName = null,
+    string? Technician = null,
+    string? ServiceAdvisor = null,
+    string? Remark = null
+);
+
+public record CreateServiceCampaignDto(
+    string CampaignName,
+    string? CampaignType = "SeasonalService",
+    DateTime? DateStart = null,
+    DateTime? DateEnd = null,
+    List<ServiceCampaignItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? CamMarketingNo = null,
+    string? CamMarketingNoUser = null,
+    string? Model = null,
+    decimal DiscountLaborPercent = 0,
+    decimal DiscountPartPercent = 0,
+    string? FreeInspectionItems = null,
+    string? GiftDescription = null,
+    decimal BudgetAmount = 0,
+    string? Remark = null,
+    string? CreatedBy = null
+);
+
+public record UpdateServiceCampaignHeaderDto(
+    string? CamMarketingNoUser = null,
+    string? CampaignName = null,
+    string? CampaignType = null,
+    string? Model = null,
+    DateTime? DateStart = null,
+    DateTime? DateEnd = null,
+    decimal? DiscountLaborPercent = null,
+    decimal? DiscountPartPercent = null,
+    string? FreeInspectionItems = null,
+    string? GiftDescription = null,
+    decimal? BudgetAmount = null,
+    string? Remark = null
+);
+
+public record ServiceCampaignTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? CancelReason = null
+);
+
+public record UpdateServiceCampaignLineDto(
+    string? DealerCode = null,
+    string? PlateNo = null,
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    DateTime? ServiceDate = null,
+    string? RoNo = null,
+    decimal? DiscountLaborAmount = null,
+    decimal? DiscountPartAmount = null,
+    bool? IsGiftDelivered = null,
+    string? GiftName = null,
+    string? Technician = null,
+    string? ServiceAdvisor = null,
+    string? Status = null,
+    string? Remark = null
+);
+
+public record AttendServiceCampaignLineDto(
+    DateTime? ServiceDate = null,
+    string? RoNo = null,
+    decimal? DiscountLaborAmount = null,
+    decimal? DiscountPartAmount = null,
+    bool? IsGiftDelivered = true,
+    string? GiftName = null,
+    string? Technician = null,
+    string? ServiceAdvisor = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -1401,6 +1486,18 @@ public interface IVehicleService
     Task<object?> GetVehicleDisbursementInfoAsync(string vin);
     Task<object?> GetVehicleDisbursementHistoryAsync(string vin);
     Task<object> GetBankDisbursementSummaryAsync();
+    Task<object> CreateServiceCampaignAsync(CreateServiceCampaignDto dto);
+    Task<object> ListServiceCampaignsAsync(string? status, string? dealer, string? campaignType, string? camMarketingNo, string? vin);
+    Task<object?> GetServiceCampaignAsync(string camMarketingNo);
+    Task<object?> UpdateServiceCampaignHeaderAsync(string camMarketingNo, UpdateServiceCampaignHeaderDto dto);
+    Task<object?> ServiceCampaignTransitionAsync(string camMarketingNo, string action, ServiceCampaignTransitionDto? dto);
+    Task<object?> AttendServiceCampaignLineAsync(string camMarketingNo, string vin, AttendServiceCampaignLineDto dto);
+    Task<object?> UpdateServiceCampaignLineAsync(string camMarketingNo, string vin, UpdateServiceCampaignLineDto dto);
+    Task<object?> AddServiceCampaignLinesAsync(string camMarketingNo, List<ServiceCampaignItemInputDto> items);
+    Task<object?> RemoveServiceCampaignLineAsync(string camMarketingNo, string vin);
+    Task<object?> GetVehicleCampaignInfoAsync(string vin);
+    Task<object?> GetVehicleCampaignHistoryAsync(string vin);
+    Task<object> GetServiceCampaignSummaryAsync();
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -18529,6 +18626,712 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             disbursedVehicles,
             byBank,
             byDisbursementType
+        };
+    }
+
+    // ==========================================
+    // CHIẾN DỊCH DỊCH VỤ & KHUYẾN MÃI HẬU MÃI XE Ô TÔ (BizCarSv.CampaignMarketing / Ser_CampaignMarketing / ServiceCampaign)
+    // ==========================================
+
+    public async Task<object> CreateServiceCampaignAsync(CreateServiceCampaignDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.CampaignName))
+            throw new InvalidOperationException("Cần tên chiến dịch khuyến mãi CampaignName.");
+
+        var camMarketingNo = !string.IsNullOrWhiteSpace(dto.CamMarketingNo)
+            ? dto.CamMarketingNo.Trim().ToUpperInvariant()
+            : $"CAM-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
+
+        if (await db.ServiceCampaigns.AnyAsync(x => x.OrgId == Org && x.CamMarketingNo == camMarketingNo))
+            throw new InvalidOperationException($"Chiến dịch khuyến mãi {camMarketingNo} đã tồn tại.");
+
+        var dateStart = dto.DateStart ?? DateTime.Now;
+        var dateEnd = dto.DateEnd ?? dateStart.AddDays(30);
+
+        var campaign = new ServiceCampaign
+        {
+            OrgId = Org,
+            CamMarketingNo = camMarketingNo,
+            CamMarketingNoUser = dto.CamMarketingNoUser?.Trim(),
+            CampaignName = dto.CampaignName.Trim(),
+            CampaignType = string.IsNullOrWhiteSpace(dto.CampaignType) ? "SeasonalService" : dto.CampaignType.Trim(),
+            Model = string.IsNullOrWhiteSpace(dto.Model) ? "All" : dto.Model.Trim(),
+            DateStart = dateStart,
+            DateEnd = dateEnd,
+            DiscountLaborPercent = dto.DiscountLaborPercent,
+            DiscountPartPercent = dto.DiscountPartPercent,
+            FreeInspectionItems = dto.FreeInspectionItems?.Trim(),
+            GiftDescription = dto.GiftDescription?.Trim(),
+            BudgetAmount = dto.BudgetAmount,
+            ActualAmount = 0,
+            TotalVehicleCount = 0,
+            AttendedVehicleCount = 0,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "system",
+            CreatedAt = DateTime.Now
+        };
+
+        db.ServiceCampaigns.Add(campaign);
+        await db.SaveChangesAsync();
+
+        var lines = new List<ServiceCampaignLine>();
+        var targetVins = new List<string>();
+
+        if (dto.Items is { Count: > 0 })
+        {
+            foreach (var item in dto.Items)
+            {
+                if (string.IsNullOrWhiteSpace(item.Vin)) continue;
+                var vin = item.Vin.Trim().ToUpperInvariant();
+                if (targetVins.Contains(vin)) continue;
+                targetVins.Add(vin);
+
+                var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+                var line = new ServiceCampaignLine
+                {
+                    OrgId = Org,
+                    ServiceCampaignId = campaign.Id,
+                    CamMarketingNo = campaign.CamMarketingNo,
+                    DealerCode = !string.IsNullOrWhiteSpace(item.DealerCode) ? item.DealerCode.Trim() : (v?.DealerCode ?? "DLR-MAIN"),
+                    Vin = vin,
+                    Model = v?.Model,
+                    EngineNo = v?.EngineNo,
+                    PlateNo = !string.IsNullOrWhiteSpace(item.PlateNo) ? item.PlateNo.Trim() : v?.PlateNo,
+                    CustomerName = !string.IsNullOrWhiteSpace(item.CustomerName) ? item.CustomerName.Trim() : v?.OwnerName,
+                    CustomerPhone = !string.IsNullOrWhiteSpace(item.CustomerPhone) ? item.CustomerPhone.Trim() : v?.OwnerPhone,
+                    RoNo = item.RoNo?.Trim(),
+                    DiscountLaborAmount = item.DiscountLaborAmount ?? 0,
+                    DiscountPartAmount = item.DiscountPartAmount ?? 0,
+                    TotalDiscountAmount = (item.DiscountLaborAmount ?? 0) + (item.DiscountPartAmount ?? 0),
+                    IsGiftDelivered = item.IsGiftDelivered ?? false,
+                    GiftName = item.GiftName?.Trim() ?? (item.IsGiftDelivered == true ? campaign.GiftDescription : null),
+                    Technician = item.Technician?.Trim(),
+                    ServiceAdvisor = item.ServiceAdvisor?.Trim(),
+                    Status = "Pending",
+                    Remark = item.Remark?.Trim()
+                };
+                lines.Add(line);
+
+                Log(vin, "ServiceCampaignCreated",
+                    $"{campaign.CamMarketingNo} Đăng ký xe vào chiến dịch CSKH {campaign.CampaignName} ({campaign.CampaignType})");
+            }
+        }
+        else if (dto.Vins is { Count: > 0 })
+        {
+            foreach (var rawVin in dto.Vins)
+            {
+                if (string.IsNullOrWhiteSpace(rawVin)) continue;
+                var vin = rawVin.Trim().ToUpperInvariant();
+                if (targetVins.Contains(vin)) continue;
+                targetVins.Add(vin);
+
+                var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+                var line = new ServiceCampaignLine
+                {
+                    OrgId = Org,
+                    ServiceCampaignId = campaign.Id,
+                    CamMarketingNo = campaign.CamMarketingNo,
+                    DealerCode = v?.DealerCode ?? "DLR-MAIN",
+                    Vin = vin,
+                    Model = v?.Model,
+                    EngineNo = v?.EngineNo,
+                    PlateNo = v?.PlateNo,
+                    CustomerName = v?.OwnerName,
+                    CustomerPhone = v?.OwnerPhone,
+                    Status = "Pending",
+                    Remark = "Phân bổ theo danh sách xe VIN"
+                };
+                lines.Add(line);
+
+                Log(vin, "ServiceCampaignCreated",
+                    $"{campaign.CamMarketingNo} Đăng ký xe vào chiến dịch CSKH {campaign.CampaignName} ({campaign.CampaignType})");
+            }
+        }
+
+        if (lines.Count > 0)
+        {
+            db.ServiceCampaignLines.AddRange(lines);
+            await db.SaveChangesAsync();
+        }
+
+        campaign.TotalVehicleCount = lines.Count;
+        campaign.ActualAmount = lines.Sum(l => l.TotalDiscountAmount);
+        campaign.AttendedVehicleCount = lines.Count(l => l.Status is "Attended" or "Completed");
+        await db.SaveChangesAsync();
+
+        return (await GetServiceCampaignAsync(campaign.CamMarketingNo))!;
+    }
+
+    public async Task<object> ListServiceCampaignsAsync(string? status, string? dealer, string? campaignType, string? camMarketingNo, string? vin)
+    {
+        var q = db.ServiceCampaigns.Where(c => c.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(campaignType)) q = q.Where(c => c.CampaignType == campaignType);
+        if (!string.IsNullOrWhiteSpace(camMarketingNo))
+        {
+            var no = camMarketingNo.Trim().ToUpperInvariant();
+            q = q.Where(c => c.CamMarketingNo.Contains(no) || (c.CamMarketingNoUser != null && c.CamMarketingNoUser.Contains(no)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            var matchedNos = await db.ServiceCampaignLines
+                .Where(l => l.OrgId == Org && l.DealerCode == d)
+                .Select(l => l.CamMarketingNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(c => matchedNos.Contains(c.CamMarketingNo));
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.ServiceCampaignLines
+                .Where(l => l.OrgId == Org && l.Vin == v)
+                .Select(l => l.CamMarketingNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(c => matchedNos.Contains(c.CamMarketingNo));
+        }
+
+        var items = await q.OrderByDescending(c => c.Id).Take(500).Select(c => new
+        {
+            c.Id,
+            c.CamMarketingNo,
+            c.CamMarketingNoUser,
+            c.CampaignName,
+            c.CampaignType,
+            c.Model,
+            c.DateStart,
+            c.DateEnd,
+            c.DiscountLaborPercent,
+            c.DiscountPartPercent,
+            c.FreeInspectionItems,
+            c.GiftDescription,
+            c.BudgetAmount,
+            c.ActualAmount,
+            c.TotalVehicleCount,
+            c.AttendedVehicleCount,
+            c.Status,
+            c.Remark,
+            c.CreatedBy,
+            c.CreatedAt,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            c.CompletedBy,
+            c.CompletedAt,
+            c.CancelledBy,
+            c.CancelledAt,
+            c.CancelReason
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetServiceCampaignAsync(string camMarketingNo)
+    {
+        camMarketingNo = camMarketingNo.Trim().ToUpperInvariant();
+        var c = await db.ServiceCampaigns.FirstOrDefaultAsync(x => x.OrgId == Org && x.CamMarketingNo == camMarketingNo);
+        if (c is null) return null;
+
+        var lines = await db.ServiceCampaignLines
+            .Where(l => l.OrgId == Org && l.ServiceCampaignId == c.Id)
+            .OrderBy(l => l.Id)
+            .ToListAsync();
+
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles
+            .Where(v => v.OrgId == Org && vins.Contains(v.Vin))
+            .ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.CamMarketingNo,
+            l.DealerCode,
+            l.Vin,
+            l.Model,
+            l.EngineNo,
+            l.PlateNo,
+            l.CustomerName,
+            l.CustomerPhone,
+            l.ServiceDate,
+            l.RoNo,
+            l.DiscountLaborAmount,
+            l.DiscountPartAmount,
+            l.TotalDiscountAmount,
+            l.IsGiftDelivered,
+            l.GiftName,
+            l.Technician,
+            l.ServiceAdvisor,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.Model,
+                v.Color,
+                v.EngineNo,
+                status = v.Status.ToString(),
+                v.DealerCode,
+                v.OwnerName,
+                v.PlateNo,
+                v.LastRoNo,
+                v.LastRoDate,
+                v.LastOdoKm
+            } : null
+        }).ToList();
+
+        return new
+        {
+            c.Id,
+            c.CamMarketingNo,
+            c.CamMarketingNoUser,
+            c.CampaignName,
+            c.CampaignType,
+            c.Model,
+            c.DateStart,
+            c.DateEnd,
+            c.DiscountLaborPercent,
+            c.DiscountPartPercent,
+            c.FreeInspectionItems,
+            c.GiftDescription,
+            c.BudgetAmount,
+            c.ActualAmount,
+            c.TotalVehicleCount,
+            c.AttendedVehicleCount,
+            attendanceRatePercent = c.TotalVehicleCount > 0 ? Math.Round((decimal)c.AttendedVehicleCount / c.TotalVehicleCount * 100, 1) : 0,
+            c.Status,
+            c.Remark,
+            c.CreatedBy,
+            c.CreatedAt,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            c.CompletedBy,
+            c.CompletedAt,
+            c.CancelledBy,
+            c.CancelledAt,
+            c.CancelReason,
+            vins = details
+        };
+    }
+
+    public async Task<object?> UpdateServiceCampaignHeaderAsync(string camMarketingNo, UpdateServiceCampaignHeaderDto dto)
+    {
+        camMarketingNo = camMarketingNo.Trim().ToUpperInvariant();
+        var c = await db.ServiceCampaigns.FirstOrDefaultAsync(x => x.OrgId == Org && x.CamMarketingNo == camMarketingNo);
+        if (c is null) return null;
+
+        if (c.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Chiến dịch khuyến mãi {camMarketingNo} đã hoàn tất hoặc bị hủy, không thể sửa thông tin.");
+
+        if (dto.CamMarketingNoUser != null) c.CamMarketingNoUser = dto.CamMarketingNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CampaignName)) c.CampaignName = dto.CampaignName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CampaignType)) c.CampaignType = dto.CampaignType.Trim();
+        if (dto.Model != null) c.Model = dto.Model.Trim();
+        if (dto.DateStart.HasValue) c.DateStart = dto.DateStart.Value;
+        if (dto.DateEnd.HasValue) c.DateEnd = dto.DateEnd.Value;
+        if (dto.DiscountLaborPercent.HasValue) c.DiscountLaborPercent = dto.DiscountLaborPercent.Value;
+        if (dto.DiscountPartPercent.HasValue) c.DiscountPartPercent = dto.DiscountPartPercent.Value;
+        if (dto.FreeInspectionItems != null) c.FreeInspectionItems = dto.FreeInspectionItems.Trim();
+        if (dto.GiftDescription != null) c.GiftDescription = dto.GiftDescription.Trim();
+        if (dto.BudgetAmount.HasValue) c.BudgetAmount = dto.BudgetAmount.Value;
+        if (dto.Remark != null) c.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return await GetServiceCampaignAsync(camMarketingNo);
+    }
+
+    public async Task<object?> ServiceCampaignTransitionAsync(string camMarketingNo, string action, ServiceCampaignTransitionDto? dto)
+    {
+        camMarketingNo = camMarketingNo.Trim().ToUpperInvariant();
+        var c = await db.ServiceCampaigns.FirstOrDefaultAsync(x => x.OrgId == Org && x.CamMarketingNo == camMarketingNo);
+        if (c is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.ServiceCampaignLines.Where(l => l.OrgId == Org && l.ServiceCampaignId == c.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+            case "request":
+                if (c.Status != "Draft") return null;
+                c.Status = "Submitted";
+                foreach (var v in vehicles) Log(v.Vin, "ServiceCampaignSubmitted", $"{camMarketingNo} Nộp duyệt chiến dịch CSKH {c.CampaignName}");
+                break;
+
+            case "approve":
+            case "activate":
+            case "active":
+                if (c.Status is not ("Draft" or "Submitted" or "Suspended")) return null;
+                c.Status = "Approved";
+                c.ApprovedBy = dto?.User ?? "ServiceDirector.HyundaiOEM";
+                c.ApprovedAt = now;
+                foreach (var l in lines)
+                {
+                    if (l.Status == "Pending") l.Status = "Registered";
+                }
+                foreach (var v in vehicles) Log(v.Vin, "ServiceCampaignApproved", $"{camMarketingNo} Kích hoạt chiến dịch CSKH {c.CampaignName}");
+                break;
+
+            case "start":
+            case "in-progress":
+            case "inprogress":
+                if (c.Status is not ("Approved" or "Draft" or "Submitted")) return null;
+                c.Status = "InProgress";
+                if (c.ApprovedAt is null) { c.ApprovedBy = dto?.User ?? "ServiceDirector.HyundaiOEM"; c.ApprovedAt = now; }
+                foreach (var v in vehicles) Log(v.Vin, "ServiceCampaignInProgress", $"{camMarketingNo} Bắt đầu triển khai chiến dịch {c.CampaignName}");
+                break;
+
+            case "complete":
+            case "finish":
+                if (c.Status is not ("Approved" or "InProgress")) return null;
+                c.Status = "Completed";
+                c.CompletedBy = dto?.User ?? "admin";
+                c.CompletedAt = now;
+                foreach (var v in vehicles) Log(v.Vin, "ServiceCampaignCompleted", $"{camMarketingNo} Tổng kết hoàn tất chiến dịch {c.CampaignName}");
+                break;
+
+            case "suspend":
+                if (c.Status is not ("Approved" or "InProgress")) return null;
+                c.Status = "Suspended";
+                break;
+
+            case "resume":
+                if (c.Status != "Suspended") return null;
+                c.Status = "InProgress";
+                break;
+
+            case "cancel":
+            case "reject":
+                if (c.Status is "Completed") return null;
+                c.Status = "Cancelled";
+                c.CancelledBy = dto?.User ?? "admin";
+                c.CancelledAt = now;
+                c.CancelReason = dto?.CancelReason ?? dto?.Note;
+                foreach (var l in lines)
+                {
+                    if (l.Status is not "Completed" and not "Attended") l.Status = "Waived";
+                }
+                foreach (var v in vehicles) Log(v.Vin, "ServiceCampaignCancelled", $"{camMarketingNo} Hủy bỏ chiến dịch {c.CampaignName}. Lý do: {c.CancelReason}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return await GetServiceCampaignAsync(camMarketingNo);
+    }
+
+    public async Task<object?> AttendServiceCampaignLineAsync(string camMarketingNo, string vin, AttendServiceCampaignLineDto dto)
+    {
+        camMarketingNo = camMarketingNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var c = await db.ServiceCampaigns.FirstOrDefaultAsync(x => x.OrgId == Org && x.CamMarketingNo == camMarketingNo);
+        if (c is null) return null;
+
+        if (c.Status is "Cancelled")
+            throw new InvalidOperationException($"Chiến dịch {camMarketingNo} đã bị hủy bỏ.");
+
+        var line = await db.ServiceCampaignLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ServiceCampaignId == c.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        var serviceDate = dto.ServiceDate ?? DateTime.Now;
+        line.ServiceDate = serviceDate;
+        if (!string.IsNullOrWhiteSpace(dto.RoNo)) line.RoNo = dto.RoNo.Trim();
+        if (dto.DiscountLaborAmount.HasValue) line.DiscountLaborAmount = dto.DiscountLaborAmount.Value;
+        else if (c.DiscountLaborPercent > 0 && line.DiscountLaborAmount == 0) line.DiscountLaborAmount = 100000m;
+
+        if (dto.DiscountPartAmount.HasValue) line.DiscountPartAmount = dto.DiscountPartAmount.Value;
+        else if (c.DiscountPartPercent > 0 && line.DiscountPartAmount == 0) line.DiscountPartAmount = 150000m;
+
+        line.TotalDiscountAmount = line.DiscountLaborAmount + line.DiscountPartAmount;
+
+        if (dto.IsGiftDelivered.HasValue) line.IsGiftDelivered = dto.IsGiftDelivered.Value;
+        if (!string.IsNullOrWhiteSpace(dto.GiftName)) line.GiftName = dto.GiftName.Trim();
+        else if (line.IsGiftDelivered && string.IsNullOrWhiteSpace(line.GiftName)) line.GiftName = c.GiftDescription;
+
+        if (!string.IsNullOrWhiteSpace(dto.Technician)) line.Technician = dto.Technician.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.ServiceAdvisor)) line.ServiceAdvisor = dto.ServiceAdvisor.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        line.Status = "Completed";
+
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle != null)
+        {
+            vehicle.LastCampaignNo = c.CamMarketingNo;
+            vehicle.LastCampaignDate = serviceDate;
+        }
+
+        var allLines = await db.ServiceCampaignLines.Where(l => l.OrgId == Org && l.ServiceCampaignId == c.Id).ToListAsync();
+        c.AttendedVehicleCount = allLines.Count(l => l.Status is "Attended" or "Completed");
+        c.ActualAmount = allLines.Sum(l => l.TotalDiscountAmount);
+
+        Log(vin, "ServiceCampaignAttended",
+            $"{c.CamMarketingNo} Đã vào xưởng hưởng ưu đãi chiến dịch {c.CampaignName} tại đại lý {line.DealerCode}. Ưu đãi: {line.TotalDiscountAmount:N0} VNĐ, Quà: {line.GiftName ?? "Có"}");
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> UpdateServiceCampaignLineAsync(string camMarketingNo, string vin, UpdateServiceCampaignLineDto dto)
+    {
+        camMarketingNo = camMarketingNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var c = await db.ServiceCampaigns.FirstOrDefaultAsync(x => x.OrgId == Org && x.CamMarketingNo == camMarketingNo);
+        if (c is null) return null;
+
+        if (c.Status is "Cancelled")
+            throw new InvalidOperationException($"Chiến dịch {camMarketingNo} đã bị hủy.");
+
+        var line = await db.ServiceCampaignLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ServiceCampaignId == c.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) line.DealerCode = dto.DealerCode.Trim();
+        if (dto.PlateNo != null) line.PlateNo = dto.PlateNo.Trim();
+        if (dto.CustomerName != null) line.CustomerName = dto.CustomerName.Trim();
+        if (dto.CustomerPhone != null) line.CustomerPhone = dto.CustomerPhone.Trim();
+        if (dto.ServiceDate.HasValue) line.ServiceDate = dto.ServiceDate.Value;
+        if (dto.RoNo != null) line.RoNo = dto.RoNo.Trim();
+        if (dto.DiscountLaborAmount.HasValue) line.DiscountLaborAmount = dto.DiscountLaborAmount.Value;
+        if (dto.DiscountPartAmount.HasValue) line.DiscountPartAmount = dto.DiscountPartAmount.Value;
+        line.TotalDiscountAmount = line.DiscountLaborAmount + line.DiscountPartAmount;
+
+        if (dto.IsGiftDelivered.HasValue) line.IsGiftDelivered = dto.IsGiftDelivered.Value;
+        if (dto.GiftName != null) line.GiftName = dto.GiftName.Trim();
+        if (dto.Technician != null) line.Technician = dto.Technician.Trim();
+        if (dto.ServiceAdvisor != null) line.ServiceAdvisor = dto.ServiceAdvisor.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.ServiceCampaignLines.Where(l => l.OrgId == Org && l.ServiceCampaignId == c.Id).ToListAsync();
+        c.AttendedVehicleCount = allLines.Count(l => l.Status is "Attended" or "Completed");
+        c.ActualAmount = allLines.Sum(l => l.TotalDiscountAmount);
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> AddServiceCampaignLinesAsync(string camMarketingNo, List<ServiceCampaignItemInputDto> items)
+    {
+        camMarketingNo = camMarketingNo.Trim().ToUpperInvariant();
+        var c = await db.ServiceCampaigns.FirstOrDefaultAsync(x => x.OrgId == Org && x.CamMarketingNo == camMarketingNo);
+        if (c is null) return null;
+
+        if (c.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Chiến dịch {camMarketingNo} đã hoàn tất hoặc bị hủy, không thể thêm xe.");
+
+        var existingVins = await db.ServiceCampaignLines
+            .Where(l => l.OrgId == Org && l.ServiceCampaignId == c.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var newLines = new List<ServiceCampaignLine>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Vin)) continue;
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            if (existingVins.Contains(vin) || newLines.Any(x => x.Vin == vin)) continue;
+
+            var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+            var line = new ServiceCampaignLine
+            {
+                OrgId = Org,
+                ServiceCampaignId = c.Id,
+                CamMarketingNo = c.CamMarketingNo,
+                DealerCode = !string.IsNullOrWhiteSpace(item.DealerCode) ? item.DealerCode.Trim() : (v?.DealerCode ?? "DLR-MAIN"),
+                Vin = vin,
+                Model = v?.Model,
+                EngineNo = v?.EngineNo,
+                PlateNo = !string.IsNullOrWhiteSpace(item.PlateNo) ? item.PlateNo.Trim() : v?.PlateNo,
+                CustomerName = !string.IsNullOrWhiteSpace(item.CustomerName) ? item.CustomerName.Trim() : v?.OwnerName,
+                CustomerPhone = !string.IsNullOrWhiteSpace(item.CustomerPhone) ? item.CustomerPhone.Trim() : v?.OwnerPhone,
+                RoNo = item.RoNo?.Trim(),
+                DiscountLaborAmount = item.DiscountLaborAmount ?? 0,
+                DiscountPartAmount = item.DiscountPartAmount ?? 0,
+                TotalDiscountAmount = (item.DiscountLaborAmount ?? 0) + (item.DiscountPartAmount ?? 0),
+                IsGiftDelivered = item.IsGiftDelivered ?? false,
+                GiftName = item.GiftName?.Trim() ?? (item.IsGiftDelivered == true ? c.GiftDescription : null),
+                Technician = item.Technician?.Trim(),
+                ServiceAdvisor = item.ServiceAdvisor?.Trim(),
+                Status = c.Status == "Approved" || c.Status == "InProgress" ? "Registered" : "Pending",
+                Remark = item.Remark?.Trim()
+            };
+            newLines.Add(line);
+
+            Log(vin, "ServiceCampaignLineAdded",
+                $"{c.CamMarketingNo} Bổ sung xe vào chiến dịch CSKH {c.CampaignName} tại đại lý {line.DealerCode}");
+        }
+
+        if (newLines.Count > 0)
+        {
+            db.ServiceCampaignLines.AddRange(newLines);
+            await db.SaveChangesAsync();
+        }
+
+        var allLines = await db.ServiceCampaignLines.Where(l => l.OrgId == Org && l.ServiceCampaignId == c.Id).ToListAsync();
+        c.TotalVehicleCount = allLines.Count;
+        c.AttendedVehicleCount = allLines.Count(l => l.Status is "Attended" or "Completed");
+        c.ActualAmount = allLines.Sum(l => l.TotalDiscountAmount);
+        await db.SaveChangesAsync();
+
+        return await GetServiceCampaignAsync(camMarketingNo);
+    }
+
+    public async Task<object?> RemoveServiceCampaignLineAsync(string camMarketingNo, string vin)
+    {
+        camMarketingNo = camMarketingNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var c = await db.ServiceCampaigns.FirstOrDefaultAsync(x => x.OrgId == Org && x.CamMarketingNo == camMarketingNo);
+        if (c is null) return null;
+
+        if (c.Status is "Completed")
+            throw new InvalidOperationException($"Chiến dịch {camMarketingNo} đã hoàn tất, không thể xóa dòng xe.");
+
+        var line = await db.ServiceCampaignLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ServiceCampaignId == c.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (line.Status is "Completed" or "Attended")
+            throw new InvalidOperationException($"Xe {vin} đã vào xưởng và hoàn tất ưu đãi chiến dịch, không thể xóa.");
+
+        db.ServiceCampaignLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ServiceCampaignLines.Where(l => l.OrgId == Org && l.ServiceCampaignId == c.Id).ToListAsync();
+        c.TotalVehicleCount = allLines.Count;
+        c.AttendedVehicleCount = allLines.Count(l => l.Status is "Attended" or "Completed");
+        c.ActualAmount = allLines.Sum(l => l.TotalDiscountAmount);
+
+        Log(vin, "ServiceCampaignLineRemoved", $"{camMarketingNo} Đã rút xe khỏi chiến dịch {c.CampaignName}");
+        await db.SaveChangesAsync();
+
+        return await GetServiceCampaignAsync(camMarketingNo);
+    }
+
+    public async Task<object?> GetVehicleCampaignInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var lines = await db.ServiceCampaignLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var camNos = lines.Select(l => l.CamMarketingNo).Distinct().ToList();
+        var campaigns = await db.ServiceCampaigns
+            .Where(c => c.OrgId == Org && camNos.Contains(c.CamMarketingNo))
+            .ToDictionaryAsync(c => c.CamMarketingNo);
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.EngineNo,
+            v.PlateNo,
+            v.OwnerName,
+            v.DealerCode,
+            status = v.Status.ToString(),
+            v.LastCampaignNo,
+            v.LastCampaignDate,
+            totalCampaigns = lines.Count,
+            completedCampaigns = lines.Count(l => l.Status == "Completed"),
+            totalSavedAmount = lines.Sum(l => l.TotalDiscountAmount),
+            campaigns = lines.Select(l =>
+            {
+                campaigns.TryGetValue(l.CamMarketingNo, out var c);
+                return new
+                {
+                    l.Id,
+                    l.CamMarketingNo,
+                    campaignName = c?.CampaignName,
+                    campaignType = c?.CampaignType,
+                    l.DealerCode,
+                    l.ServiceDate,
+                    l.RoNo,
+                    l.DiscountLaborAmount,
+                    l.DiscountPartAmount,
+                    l.TotalDiscountAmount,
+                    l.IsGiftDelivered,
+                    l.GiftName,
+                    l.Technician,
+                    l.ServiceAdvisor,
+                    lineStatus = l.Status,
+                    campaignStatus = c?.Status,
+                    remark = l.Remark
+                };
+            })
+        };
+    }
+
+    public async Task<object?> GetVehicleCampaignHistoryAsync(string vin)
+        => await GetVehicleCampaignInfoAsync(vin);
+
+    public async Task<object> GetServiceCampaignSummaryAsync()
+    {
+        var campaigns = await db.ServiceCampaigns.Where(c => c.OrgId == Org).ToListAsync();
+        var allLines = await db.ServiceCampaignLines.Where(l => l.OrgId == Org).ToListAsync();
+
+        var totalCampaigns = campaigns.Count;
+        var draftCount = campaigns.Count(c => c.Status == "Draft");
+        var submittedCount = campaigns.Count(c => c.Status == "Submitted");
+        var approvedCount = campaigns.Count(c => c.Status == "Approved");
+        var inProgressCount = campaigns.Count(c => c.Status == "InProgress");
+        var completedCount = campaigns.Count(c => c.Status == "Completed");
+        var suspendedCount = campaigns.Count(c => c.Status == "Suspended");
+        var cancelledCount = campaigns.Count(c => c.Status == "Cancelled");
+
+        var totalBudgetAmount = campaigns.Sum(c => c.BudgetAmount);
+        var totalActualAmount = campaigns.Sum(c => c.ActualAmount);
+        var totalVehicles = allLines.Count;
+        var attendedVehicles = allLines.Count(l => l.Status is "Attended" or "Completed");
+        var totalDiscountAmount = allLines.Sum(l => l.TotalDiscountAmount);
+
+        var byType = campaigns.GroupBy(c => c.CampaignType).Select(g => new
+        {
+            campaignType = g.Key,
+            count = g.Count(),
+            attendedVehicles = g.Sum(x => x.AttendedVehicleCount),
+            totalBudget = g.Sum(x => x.BudgetAmount),
+            totalActual = g.Sum(x => x.ActualAmount)
+        }).ToList();
+
+        var byDealer = allLines.GroupBy(l => l.DealerCode).Select(g => new
+        {
+            dealerCode = g.Key,
+            totalVehicles = g.Count(),
+            attendedVehicles = g.Count(x => x.Status is "Attended" or "Completed"),
+            totalDiscountAmount = g.Sum(x => x.TotalDiscountAmount)
+        }).ToList();
+
+        return new
+        {
+            totalCampaigns,
+            draftCount,
+            submittedCount,
+            approvedCount,
+            inProgressCount,
+            completedCount,
+            suspendedCount,
+            cancelledCount,
+            totalBudgetAmount,
+            totalActualAmount,
+            totalVehicles,
+            attendedVehicles,
+            attendanceRatePercent = totalVehicles > 0 ? Math.Round((decimal)attendedVehicles / totalVehicles * 100, 1) : 0,
+            totalDiscountAmount,
+            byType,
+            byDealer
         };
     }
 }

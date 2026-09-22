@@ -2096,6 +2096,119 @@ app.MapGet("/api/vehicles/{vin}/disbursement-history", async (string vin, IVehic
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Chiến dịch Dịch vụ & Khuyến mãi Hậu mãi xe ô tô (BizCarSv.CampaignMarketing / Ser_CampaignMarketing / ServiceCampaign) ----
+app.MapPost("/api/service-campaigns", async (CreateServiceCampaignDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.CampaignName))
+        return Results.BadRequest(new { error = "Cần tên chiến dịch khuyến mãi CampaignName." });
+    try { return Results.Ok(await svc.CreateServiceCampaignAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/service-campaigns", async (IVehicleService svc, string? status, string? dealer, string? campaignType, string? camMarketingNo, string? vin) =>
+    Results.Ok(await svc.ListServiceCampaignsAsync(status, dealer, campaignType, camMarketingNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/service-campaigns/summary", async (IVehicleService svc) =>
+    Results.Ok(await svc.GetServiceCampaignSummaryAsync())).RequireAuthorization();
+
+app.MapGet("/api/service-campaigns/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.GetServiceCampaignAsync(code);
+    return r is null ? Results.NotFound(new { code, error = "Không tìm thấy chiến dịch khuyến mãi dịch vụ." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/service-campaigns/{code}", async (string code, UpdateServiceCampaignHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServiceCampaignHeaderAsync(code, dto);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy chiến dịch khuyến mãi hoặc chiến dịch đã kết thúc/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-campaigns/{code}/{action}", async (string code, string action, ServiceCampaignTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "request" or "approve" or "activate" or "active" or "start" or "in-progress" or "inprogress" or "complete" or "finish" or "suspend" or "resume" or "cancel" or "reject"))
+        return Results.BadRequest(new { error = "action = submit|approve|start|complete|suspend|resume|cancel" });
+    try
+    {
+        var r = await svc.ServiceCampaignTransitionAsync(code, action, dto);
+        return r is null ? Results.NotFound(new { code, error = "Không thấy chiến dịch khuyến mãi hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-campaigns/{code}/lines/{vin}/attend", async (string code, string vin, AttendServiceCampaignLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.AttendServiceCampaignLineAsync(code, vin, dto);
+        return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong chiến dịch hoặc chiến dịch đã hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-campaigns/{code}/lines/{vin}/update", async (string code, string vin, UpdateServiceCampaignLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServiceCampaignLineAsync(code, vin, dto);
+        return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong chiến dịch hoặc chiến dịch đã hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/service-campaigns/{code}/lines/{vin}", async (string code, string vin, UpdateServiceCampaignLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServiceCampaignLineAsync(code, vin, dto);
+        return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong chiến dịch hoặc chiến dịch đã hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-campaigns/{code}/lines", async (string code, List<ServiceCampaignItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào chiến dịch khuyến mãi." });
+    try
+    {
+        var r = await svc.AddServiceCampaignLinesAsync(code, items);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy chiến dịch khuyến mãi hoặc chiến dịch đã kết thúc/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/service-campaigns/{code}/lines/{vin}", async (string code, string vin, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveServiceCampaignLineAsync(code, vin);
+        return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong chiến dịch hoặc chiến dịch đã kết thúc/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/campaign-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleCampaignInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/campaigns", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleCampaignHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/campaign-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleCampaignHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

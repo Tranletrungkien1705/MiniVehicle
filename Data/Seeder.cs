@@ -2084,6 +2084,142 @@ public static class Seeder
                 v2.LastDisbursementDate = dis1.DisbursementDate;
             }
         }
+
+        if (!await db.ServiceCampaigns.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var cam1 = new ServiceCampaign
+            {
+                OrgId = org,
+                CamMarketingNo = "CAM-2026-001",
+                CamMarketingNoUser = "KM/2026/03/HE-01",
+                CampaignName = "Chiến dịch Chăm sóc Toàn diện Xe Hyundai Đón Hè 2026 & Tri ân Khách hàng",
+                CampaignType = "SeasonalService",
+                Model = "All",
+                DateStart = DateTime.Now.AddDays(-15),
+                DateEnd = DateTime.Now.AddDays(45),
+                DiscountLaborPercent = 20,
+                DiscountPartPercent = 15,
+                FreeInspectionItems = "Miễn phí kiểm tra 20 hạng mục an toàn: Hệ thống phanh, lốp xe, điện áp ắc quy, mức dầu máy, nước làm mát động cơ, hệ thống điều hòa nhiệt độ cabin và quét chẩn đoán mã lỗi ECU/GDS-Mobile",
+                GiftDescription = "Ô dù cầm tay cao cấp Hyundai + Voucher khử khuẩn nội thất Nano Bạc",
+                BudgetAmount = 250000000m,
+                ActualAmount = 250000m,
+                TotalVehicleCount = 2,
+                AttendedVehicleCount = 1,
+                Status = "InProgress",
+                Remark = "Chương trình áp dụng tại tất cả Đại lý Ủy quyền Hyundai trên toàn quốc",
+                CreatedBy = "MarketingOEM.NguyenHaMy",
+                CreatedAt = DateTime.Now.AddDays(-16),
+                ApprovedBy = "AfterSalesDirector.PhamQuocBao",
+                ApprovedAt = DateTime.Now.AddDays(-15)
+            };
+            db.ServiceCampaigns.Add(cam1);
+            await db.SaveChangesAsync();
+
+            db.ServiceCampaignLines.AddRange(
+                new ServiceCampaignLine
+                {
+                    OrgId = org,
+                    ServiceCampaignId = cam1.Id,
+                    CamMarketingNo = cam1.CamMarketingNo,
+                    DealerCode = "DLR-HN01",
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    EngineNo = "G4LC0001",
+                    PlateNo = "30K-988.66",
+                    CustomerName = "Nguyễn Văn An",
+                    CustomerPhone = "0901234567",
+                    ServiceDate = DateTime.Now.AddDays(-6),
+                    RoNo = "RO-HN01-2026-0001",
+                    DiscountLaborAmount = 100000m,
+                    DiscountPartAmount = 150000m,
+                    TotalDiscountAmount = 250000m,
+                    IsGiftDelivered = true,
+                    GiftName = "Ô dù cầm tay cao cấp Hyundai",
+                    Technician = "KTV-Trưởng Phạm Văn Hưng",
+                    ServiceAdvisor = "CVDV Trần Quốc Tuấn",
+                    Status = "Completed",
+                    Remark = "Khách hàng đã nhận đủ ưu đãi giảm 20% công + 15% dầu nhớt và quà tặng tri ân"
+                },
+                new ServiceCampaignLine
+                {
+                    OrgId = org,
+                    ServiceCampaignId = cam1.Id,
+                    CamMarketingNo = cam1.CamMarketingNo,
+                    DealerCode = "DLR-HN01",
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    EngineNo = "G4FL0002",
+                    PlateNo = "30K-678.90",
+                    CustomerName = "Lê Thanh Bình",
+                    CustomerPhone = "0912345678",
+                    ServiceDate = null,
+                    RoNo = null,
+                    DiscountLaborAmount = 0,
+                    DiscountPartAmount = 0,
+                    TotalDiscountAmount = 0,
+                    IsGiftDelivered = false,
+                    GiftName = null,
+                    Technician = null,
+                    ServiceAdvisor = "CVDV Vũ Hồng Sơn",
+                    Status = "Registered",
+                    Remark = "Đã gửi tin nhắn SMS mời khách hàng mang xe vào xưởng làm dịch vụ"
+                }
+            );
+
+            var cam2 = new ServiceCampaign
+            {
+                OrgId = org,
+                CamMarketingNo = "CAM-2026-002",
+                CamMarketingNoUser = "KM/2026/03/SAFETY-02",
+                CampaignName = "Chiến dịch Miễn phí Kiểm tra Ắc quy & Hệ thống Lái Trợ lực Điện MDPS",
+                CampaignType = "SafetyCheck",
+                Model = "Accent 1.4 AT",
+                DateStart = DateTime.Now.AddDays(-5),
+                DateEnd = DateTime.Now.AddDays(25),
+                DiscountLaborPercent = 30,
+                DiscountPartPercent = 10,
+                FreeInspectionItems = "Kiểm tra đo dòng sạc/nạp bình ắc quy, kiểm tra lực siết khớp nối trục lái điện MDPS",
+                GiftDescription = "Bình nước giữ nhiệt inox Lock&Lock Hyundai Motorsport",
+                BudgetAmount = 120000000m,
+                ActualAmount = 0,
+                TotalVehicleCount = 1,
+                AttendedVehicleCount = 0,
+                Status = "Approved",
+                Remark = "Chiến dịch kiểm tra an toàn theo bản tin kỹ thuật TSB-2026-002",
+                CreatedBy = "TechnicalSupport.TranVanDuc",
+                CreatedAt = DateTime.Now.AddDays(-6),
+                ApprovedBy = "AfterSalesDirector.PhamQuocBao",
+                ApprovedAt = DateTime.Now.AddDays(-5)
+            };
+            db.ServiceCampaigns.Add(cam2);
+            await db.SaveChangesAsync();
+
+            db.ServiceCampaignLines.Add(
+                new ServiceCampaignLine
+                {
+                    OrgId = org,
+                    ServiceCampaignId = cam2.Id,
+                    CamMarketingNo = cam2.CamMarketingNo,
+                    DealerCode = "DLR-HN01",
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    EngineNo = "G4LC0001",
+                    PlateNo = "30K-988.66",
+                    CustomerName = "Nguyễn Văn An",
+                    CustomerPhone = "0901234567",
+                    Status = "Registered",
+                    Remark = "Đã lên danh sách xe ưu tiên kiểm tra"
+                }
+            );
+
+            var v1Vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Vehicle != null)
+            {
+                v1Vehicle.LastCampaignNo = cam1.CamMarketingNo;
+                v1Vehicle.LastCampaignDate = DateTime.Now.AddDays(-6);
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -2201,7 +2337,11 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastDisbursementNo\" text NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastDisbursementDate\" timestamp NULL",
             "CREATE TABLE IF NOT EXISTS public.\"BankDisbursements\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RQ_BankingTransNo\" text NOT NULL DEFAULT '', \"RQ_BankingTransNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"BankCode\" text NOT NULL DEFAULT 'VIETINBANK', \"BankName\" text NULL, \"BizResNumber\" text NULL, \"BeneficiaryAccountNo\" text NULL, \"BeneficiaryAccountName\" text NULL, \"BeneficiaryBankCode\" text NULL, \"DisbursementType\" text NOT NULL DEFAULT 'AutoLoan', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalCollateralValue\" numeric NOT NULL DEFAULT 0, \"DisbursementRate\" numeric NOT NULL DEFAULT 80, \"TotalDisbursementAmount\" numeric NOT NULL DEFAULT 0, \"DisbursedAmount\" numeric NOT NULL DEFAULT 0, \"BkTransStatus\" text NOT NULL DEFAULT 'Draft', \"BkTransBankStatus\" text NOT NULL DEFAULT 'Pending', \"RefBankCode\" text NULL, \"DisbursementDate\" timestamp NULL, \"BankRemark\" text NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"PushedBy\" text NULL, \"PushedAt\" timestamp NULL, \"DisbursedBy\" text NULL, \"DisbursedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"BankDisbursementLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"BankDisbursementId\" bigint NOT NULL, \"RQ_BankingTransNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"InvoiceNo\" text NULL, \"InvoiceDate\" timestamp NULL, \"GuaranteeNo\" text NULL, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"CollateralValue\" numeric NOT NULL DEFAULT 0, \"DisbursementPercent\" numeric NOT NULL DEFAULT 80, \"DisbursementAmount\" numeric NOT NULL DEFAULT 0, \"DisbursedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"BankDisbursementLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"BankDisbursementId\" bigint NOT NULL, \"RQ_BankingTransNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"InvoiceNo\" text NULL, \"InvoiceDate\" timestamp NULL, \"GuaranteeNo\" text NULL, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"CollateralValue\" numeric NOT NULL DEFAULT 0, \"DisbursementPercent\" numeric NOT NULL DEFAULT 80, \"DisbursementAmount\" numeric NOT NULL DEFAULT 0, \"DisbursedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCampaignNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCampaignDate\" timestamp NULL",
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceCampaigns\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CamMarketingNo\" text NOT NULL DEFAULT '', \"CamMarketingNoUser\" text NULL, \"CampaignName\" text NOT NULL DEFAULT '', \"CampaignType\" text NOT NULL DEFAULT 'SeasonalService', \"Model\" text NULL, \"DateStart\" timestamp NOT NULL DEFAULT now(), \"DateEnd\" timestamp NOT NULL DEFAULT now(), \"DiscountLaborPercent\" numeric NOT NULL DEFAULT 0, \"DiscountPartPercent\" numeric NOT NULL DEFAULT 0, \"FreeInspectionItems\" text NULL, \"GiftDescription\" text NULL, \"BudgetAmount\" numeric NOT NULL DEFAULT 0, \"ActualAmount\" numeric NOT NULL DEFAULT 0, \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"AttendedVehicleCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceCampaignLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceCampaignId\" bigint NOT NULL, \"CamMarketingNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NULL, \"CustomerPhone\" text NULL, \"ServiceDate\" timestamp NULL, \"RoNo\" text NULL, \"DiscountLaborAmount\" numeric NOT NULL DEFAULT 0, \"DiscountPartAmount\" numeric NOT NULL DEFAULT 0, \"TotalDiscountAmount\" numeric NOT NULL DEFAULT 0, \"IsGiftDelivered\" boolean NOT NULL DEFAULT false, \"GiftName\" text NULL, \"Technician\" text NULL, \"ServiceAdvisor\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

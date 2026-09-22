@@ -61,6 +61,8 @@ public sealed class Vehicle
     public DateTime? LastBulletinDate { get; set; } // Ngày thực hiện hoàn tất bản tin kỹ thuật gần nhất
     public string? LastDisbursementNo { get; set; } // Mã giao dịch giải ngân ngân hàng gần nhất (RQ_BankingTransactions / BankDisbursement)
     public DateTime? LastDisbursementDate { get; set; } // Ngày ngân hàng giải ngân gần nhất
+    public string? LastCampaignNo { get; set; }     // Mã chiến dịch dịch vụ / CSKH gần nhất tham gia (Ser_CampaignMarketing / ServiceCampaign)
+    public DateTime? LastCampaignDate { get; set; } // Ngày tham gia chiến dịch dịch vụ gần nhất
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -1779,6 +1781,66 @@ public sealed class BankDisbursementLine
     public decimal DisbursementAmount { get; set; } = 0;   // Số tiền đề nghị giải ngân xe này (VNĐ) = CollateralValue * DisbursementPercent / 100
     public decimal DisbursedAmount { get; set; } = 0;      // Số tiền ngân hàng đã giải ngân thực tế cho xe này (VNĐ)
     public string Status { get; set; } = "Pending";        // Pending → Approved → Disbursed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Chiến dịch Dịch vụ &amp; Khuyến mãi Hậu mãi xe ô tô (BizCarSv.CampaignMarketing / Ser_CampaignMarketing / ServiceCampaign): hãng xe OEM hoặc đại lý phát hành các chiến dịch bảo dưỡng, kiểm tra miễn phí, giảm giá dầu mỡ/phụ tùng và tặng quà tri ân khách hàng theo mùa vụ hoặc dải VIN.</summary>
+public sealed class ServiceCampaign
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string CamMarketingNo { get; set; } = "";         // Mã chiến dịch khuyến mãi (CAM-2026-001...)
+    public string? CamMarketingNoUser { get; set; }        // Mã chiến dịch nội bộ / tham chiếu
+    public string CampaignName { get; set; } = "";           // Tên chiến dịch dịch vụ & CSKH
+    public string CampaignType { get; set; } = "SeasonalService"; // SeasonalService (Chăm sóc xe mùa hè/mùa đông/Tết), FreeCheckup (Kiểm tra miễn phí 20 hạng mục), DiscountOilParts (Khuyến mại dầu nhớt phụ tùng), CustomerCare (Tri ân khách hàng), SafetyCheck (Chiến dịch an toàn kỹ thuật), RecallRelated (Hỗ trợ triệu hồi)
+    public string? Model { get; set; }                      // Dòng xe áp dụng (All, SantaFe, Tucson, Accent, Creta, Grand i10...)
+    public DateTime DateStart { get; set; } = DateTime.Now; // Ngày bắt đầu chiến dịch
+    public DateTime DateEnd { get; set; } = DateTime.Now.AddDays(30); // Ngày kết thúc chiến dịch
+    public decimal DiscountLaborPercent { get; set; } = 0;   // % giảm giá tiền công bảo dưỡng/sửa chữa (VD: 20% = 20)
+    public decimal DiscountPartPercent { get; set; } = 0;    // % giảm giá phụ tùng tiêu hao & dầu nhớt (VD: 15% = 15)
+    public string? FreeInspectionItems { get; set; }         // Danh mục hạng mục kiểm tra kỹ thuật miễn phí (20 hạng mục an toàn, ắc quy, phanh, lốp...)
+    public string? GiftDescription { get; set; }             // Quà tặng tri ân kèm theo (Ô dù cao cấp Hyundai, Bình nước Lock&Lock, Gối tựa đầu, Nước hoa xe hơi...)
+    public decimal BudgetAmount { get; set; } = 0;           // Ngân sách dự toán cho chiến dịch (VNĐ)
+    public decimal ActualAmount { get; set; } = 0;           // Tổng chi phí ưu đãi thực tế đã chi trả cho khách hàng (VNĐ)
+    public int TotalVehicleCount { get; set; } = 0;          // Tổng số lượng xe trong danh sách chiến dịch
+    public int AttendedVehicleCount { get; set; } = 0;       // Số lượng xe đã thực tế vào xưởng tham gia hưởng ưu đãi
+    public string Status { get; set; } = "Draft";            // Draft → Approved / Active → InProgress → Completed (hoặc Suspended / Cancelled)
+    public string? Remark { get; set; }                      // Ghi chú / điều kiện áp dụng chiến dịch
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                  // Lãnh đạo dịch vụ / Marketing OEM duyệt ban hành
+    public DateTime? ApprovedAt { get; set; }
+    public string? CompletedBy { get; set; }                 // Người đóng / tổng kết chiến dịch
+    public DateTime? CompletedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe &amp; Đại lý tham gia trong Chiến dịch dịch vụ (BizCarSv.CampaignMarketing / Ser_CampaignMarketingLine / ServiceCampaignLine): danh sách số khung VIN, thông tin khách hàng, số RO xưởng phát sinh, tiền ưu đãi công &amp; phụ tùng, quà tặng đã trao và trạng thái hoàn tất.</summary>
+public sealed class ServiceCampaignLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ServiceCampaignId { get; set; }
+    public string CamMarketingNo { get; set; } = "";
+    public string DealerCode { get; set; } = "";             // Đại lý thực hiện tiếp nhận xe
+    public string Vin { get; set; } = "";                    // Số khung VIN
+    public string? Model { get; set; }
+    public string? EngineNo { get; set; }
+    public string? PlateNo { get; set; }                     // Biển số xe vào xưởng
+    public string? CustomerName { get; set; }                // Tên khách hàng
+    public string? CustomerPhone { get; set; }               // SĐT liên hệ
+    public DateTime? ServiceDate { get; set; }               // Thời điểm xe vào xưởng làm dịch vụ
+    public string? RoNo { get; set; }                        // Mã Lệnh sửa chữa xưởng liên kết (Ser_RO / RepairOrder)
+    public decimal DiscountLaborAmount { get; set; } = 0;    // Tiền công bảo dưỡng được giảm (VNĐ)
+    public decimal DiscountPartAmount { get; set; } = 0;     // Tiền phụ tùng & dầu nhờn được giảm (VNĐ)
+    public decimal TotalDiscountAmount { get; set; } = 0;    // Tổng tiền ưu đãi giảm giá = DiscountLaborAmount + DiscountPartAmount
+    public bool IsGiftDelivered { get; set; } = false;       // Đã trao quà tặng tri ân cho khách
+    public string? GiftName { get; set; }                    // Tên quà tặng đã trao
+    public string? Technician { get; set; }                  // Kỹ thuật viên trực tiếp thực hiện
+    public string? ServiceAdvisor { get; set; }              // Cố vấn dịch vụ tiếp đón
+    public string Status { get; set; } = "Pending";          // Pending → Registered → Attended → Completed (hoặc Waived)
     public string? Remark { get; set; }
 }
 

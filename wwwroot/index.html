@@ -145,6 +145,14 @@
 <li><code>POST /api/bank-disbursements/{transNo}/lines/{vin}/update</code> — điều chỉnh đơn giá xe, định giá thế chấp, tỷ lệ và số tiền giải ngân theo từng xe VIN</li>
 <li><code>POST /api/bank-disbursements/{transNo}/lines</code> &amp; <code>DELETE /api/bank-disbursements/{transNo}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong hồ sơ đề nghị giải ngân</li>
 <li><code>GET /api/vehicles/{vin}/disbursement-info</code> &amp; <code>/api/vehicles/{vin}/disbursement-history</code> — tra cứu toàn bộ hồ sơ và lịch sử giải ngân ngân hàng của số khung VIN</li>
+<li><code>POST /api/service-campaigns</code> &amp; <code>/api/service-campaigns/{code}/{action}</code> — tạo, nộp, kích hoạt phê duyệt, triển khai &amp; tổng kết hoàn tất Chiến dịch Dịch vụ &amp; Khuyến mãi Hậu mãi xe ô tô (BizCarSv.CampaignMarketing / Ser_CampaignMarketing / ServiceCampaign: submit, approve/activate, start, complete, suspend, resume, cancel)</li>
+<li><code>GET /api/service-campaigns?status=&amp;dealer=&amp;campaignType=&amp;camMarketingNo=&amp;vin=</code> — tra cứu danh sách chiến dịch dịch vụ &amp; khuyến mãi CSKH (SeasonalService, FreeCheckup, DiscountOilParts, CustomerCare, SafetyCheck...)</li>
+<li><code>GET /api/service-campaigns/summary</code> — báo cáo tổng hợp chiến dịch dịch vụ theo trạng thái, loại chương trình, tỷ lệ xe vào xưởng và tổng ngân sách ưu đãi</li>
+<li><code>PUT /api/service-campaigns/{code}</code> — điều chỉnh tên chiến dịch, thời gian bắt đầu/kết thúc, % giảm giá công/phụ tùng, danh mục kiểm tra miễn phí và quà tặng</li>
+<li><code>POST /api/service-campaigns/{code}/lines/{vin}/attend</code> — đại lý ghi nhận xe vào xưởng hưởng ưu đãi chiến dịch (chiết khấu tiền công, tiền phụ tùng, quà tặng tri ân, KTV/CVDV và liên kết RO xưởng)</li>
+<li><code>POST /api/service-campaigns/{code}/lines/{vin}/update</code> — cập nhật thông tin dòng xe trong chiến dịch khuyến mãi</li>
+<li><code>POST /api/service-campaigns/{code}/lines</code> &amp; <code>DELETE /api/service-campaigns/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong danh sách chiến dịch khuyến mãi</li>
+<li><code>GET /api/vehicles/{vin}/campaign-info</code> &amp; <code>GET /api/vehicles/{vin}/campaign-history</code> — tra cứu toàn bộ lịch sử các chiến dịch dịch vụ áp dụng và đã tham gia của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>
