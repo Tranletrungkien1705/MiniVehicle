@@ -63,6 +63,9 @@ public sealed class Vehicle
     public DateTime? LastDisbursementDate { get; set; } // Ngày ngân hàng giải ngân gần nhất
     public string? LastCampaignNo { get; set; }     // Mã chiến dịch dịch vụ / CSKH gần nhất tham gia (Ser_CampaignMarketing / ServiceCampaign)
     public DateTime? LastCampaignDate { get; set; } // Ngày tham gia chiến dịch dịch vụ gần nhất
+    public string? LastWarrantyReportNo { get; set; } // Mã báo cáo bảo hành gần nhất (Ser_ROWarrantyReport / WarrantyReport)
+    public DateTime? LastWarrantyReportDate { get; set; } // Ngày báo cáo bảo hành gần nhất
+    public int WarrantyClaimCount { get; set; } = 0;   // Tổng số lần xe đã phát sinh yêu cầu bảo hành chính hãng
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -1841,6 +1844,108 @@ public sealed class ServiceCampaignLine
     public string? Technician { get; set; }                  // Kỹ thuật viên trực tiếp thực hiện
     public string? ServiceAdvisor { get; set; }              // Cố vấn dịch vụ tiếp đón
     public string Status { get; set; } = "Pending";          // Pending → Registered → Attended → Completed (hoặc Waived)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Báo cáo & Quyết toán Bảo hành xe ô tô OEM / Đại lý ủy quyền (BizCarSv.WarrantyReport / Ser_ROWarrantyReport / WarrantyReport): quản lý lập hồ sơ đề nghị hãng OEM thanh toán chi phí bảo hành (tiền công + phụ tùng thay mới) theo lệnh sửa chữa xưởng RO, quy trình thẩm định kỹ thuật, mã bản chất hư hỏng, mã nguyên nhân gốc, phê duyệt duyệt chi và quyết toán bù trừ công nợ.</summary>
+public sealed class WarrantyReport
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ROWNo { get; set; } = "";             // Mã số báo cáo bảo hành (WR-HN01-2026-0001...)
+    public string? ROWNoUser { get; set; }            // Số báo cáo bảo hành nội bộ / tham chiếu đại lý
+    public string DealerCode { get; set; } = "";       // Mã đại lý ủy quyền lập báo cáo
+    public string? DealerName { get; set; }            // Tên đại lý
+    public string? RoNo { get; set; }                  // Số Lệnh sửa chữa xưởng liên quan (Ser_RO / RepairOrder)
+    public string Vin { get; set; } = "";              // Số khung VIN bảo hành
+    public string? PlateNo { get; set; }               // Biển số xe
+    public string Model { get; set; } = "";            // Dòng xe
+    public string? EngineNo { get; set; }              // Số máy
+    public int OdoKm { get; set; } = 0;                // Số km ODO lúc phát sinh sự cố hư hỏng
+    public DateTime CheckInDate { get; set; } = DateTime.Now; // Ngày tiếp nhận / phát sinh hư hỏng
+    public DateTime? StartDate { get; set; }           // Ngày bắt đầu thực hiện bảo hành
+    public DateTime? FinishedDate { get; set; }        // Ngày sửa chữa thay thế bảo hành hoàn tất
+    public DateTime? WarrantyStartDate { get; set; }   // Ngày bắt đầu bảo hành xe
+    public DateTime? WarrantyEndDate { get; set; }     // Ngày hết hạn bảo hành xe
+    public int WarrantyMonths { get; set; } = 36;      // Thời hạn bảo hành tiêu chuẩn (tháng)
+    public string? CusName { get; set; }               // Tên khách hàng / chủ xe
+    public string? CusTel { get; set; }                // SĐT chủ xe
+    public string? CusAddress { get; set; }            // Địa chỉ chủ xe
+    public string? CusRequest { get; set; }            // Hiện tượng hư hỏng / Triệu chứng phàn nàn của khách
+    public string? DiagnosticResult { get; set; }      // Kết quả chẩn đoán kỹ thuật của đại lý
+    public string NaturalCode { get; set; } = "C01";   // Phân loại bản chất hư hỏng: C01 (Cháy hỏng), C02 (Rò rỉ), C03 (Nứt vỡ/Biến dạng), C04 (Lỗi điện tử/Cảm biến), C05 (Tiếng kêu bất thường), C06 (Mòn sớm)
+    public string CauseCode { get; set; } = "M01";     // Phân loại nguyên nhân gốc: M01 (Khuyết tật vật liệu), M02 (Lỗi lắp ráp nhà máy), M03 (Khiếm khuyết thiết kế), M04 (Ăn mòn tự nhiên), M05 (Lỗi linh kiện Tier-1)
+    public string? MainPartCode { get; set; }          // Mã phụ tùng chính gây hư hỏng (Causal Part)
+    public string? MainPartName { get; set; }          // Tên phụ tùng chính gây hư hỏng
+    public string WarrantyType { get; set; } = "Standard"; // Standard (Bảo hành tiêu chuẩn), Campaign (Bảo hành theo chiến dịch), GoodWill (Bảo hành thiện chí), Extended (Bảo hành mở rộng)
+    public decimal TotalLaborAmount { get; set; } = 0; // Tổng tiền công đại lý đề nghị bồi hoàn (VNĐ)
+    public decimal TotalPartAmount { get; set; } = 0;  // Tổng tiền phụ tùng đại lý đề nghị bồi hoàn (VNĐ)
+    public decimal TotalAmount { get; set; } = 0;      // Tổng chi phí bảo hành đề nghị = TotalLaborAmount + TotalPartAmount (VNĐ)
+    public decimal ApprovedLaborAmount { get; set; } = 0; // Tiền công OEM duyệt chi trả (VNĐ)
+    public decimal ApprovedPartAmount { get; set; } = 0;  // Tiền phụ tùng OEM duyệt chi trả (VNĐ)
+    public decimal ApprovedTotalAmount { get; set; } = 0; // Tổng tiền bảo hành OEM duyệt quyết toán = ApprovedLaborAmount + ApprovedPartAmount (VNĐ)
+    public decimal ReimbursedAmount { get; set; } = 0; // Tiền thực tế đã thanh toán bù trừ cho đại lý (VNĐ)
+    public DateTime? ReimburseDate { get; set; }       // Ngày thực hiện chi trả / hạch toán bù trừ
+    public string? AccountingRefNo { get; set; }       // Số chứng từ hạch toán bù trừ công nợ ERP
+    public string OldPartsInspectionStatus { get; set; } = "PendingReturn"; // PendingReturn (Chờ trả về OEM), Inspected (Đã nghiệm thu xác phụ tùng), ReturnedToFactory (Đã về kho bảo hành OEM), ScrappedOnSite (Hủy tại chỗ có giám sát), Waived (Miễn thu hồi)
+    public string Status { get; set; } = "Draft";      // Draft → Submitted → Confirmed → Approved → Settled (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                // Ghi chú điều hành bảo hành
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ConfirmedBy { get; set; }           // Kỹ thuật viên/Cố vấn kỹ thuật OEM sơ duyệt
+    public DateTime? ConfirmedAt { get; set; }
+    public string? ApprovedBy { get; set; }            // Lãnh đạo Phòng Dịch vụ/Bảo hành OEM duyệt quyết toán
+    public DateTime? ApprovedAt { get; set; }
+    public string? SettledBy { get; set; }             // Kế toán OEM hạch toán chi trả
+    public DateTime? SettledAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết hạng mục công việc bảo hành (BizCarSv.WarrantyReport / Ser_ROWarrantyReportServiceItems / WarrantyReportLaborLine): mã công việc, tên dịch vụ bảo hành, giờ công định mức OEM, tiền công đề nghị và tiền công OEM duyệt chi trả.</summary>
+public sealed class WarrantyReportLaborLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long WarrantyReportId { get; set; }
+    public string ROWNo { get; set; } = "";
+    public string SerCode { get; set; } = "";          // Mã công việc sửa chữa/thay thế bảo hành (BH-THAY-LOC, BH-THAY-HOP-SO, BH-THAY-THUOC-LAI...)
+    public string SerName { get; set; } = "";          // Tên hạng mục công việc bảo hành
+    public decimal StdManHour { get; set; } = 1.0m;    // Giờ công định mức (Flat Rate OEM)
+    public decimal LaborPrice { get; set; } = 300000m; // Đơn giá 1 giờ công bảo hành hãng quy định (VNĐ)
+    public decimal LaborAmount { get; set; } = 300000m;// Tiền công đề nghị = StdManHour * LaborPrice (VNĐ)
+    public decimal ApprovedManHour { get; set; } = 1.0m; // Số giờ công OEM thẩm định duyệt
+    public decimal ApprovedLaborAmount { get; set; } = 300000m; // Tiền công OEM duyệt chi trả (VNĐ)
+    public string? Technician { get; set; }            // KTV thực hiện xử lý
+    public string Status { get; set; } = "Pending";    // Pending → Approved → Settled (hoặc Rejected)
+    public string? RejectReason { get; set; }
+    public string? Remark { get; set; }
+}
+
+/// <summary>Chi tiết phụ tùng bảo hành thay thế (BizCarSv.WarrantyReport / Ser_ROWarrantyReportPartItems / WarrantyReportPartLine): mã phụ tùng Mobis/OEM, số lượng, đơn giá, số tiền đề nghị, số lượng & tiền OEM duyệt và tình trạng thu hồi xác linh kiện cũ.</summary>
+public sealed class WarrantyReportPartLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long WarrantyReportId { get; set; }
+    public string ROWNo { get; set; } = "";
+    public string PartCode { get; set; } = "";         // Mã phụ tùng chính hãng Mobis/OEM (26300-35505, 56500-D3000...)
+    public string PartName { get; set; } = "";         // Tên phụ tùng thay mới bảo hành
+    public string Unit { get; set; } = "Cái";          // Đơn vị tính: Cái, Bình, Bộ, Hộp...
+    public decimal Quantity { get; set; } = 1;         // Số lượng phụ tùng thay thế đề nghị bồi hoàn
+    public decimal UnitPrice { get; set; } = 0;        // Đơn giá phụ tùng bảo hành xuất hãng (VNĐ)
+    public decimal TotalAmount { get; set; } = 0;      // Tiền phụ tùng đề nghị = Quantity * UnitPrice (VNĐ)
+    public decimal ApprovedQty { get; set; } = 1;      // Số lượng phụ tùng OEM duyệt bồi hoàn
+    public decimal ApprovedAmount { get; set; } = 0;   // Tiền phụ tùng OEM duyệt bồi hoàn = ApprovedQty * UnitPrice (VNĐ)
+    public bool IsMainPart { get; set; } = false;      // Là phụ tùng chính gây ra hỏng hóc (Causal Part)
+    public string? OldPartSerialNo { get; set; }       // Số serial / mã barcode linh kiện cũ hỏng
+    public string OldPartReturnStatus { get; set; } = "PendingReturn"; // PendingReturn (Chờ trả về OEM), Returned (Đã nhập kho linh kiện lỗi OEM), ScrappedOnSite (Hủy tại đại lý), Waived (Miễn thu hồi)
+    public string Status { get; set; } = "Pending";    // Pending → Approved → Settled (hoặc Rejected)
+    public string? RejectReason { get; set; }
     public string? Remark { get; set; }
 }
 

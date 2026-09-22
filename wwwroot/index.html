@@ -153,6 +153,13 @@
 <li><code>POST /api/service-campaigns/{code}/lines/{vin}/update</code> — cập nhật thông tin dòng xe trong chiến dịch khuyến mãi</li>
 <li><code>POST /api/service-campaigns/{code}/lines</code> &amp; <code>DELETE /api/service-campaigns/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong danh sách chiến dịch khuyến mãi</li>
 <li><code>GET /api/vehicles/{vin}/campaign-info</code> &amp; <code>GET /api/vehicles/{vin}/campaign-history</code> — tra cứu toàn bộ lịch sử các chiến dịch dịch vụ áp dụng và đã tham gia của số khung VIN</li>
+<li><code>POST /api/warranty-reports</code> &amp; <code>/api/warranty-reports/{rowNo}/{action}</code> — lập hồ sơ, sơ duyệt, phê duyệt quyết toán &amp; hạch toán chi trả Báo cáo Bảo hành xe ô tô giữa Hãng OEM và Đại lý (BizCarSv.WarrantyReport / Ser_ROWarrantyReport / WarrantyReport: submit, confirm, approve, settle, reject, cancel)</li>
+<li><code>GET /api/warranty-reports?status=&amp;dealer=&amp;vin=&amp;plateNo=&amp;rowNo=&amp;warrantyType=&amp;causeCode=&amp;naturalCode=</code> — tra cứu danh sách báo cáo quyết toán bảo hành chính hãng (Standard, Campaign, GoodWill, Extended)</li>
+<li><code>GET /api/warranty-reports/summary</code> — báo cáo tổng hợp quyết toán bảo hành OEM theo trạng thái, loại bảo hành, nguyên nhân hư hỏng, bản chất khiếm khuyết và đại lý</li>
+<li><code>PUT /api/warranty-reports/{rowNo}</code> — điều chỉnh thông tin triệu chứng hư hỏng, kết quả chẩn đoán kỹ thuật, phụ tùng chính và mã lỗi</li>
+<li><code>POST /api/warranty-reports/{rowNo}/labor-lines/{lineId}/update</code> &amp; <code>POST /api/warranty-reports/{rowNo}/labor-lines</code> &amp; <code>DELETE /api/warranty-reports/{rowNo}/labor-lines/{lineId}</code> — thêm, sửa, thẩm định giờ công duyệt và xóa hạng mục công việc bảo hành (Labor)</li>
+<li><code>POST /api/warranty-reports/{rowNo}/part-lines/{lineId}/update</code> &amp; <code>POST /api/warranty-reports/{rowNo}/part-lines</code> &amp; <code>DELETE /api/warranty-reports/{rowNo}/part-lines/{lineId}</code> — thêm, sửa, thẩm định số lượng phụ tùng duyệt bồi hoàn và theo dõi thu hồi xác linh kiện hỏng về kho OEM</li>
+<li><code>GET /api/vehicles/{vin}/warranty-reports</code> &amp; <code>GET /api/vehicles/{vin}/warranty-history</code> — tra cứu toàn bộ lịch sử các lần lập hồ sơ bảo hành, chi phí bồi hoàn và xác phụ tùng thu hồi của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

@@ -1222,6 +1222,129 @@ public record AttendServiceCampaignLineDto(
     string? Remark = null
 );
 
+public record WarrantyReportLaborItemInputDto(
+    string SerCode,
+    string SerName,
+    decimal StdManHour = 1.0m,
+    decimal LaborPrice = 300000m,
+    decimal? LaborAmount = null,
+    decimal? ApprovedManHour = null,
+    decimal? ApprovedLaborAmount = null,
+    string? Technician = null,
+    string? Remark = null
+);
+
+public record WarrantyReportPartItemInputDto(
+    string PartCode,
+    string PartName,
+    string? Unit = "Cái",
+    decimal Quantity = 1,
+    decimal UnitPrice = 0,
+    decimal? TotalAmount = null,
+    decimal? ApprovedQty = null,
+    decimal? ApprovedAmount = null,
+    bool IsMainPart = false,
+    string? OldPartSerialNo = null,
+    string? OldPartReturnStatus = "PendingReturn",
+    string? Remark = null
+);
+
+public record CreateWarrantyReportDto(
+    string DealerCode,
+    string Vin,
+    List<WarrantyReportLaborItemInputDto>? LaborItems = null,
+    List<WarrantyReportPartItemInputDto>? PartItems = null,
+    string? ROWNo = null,
+    string? ROWNoUser = null,
+    string? DealerName = null,
+    string? RoNo = null,
+    string? PlateNo = null,
+    string? Model = null,
+    string? EngineNo = null,
+    int OdoKm = 0,
+    DateTime? CheckInDate = null,
+    DateTime? StartDate = null,
+    DateTime? FinishedDate = null,
+    string? CusName = null,
+    string? CusTel = null,
+    string? CusAddress = null,
+    string? CusRequest = null,
+    string? DiagnosticResult = null,
+    string? NaturalCode = "C01",
+    string? CauseCode = "M01",
+    string? MainPartCode = null,
+    string? MainPartName = null,
+    string? WarrantyType = "Standard",
+    string? OldPartsInspectionStatus = "PendingReturn",
+    string? Remark = null,
+    string? CreatedBy = null
+);
+
+public record UpdateWarrantyReportHeaderDto(
+    string? ROWNoUser = null,
+    string? DealerName = null,
+    string? RoNo = null,
+    string? PlateNo = null,
+    int? OdoKm = null,
+    DateTime? CheckInDate = null,
+    DateTime? StartDate = null,
+    DateTime? FinishedDate = null,
+    string? CusName = null,
+    string? CusTel = null,
+    string? CusAddress = null,
+    string? CusRequest = null,
+    string? DiagnosticResult = null,
+    string? NaturalCode = null,
+    string? CauseCode = null,
+    string? MainPartCode = null,
+    string? MainPartName = null,
+    string? WarrantyType = null,
+    string? OldPartsInspectionStatus = null,
+    string? Remark = null
+);
+
+public record WarrantyReportTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? AccountingRefNo = null,
+    decimal? ReimbursedAmount = null,
+    DateTime? ReimburseDate = null,
+    string? OldPartsInspectionStatus = null,
+    string? RejectReason = null,
+    string? CancelReason = null
+);
+
+public record UpdateWarrantyReportLaborLineDto(
+    string? SerCode = null,
+    string? SerName = null,
+    decimal? StdManHour = null,
+    decimal? LaborPrice = null,
+    decimal? LaborAmount = null,
+    decimal? ApprovedManHour = null,
+    decimal? ApprovedLaborAmount = null,
+    string? Technician = null,
+    string? Status = null,
+    string? RejectReason = null,
+    string? Remark = null
+);
+
+public record UpdateWarrantyReportPartLineDto(
+    string? PartCode = null,
+    string? PartName = null,
+    string? Unit = null,
+    decimal? Quantity = null,
+    decimal? UnitPrice = null,
+    decimal? TotalAmount = null,
+    decimal? ApprovedQty = null,
+    decimal? ApprovedAmount = null,
+    bool? IsMainPart = null,
+    string? OldPartSerialNo = null,
+    string? OldPartReturnStatus = null,
+    string? Status = null,
+    string? RejectReason = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -1498,6 +1621,19 @@ public interface IVehicleService
     Task<object?> GetVehicleCampaignInfoAsync(string vin);
     Task<object?> GetVehicleCampaignHistoryAsync(string vin);
     Task<object> GetServiceCampaignSummaryAsync();
+    Task<object> CreateWarrantyReportAsync(CreateWarrantyReportDto dto);
+    Task<object> ListWarrantyReportsAsync(string? status, string? dealer, string? vin, string? plateNo, string? rowNo, string? warrantyType, string? causeCode, string? naturalCode);
+    Task<object?> GetWarrantyReportAsync(string rowNo);
+    Task<object?> UpdateWarrantyReportHeaderAsync(string rowNo, UpdateWarrantyReportHeaderDto dto);
+    Task<object?> WarrantyReportTransitionAsync(string rowNo, string action, WarrantyReportTransitionDto? dto);
+    Task<object?> AddWarrantyReportLaborLinesAsync(string rowNo, List<WarrantyReportLaborItemInputDto> items);
+    Task<object?> UpdateWarrantyReportLaborLineAsync(string rowNo, long lineId, UpdateWarrantyReportLaborLineDto dto);
+    Task<object?> RemoveWarrantyReportLaborLineAsync(string rowNo, long lineId);
+    Task<object?> AddWarrantyReportPartLinesAsync(string rowNo, List<WarrantyReportPartItemInputDto> items);
+    Task<object?> UpdateWarrantyReportPartLineAsync(string rowNo, long lineId, UpdateWarrantyReportPartLineDto dto);
+    Task<object?> RemoveWarrantyReportPartLineAsync(string rowNo, long lineId);
+    Task<object?> GetVehicleWarrantyReportHistoryAsync(string vin);
+    Task<object> GetWarrantyReportSummaryAsync();
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -19331,6 +19467,956 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             attendanceRatePercent = totalVehicles > 0 ? Math.Round((decimal)attendedVehicles / totalVehicles * 100, 1) : 0,
             totalDiscountAmount,
             byType,
+            byDealer
+        };
+    }
+
+    // ===== Báo cáo & Quyết toán Bảo hành xe ô tô OEM / Đại lý ủy quyền (BizCarSv.WarrantyReport / Ser_ROWarrantyReport / WarrantyReport) =====
+
+    private static void RecalculateWarrantyReportTotals(WarrantyReport wr, List<WarrantyReportLaborLine> lLines, List<WarrantyReportPartLine> pLines)
+    {
+        wr.TotalLaborAmount = lLines.Sum(l => l.LaborAmount);
+        wr.TotalPartAmount = pLines.Sum(p => p.TotalAmount);
+        wr.TotalAmount = wr.TotalLaborAmount + wr.TotalPartAmount;
+        wr.ApprovedLaborAmount = lLines.Where(l => l.Status != "Rejected").Sum(l => l.ApprovedLaborAmount);
+        wr.ApprovedPartAmount = pLines.Where(p => p.Status != "Rejected").Sum(p => p.ApprovedAmount);
+        wr.ApprovedTotalAmount = wr.ApprovedLaborAmount + wr.ApprovedPartAmount;
+    }
+
+    public async Task<object> CreateWarrantyReportAsync(CreateWarrantyReportDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý yêu cầu bảo hành (DealerCode).");
+        if (string.IsNullOrWhiteSpace(dto.Vin))
+            throw new InvalidOperationException("Cần số khung xe VIN yêu cầu bảo hành.");
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle == null)
+            throw new InvalidOperationException($"Số khung VIN {vin} không tồn tại trong hệ thống.");
+
+        var dealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        var rowNo = string.IsNullOrWhiteSpace(dto.ROWNo)
+            ? $"WR-{dealerCode}-{DateTime.Now:yyyyMMddHHmmss}"
+            : dto.ROWNo.Trim().ToUpperInvariant();
+
+        if (await db.WarrantyReports.AnyAsync(w => w.OrgId == Org && w.ROWNo == rowNo))
+            throw new InvalidOperationException($"Mã báo cáo bảo hành {rowNo} đã tồn tại.");
+
+        var wr = new WarrantyReport
+        {
+            OrgId = Org,
+            ROWNo = rowNo,
+            ROWNoUser = dto.ROWNoUser?.Trim(),
+            DealerCode = dealerCode,
+            DealerName = dto.DealerName?.Trim(),
+            RoNo = dto.RoNo?.Trim().ToUpperInvariant() ?? vehicle.LastRoNo,
+            Vin = vin,
+            PlateNo = dto.PlateNo?.Trim() ?? vehicle.PlateNo,
+            Model = !string.IsNullOrWhiteSpace(dto.Model) ? dto.Model.Trim() : vehicle.Model,
+            EngineNo = dto.EngineNo?.Trim() ?? vehicle.EngineNo,
+            OdoKm = dto.OdoKm > 0 ? dto.OdoKm : (vehicle.LastOdoKm ?? 15000),
+            CheckInDate = dto.CheckInDate ?? DateTime.Now,
+            StartDate = dto.StartDate ?? DateTime.Now,
+            FinishedDate = dto.FinishedDate ?? DateTime.Now.AddHours(4),
+            WarrantyStartDate = vehicle.WarrantyStart,
+            WarrantyEndDate = vehicle.WarrantyEnd,
+            WarrantyMonths = vehicle.WarrantyMonths,
+            CusName = dto.CusName?.Trim() ?? vehicle.OwnerName,
+            CusTel = dto.CusTel?.Trim() ?? vehicle.OwnerPhone,
+            CusAddress = dto.CusAddress?.Trim(),
+            CusRequest = dto.CusRequest?.Trim(),
+            DiagnosticResult = dto.DiagnosticResult?.Trim(),
+            NaturalCode = dto.NaturalCode?.Trim().ToUpperInvariant() ?? "C01",
+            CauseCode = dto.CauseCode?.Trim().ToUpperInvariant() ?? "M01",
+            MainPartCode = dto.MainPartCode?.Trim().ToUpperInvariant(),
+            MainPartName = dto.MainPartName?.Trim(),
+            WarrantyType = dto.WarrantyType?.Trim() ?? "Standard",
+            OldPartsInspectionStatus = dto.OldPartsInspectionStatus?.Trim() ?? "PendingReturn",
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.WarrantyReports.Add(wr);
+        await db.SaveChangesAsync();
+
+        var lLines = new List<WarrantyReportLaborLine>();
+        if (dto.LaborItems != null && dto.LaborItems.Count > 0)
+        {
+            foreach (var l in dto.LaborItems)
+            {
+                if (string.IsNullOrWhiteSpace(l.SerCode) || string.IsNullOrWhiteSpace(l.SerName)) continue;
+                var stdHour = l.StdManHour > 0 ? l.StdManHour : 1.0m;
+                var price = l.LaborPrice >= 0 ? l.LaborPrice : 300000m;
+                var amt = l.LaborAmount ?? (stdHour * price);
+                var appHour = l.ApprovedManHour ?? stdHour;
+                var appAmt = l.ApprovedLaborAmount ?? (appHour * price);
+
+                var line = new WarrantyReportLaborLine
+                {
+                    OrgId = Org,
+                    WarrantyReportId = wr.Id,
+                    ROWNo = wr.ROWNo,
+                    SerCode = l.SerCode.Trim(),
+                    SerName = l.SerName.Trim(),
+                    StdManHour = stdHour,
+                    LaborPrice = price,
+                    LaborAmount = amt,
+                    ApprovedManHour = appHour,
+                    ApprovedLaborAmount = appAmt,
+                    Technician = l.Technician?.Trim(),
+                    Status = "Pending",
+                    Remark = l.Remark?.Trim()
+                };
+                lLines.Add(line);
+                db.WarrantyReportLaborLines.Add(line);
+            }
+        }
+
+        var pLines = new List<WarrantyReportPartLine>();
+        if (dto.PartItems != null && dto.PartItems.Count > 0)
+        {
+            foreach (var p in dto.PartItems)
+            {
+                if (string.IsNullOrWhiteSpace(p.PartCode) || string.IsNullOrWhiteSpace(p.PartName)) continue;
+                var qty = p.Quantity > 0 ? p.Quantity : 1;
+                var unitPrice = p.UnitPrice >= 0 ? p.UnitPrice : 0;
+                var totalAmt = p.TotalAmount ?? (qty * unitPrice);
+                var appQty = p.ApprovedQty ?? qty;
+                var appAmt = p.ApprovedAmount ?? (appQty * unitPrice);
+
+                var line = new WarrantyReportPartLine
+                {
+                    OrgId = Org,
+                    WarrantyReportId = wr.Id,
+                    ROWNo = wr.ROWNo,
+                    PartCode = p.PartCode.Trim(),
+                    PartName = p.PartName.Trim(),
+                    Unit = p.Unit ?? "Cái",
+                    Quantity = qty,
+                    UnitPrice = unitPrice,
+                    TotalAmount = totalAmt,
+                    ApprovedQty = appQty,
+                    ApprovedAmount = appAmt,
+                    IsMainPart = p.IsMainPart,
+                    OldPartSerialNo = p.OldPartSerialNo?.Trim(),
+                    OldPartReturnStatus = p.OldPartReturnStatus ?? "PendingReturn",
+                    Status = "Pending",
+                    Remark = p.Remark?.Trim()
+                };
+                pLines.Add(line);
+                db.WarrantyReportPartLines.Add(line);
+            }
+        }
+
+        RecalculateWarrantyReportTotals(wr, lLines, pLines);
+
+        vehicle.LastWarrantyReportNo = wr.ROWNo;
+        vehicle.LastWarrantyReportDate = wr.CreatedAt;
+        vehicle.WarrantyClaimCount += 1;
+
+        Log(vin, "WarrantyReportDraftCreated", $"{rowNo} Lập hồ sơ báo cáo bảo hành đại lý {dealerCode}. Tổng tiền đề nghị: {wr.TotalAmount:N0} VNĐ (Công: {wr.TotalLaborAmount:N0}, Phụ tùng: {wr.TotalPartAmount:N0})");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            wr.ROWNo,
+            wr.ROWNoUser,
+            wr.DealerCode,
+            wr.DealerName,
+            wr.RoNo,
+            wr.Vin,
+            wr.PlateNo,
+            wr.Model,
+            wr.WarrantyType,
+            wr.NaturalCode,
+            wr.CauseCode,
+            wr.TotalLaborAmount,
+            wr.TotalPartAmount,
+            wr.TotalAmount,
+            wr.ApprovedTotalAmount,
+            wr.Status,
+            wr.CreatedAt,
+            laborLinesCount = lLines.Count,
+            partLinesCount = pLines.Count
+        };
+    }
+
+    public async Task<object> ListWarrantyReportsAsync(string? status, string? dealer, string? vin, string? plateNo, string? rowNo, string? warrantyType, string? causeCode, string? naturalCode)
+    {
+        var q = db.WarrantyReports.Where(w => w.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(w => w.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim().ToUpperInvariant(); q = q.Where(w => w.DealerCode.Contains(d)); }
+        if (!string.IsNullOrWhiteSpace(vin)) { var v = vin.Trim().ToUpperInvariant(); q = q.Where(w => w.Vin.Contains(v)); }
+        if (!string.IsNullOrWhiteSpace(plateNo)) { var p = plateNo.Trim().ToUpperInvariant(); q = q.Where(w => w.PlateNo != null && w.PlateNo.Contains(p)); }
+        if (!string.IsNullOrWhiteSpace(rowNo)) { var r = rowNo.Trim().ToUpperInvariant(); q = q.Where(w => w.ROWNo.Contains(r)); }
+        if (!string.IsNullOrWhiteSpace(warrantyType)) q = q.Where(w => w.WarrantyType == warrantyType);
+        if (!string.IsNullOrWhiteSpace(causeCode)) q = q.Where(w => w.CauseCode == causeCode);
+        if (!string.IsNullOrWhiteSpace(naturalCode)) q = q.Where(w => w.NaturalCode == naturalCode);
+
+        var items = await q.OrderByDescending(w => w.Id).Take(500).Select(w => new
+        {
+            w.Id,
+            w.ROWNo,
+            w.ROWNoUser,
+            w.DealerCode,
+            w.DealerName,
+            w.RoNo,
+            w.Vin,
+            w.PlateNo,
+            w.Model,
+            w.EngineNo,
+            w.OdoKm,
+            w.CheckInDate,
+            w.StartDate,
+            w.FinishedDate,
+            w.WarrantyStartDate,
+            w.WarrantyEndDate,
+            w.WarrantyMonths,
+            w.CusName,
+            w.CusTel,
+            w.CusRequest,
+            w.DiagnosticResult,
+            w.NaturalCode,
+            w.CauseCode,
+            w.MainPartCode,
+            w.MainPartName,
+            w.WarrantyType,
+            w.TotalLaborAmount,
+            w.TotalPartAmount,
+            w.TotalAmount,
+            w.ApprovedLaborAmount,
+            w.ApprovedPartAmount,
+            w.ApprovedTotalAmount,
+            w.ReimbursedAmount,
+            w.ReimburseDate,
+            w.AccountingRefNo,
+            w.OldPartsInspectionStatus,
+            w.Status,
+            w.CreatedBy,
+            w.CreatedAt,
+            w.ConfirmedBy,
+            w.ConfirmedAt,
+            w.ApprovedBy,
+            w.ApprovedAt,
+            w.SettledBy,
+            w.SettledAt,
+            w.RejectedBy,
+            w.RejectedAt,
+            w.RejectReason,
+            w.CancelledBy,
+            w.CancelledAt,
+            w.CancelReason,
+            w.Remark,
+            laborCount = db.WarrantyReportLaborLines.Count(l => l.OrgId == Org && l.WarrantyReportId == w.Id),
+            partCount = db.WarrantyReportPartLines.Count(p => p.OrgId == Org && p.WarrantyReportId == w.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetWarrantyReportAsync(string rowNo)
+    {
+        rowNo = rowNo.Trim().ToUpperInvariant();
+        var w = await db.WarrantyReports.FirstOrDefaultAsync(x => x.OrgId == Org && x.ROWNo == rowNo);
+        if (w == null) return null;
+
+        var laborLines = await db.WarrantyReportLaborLines.Where(l => l.OrgId == Org && l.WarrantyReportId == w.Id).ToListAsync();
+        var partLines = await db.WarrantyReportPartLines.Where(p => p.OrgId == Org && p.WarrantyReportId == w.Id).ToListAsync();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == w.Vin);
+
+        return new
+        {
+            w.Id,
+            w.ROWNo,
+            w.ROWNoUser,
+            w.DealerCode,
+            w.DealerName,
+            w.RoNo,
+            w.Vin,
+            w.PlateNo,
+            w.Model,
+            w.EngineNo,
+            w.OdoKm,
+            w.CheckInDate,
+            w.StartDate,
+            w.FinishedDate,
+            w.WarrantyStartDate,
+            w.WarrantyEndDate,
+            w.WarrantyMonths,
+            w.CusName,
+            w.CusTel,
+            w.CusAddress,
+            w.CusRequest,
+            w.DiagnosticResult,
+            w.NaturalCode,
+            w.CauseCode,
+            w.MainPartCode,
+            w.MainPartName,
+            w.WarrantyType,
+            w.TotalLaborAmount,
+            w.TotalPartAmount,
+            w.TotalAmount,
+            w.ApprovedLaborAmount,
+            w.ApprovedPartAmount,
+            w.ApprovedTotalAmount,
+            w.ReimbursedAmount,
+            w.ReimburseDate,
+            w.AccountingRefNo,
+            w.OldPartsInspectionStatus,
+            w.Status,
+            w.Remark,
+            w.CreatedBy,
+            w.CreatedAt,
+            w.ConfirmedBy,
+            w.ConfirmedAt,
+            w.ApprovedBy,
+            w.ApprovedAt,
+            w.SettledBy,
+            w.SettledAt,
+            w.RejectedBy,
+            w.RejectedAt,
+            w.RejectReason,
+            w.CancelledBy,
+            w.CancelledAt,
+            w.CancelReason,
+            vehicle = vehicle == null ? null : new
+            {
+                vehicle.Vin,
+                vehicle.Model,
+                vehicle.Color,
+                vehicle.EngineNo,
+                vehicle.PlateNo,
+                vehicle.OwnerName,
+                vehicle.OwnerPhone,
+                vehicle.WarrantyStart,
+                vehicle.WarrantyEnd,
+                vehicle.WarrantyMonths,
+                vehicle.WarrantyClaimCount,
+                status = vehicle.Status.ToString()
+            },
+            laborLines = laborLines.Select(l => new
+            {
+                l.Id,
+                l.ROWNo,
+                l.SerCode,
+                l.SerName,
+                l.StdManHour,
+                l.LaborPrice,
+                l.LaborAmount,
+                l.ApprovedManHour,
+                l.ApprovedLaborAmount,
+                l.Technician,
+                l.Status,
+                l.RejectReason,
+                l.Remark
+            }),
+            partLines = partLines.Select(p => new
+            {
+                p.Id,
+                p.ROWNo,
+                p.PartCode,
+                p.PartName,
+                p.Unit,
+                p.Quantity,
+                p.UnitPrice,
+                p.TotalAmount,
+                p.ApprovedQty,
+                p.ApprovedAmount,
+                p.IsMainPart,
+                p.OldPartSerialNo,
+                p.OldPartReturnStatus,
+                p.Status,
+                p.RejectReason,
+                p.Remark
+            })
+        };
+    }
+
+    public async Task<object?> UpdateWarrantyReportHeaderAsync(string rowNo, UpdateWarrantyReportHeaderDto dto)
+    {
+        rowNo = rowNo.Trim().ToUpperInvariant();
+        var w = await db.WarrantyReports.FirstOrDefaultAsync(x => x.OrgId == Org && x.ROWNo == rowNo);
+        if (w == null) return null;
+        if (w.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Hồ sơ bảo hành {rowNo} đang ở trạng thái {w.Status}, không thể chỉnh sửa.");
+
+        if (dto.ROWNoUser != null) w.ROWNoUser = dto.ROWNoUser.Trim();
+        if (dto.DealerName != null) w.DealerName = dto.DealerName.Trim();
+        if (dto.RoNo != null) w.RoNo = dto.RoNo.Trim();
+        if (dto.PlateNo != null) w.PlateNo = dto.PlateNo.Trim();
+        if (dto.OdoKm.HasValue && dto.OdoKm.Value > 0) w.OdoKm = dto.OdoKm.Value;
+        if (dto.CheckInDate.HasValue) w.CheckInDate = dto.CheckInDate.Value;
+        if (dto.StartDate.HasValue) w.StartDate = dto.StartDate.Value;
+        if (dto.FinishedDate.HasValue) w.FinishedDate = dto.FinishedDate.Value;
+        if (dto.CusName != null) w.CusName = dto.CusName.Trim();
+        if (dto.CusTel != null) w.CusTel = dto.CusTel.Trim();
+        if (dto.CusAddress != null) w.CusAddress = dto.CusAddress.Trim();
+        if (dto.CusRequest != null) w.CusRequest = dto.CusRequest.Trim();
+        if (dto.DiagnosticResult != null) w.DiagnosticResult = dto.DiagnosticResult.Trim();
+        if (dto.NaturalCode != null) w.NaturalCode = dto.NaturalCode.Trim().ToUpperInvariant();
+        if (dto.CauseCode != null) w.CauseCode = dto.CauseCode.Trim().ToUpperInvariant();
+        if (dto.MainPartCode != null) w.MainPartCode = dto.MainPartCode.Trim().ToUpperInvariant();
+        if (dto.MainPartName != null) w.MainPartName = dto.MainPartName.Trim();
+        if (dto.WarrantyType != null) w.WarrantyType = dto.WarrantyType.Trim();
+        if (dto.OldPartsInspectionStatus != null) w.OldPartsInspectionStatus = dto.OldPartsInspectionStatus.Trim();
+        if (dto.Remark != null) w.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            w.ROWNo,
+            w.Status,
+            w.TotalAmount,
+            w.ApprovedTotalAmount,
+            message = $"Cập nhật thông tin hồ sơ bảo hành {rowNo} thành công."
+        };
+    }
+
+    public async Task<object?> WarrantyReportTransitionAsync(string rowNo, string action, WarrantyReportTransitionDto? dto)
+    {
+        rowNo = rowNo.Trim().ToUpperInvariant();
+        var w = await db.WarrantyReports.FirstOrDefaultAsync(x => x.OrgId == Org && x.ROWNo == rowNo);
+        if (w == null) return null;
+
+        var now = DateTime.Now;
+        var act = action.Trim().ToLowerInvariant();
+        var user = dto?.User?.Trim() ?? "OEM_Admin";
+
+        var lLines = await db.WarrantyReportLaborLines.Where(l => l.OrgId == Org && l.WarrantyReportId == w.Id).ToListAsync();
+        var pLines = await db.WarrantyReportPartLines.Where(p => p.OrgId == Org && p.WarrantyReportId == w.Id).ToListAsync();
+
+        switch (act)
+        {
+            case "submit":
+                if (w.Status != "Draft")
+                    throw new InvalidOperationException($"Chỉ có thể nộp hồ sơ bảo hành ở trạng thái Draft (hiện tại: {w.Status}).");
+                w.Status = "Submitted";
+                foreach (var l in lLines) if (l.Status == "Pending") l.Status = "Submitted";
+                foreach (var p in pLines) if (p.Status == "Pending") p.Status = "Submitted";
+                Log(w.Vin, "WarrantyReportSubmitted", $"{rowNo} Đại lý {w.DealerCode} nộp hồ sơ quyết toán bảo hành {w.TotalAmount:N0} VNĐ lên OEM.");
+                break;
+
+            case "confirm":
+                if (w.Status != "Submitted")
+                    throw new InvalidOperationException($"Chỉ có thể sơ duyệt hồ sơ bảo hành ở trạng thái Submitted (hiện tại: {w.Status}).");
+                w.Status = "Confirmed";
+                w.ConfirmedBy = user;
+                w.ConfirmedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.OldPartsInspectionStatus))
+                    w.OldPartsInspectionStatus = dto.OldPartsInspectionStatus.Trim();
+                Log(w.Vin, "WarrantyReportConfirmed", $"{rowNo} Cố vấn kỹ thuật OEM {user} đã sơ duyệt hồ sơ bảo hành.");
+                break;
+
+            case "approve":
+                if (w.Status is not ("Confirmed" or "Submitted"))
+                    throw new InvalidOperationException($"Chỉ có thể phê duyệt hồ sơ bảo hành ở trạng thái Confirmed hoặc Submitted (hiện tại: {w.Status}).");
+                w.Status = "Approved";
+                w.ApprovedBy = user;
+                w.ApprovedAt = now;
+                foreach (var l in lLines) if (l.Status != "Rejected") l.Status = "Approved";
+                foreach (var p in pLines) if (p.Status != "Rejected") p.Status = "Approved";
+                RecalculateWarrantyReportTotals(w, lLines, pLines);
+                if (!string.IsNullOrWhiteSpace(dto?.OldPartsInspectionStatus))
+                    w.OldPartsInspectionStatus = dto.OldPartsInspectionStatus.Trim();
+                Log(w.Vin, "WarrantyReportApproved", $"{rowNo} Lãnh đạo OEM {user} duyệt quyết toán chi phí bảo hành {w.ApprovedTotalAmount:N0} VNĐ (Công: {w.ApprovedLaborAmount:N0}, Phụ tùng: {w.ApprovedPartAmount:N0}).");
+                break;
+
+            case "settle":
+                if (w.Status != "Approved")
+                    throw new InvalidOperationException($"Chỉ có thể quyết toán chi trả hồ sơ bảo hành đã Approved (hiện tại: {w.Status}).");
+                w.Status = "Settled";
+                w.SettledBy = user;
+                w.SettledAt = now;
+                w.ReimburseDate = dto?.ReimburseDate ?? now;
+                w.ReimbursedAmount = dto?.ReimbursedAmount ?? w.ApprovedTotalAmount;
+                w.AccountingRefNo = dto?.AccountingRefNo?.Trim() ?? $"UNC-WR-{now:yyyyMMdd}-{w.DealerCode}";
+                foreach (var l in lLines) if (l.Status == "Approved") l.Status = "Settled";
+                foreach (var p in pLines) if (p.Status == "Approved") p.Status = "Settled";
+                Log(w.Vin, "WarrantyReportSettled", $"{rowNo} Kế toán OEM {user} hạch toán chi trả/bù trừ {w.ReimbursedAmount:N0} VNĐ theo chứng từ {w.AccountingRefNo}.");
+                break;
+
+            case "reject":
+                if (w.Status is "Settled" or "Cancelled")
+                    throw new InvalidOperationException($"Hồ sơ bảo hành đang ở trạng thái {w.Status}, không thể từ chối.");
+                w.Status = "Rejected";
+                w.RejectedBy = user;
+                w.RejectedAt = now;
+                w.RejectReason = dto?.RejectReason?.Trim() ?? dto?.Note?.Trim() ?? "Không đáp ứng tiêu chuẩn bảo hành chính hãng.";
+                foreach (var l in lLines) l.Status = "Rejected";
+                foreach (var p in pLines) p.Status = "Rejected";
+                Log(w.Vin, "WarrantyReportRejected", $"{rowNo} OEM {user} từ chối hồ sơ bảo hành. Lý do: {w.RejectReason}");
+                break;
+
+            case "cancel":
+                if (w.Status is "Settled" or "Rejected")
+                    throw new InvalidOperationException($"Hồ sơ bảo hành đang ở trạng thái {w.Status}, không thể hủy.");
+                w.Status = "Cancelled";
+                w.CancelledBy = user;
+                w.CancelledAt = now;
+                w.CancelReason = dto?.CancelReason?.Trim() ?? dto?.Note?.Trim() ?? "Đại lý yêu cầu hủy hồ sơ.";
+                Log(w.Vin, "WarrantyReportCancelled", $"{rowNo} Đã hủy hồ sơ bảo hành bởi {user}.");
+                break;
+
+            default:
+                return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note)) w.Remark = dto.Note.Trim();
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            w.ROWNo,
+            w.Status,
+            w.TotalAmount,
+            w.ApprovedTotalAmount,
+            w.ReimbursedAmount,
+            w.AccountingRefNo,
+            w.OldPartsInspectionStatus,
+            w.ConfirmedBy,
+            w.ConfirmedAt,
+            w.ApprovedBy,
+            w.ApprovedAt,
+            w.SettledBy,
+            w.SettledAt,
+            w.RejectedBy,
+            w.RejectedAt,
+            w.RejectReason,
+            w.CancelledBy,
+            w.CancelledAt,
+            w.CancelReason,
+            action = act
+        };
+    }
+
+    public async Task<object?> AddWarrantyReportLaborLinesAsync(string rowNo, List<WarrantyReportLaborItemInputDto> items)
+    {
+        rowNo = rowNo.Trim().ToUpperInvariant();
+        var w = await db.WarrantyReports.FirstOrDefaultAsync(x => x.OrgId == Org && x.ROWNo == rowNo);
+        if (w == null) return null;
+        if (w.Status is "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Hồ sơ bảo hành {rowNo} đang ở trạng thái {w.Status}, không thể thêm dòng công việc.");
+
+        var newLines = new List<WarrantyReportLaborLine>();
+        foreach (var l in items)
+        {
+            if (string.IsNullOrWhiteSpace(l.SerCode) || string.IsNullOrWhiteSpace(l.SerName)) continue;
+            var stdHour = l.StdManHour > 0 ? l.StdManHour : 1.0m;
+            var price = l.LaborPrice >= 0 ? l.LaborPrice : 300000m;
+            var amt = l.LaborAmount ?? (stdHour * price);
+            var appHour = l.ApprovedManHour ?? stdHour;
+            var appAmt = l.ApprovedLaborAmount ?? (appHour * price);
+
+            var line = new WarrantyReportLaborLine
+            {
+                OrgId = Org,
+                WarrantyReportId = w.Id,
+                ROWNo = w.ROWNo,
+                SerCode = l.SerCode.Trim(),
+                SerName = l.SerName.Trim(),
+                StdManHour = stdHour,
+                LaborPrice = price,
+                LaborAmount = amt,
+                ApprovedManHour = appHour,
+                ApprovedLaborAmount = appAmt,
+                Technician = l.Technician?.Trim(),
+                Status = w.Status == "Draft" ? "Pending" : w.Status,
+                Remark = l.Remark?.Trim()
+            };
+            newLines.Add(line);
+            db.WarrantyReportLaborLines.Add(line);
+        }
+
+        await db.SaveChangesAsync();
+
+        var lLines = await db.WarrantyReportLaborLines.Where(l => l.OrgId == Org && l.WarrantyReportId == w.Id).ToListAsync();
+        var pLines = await db.WarrantyReportPartLines.Where(p => p.OrgId == Org && p.WarrantyReportId == w.Id).ToListAsync();
+        RecalculateWarrantyReportTotals(w, lLines, pLines);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            w.ROWNo,
+            addedCount = newLines.Count,
+            w.TotalLaborAmount,
+            w.TotalAmount,
+            w.ApprovedTotalAmount
+        };
+    }
+
+    public async Task<object?> UpdateWarrantyReportLaborLineAsync(string rowNo, long lineId, UpdateWarrantyReportLaborLineDto dto)
+    {
+        rowNo = rowNo.Trim().ToUpperInvariant();
+        var w = await db.WarrantyReports.FirstOrDefaultAsync(x => x.OrgId == Org && x.ROWNo == rowNo);
+        if (w == null) return null;
+        if (w.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Hồ sơ bảo hành {rowNo} đang ở trạng thái {w.Status}, không thể chỉnh sửa dòng công việc.");
+
+        var line = await db.WarrantyReportLaborLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.WarrantyReportId == w.Id && l.Id == lineId);
+        if (line == null) return null;
+
+        if (dto.SerCode != null) line.SerCode = dto.SerCode.Trim();
+        if (dto.SerName != null) line.SerName = dto.SerName.Trim();
+        if (dto.StdManHour.HasValue && dto.StdManHour.Value > 0) line.StdManHour = dto.StdManHour.Value;
+        if (dto.LaborPrice.HasValue && dto.LaborPrice.Value >= 0) line.LaborPrice = dto.LaborPrice.Value;
+        if (dto.LaborAmount.HasValue && dto.LaborAmount.Value >= 0) line.LaborAmount = dto.LaborAmount.Value;
+        else if (dto.StdManHour.HasValue || dto.LaborPrice.HasValue) line.LaborAmount = line.StdManHour * line.LaborPrice;
+
+        if (dto.ApprovedManHour.HasValue && dto.ApprovedManHour.Value >= 0) line.ApprovedManHour = dto.ApprovedManHour.Value;
+        if (dto.ApprovedLaborAmount.HasValue && dto.ApprovedLaborAmount.Value >= 0) line.ApprovedLaborAmount = dto.ApprovedLaborAmount.Value;
+        else if (dto.ApprovedManHour.HasValue) line.ApprovedLaborAmount = line.ApprovedManHour * line.LaborPrice;
+
+        if (dto.Technician != null) line.Technician = dto.Technician.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.RejectReason != null) line.RejectReason = dto.RejectReason.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var lLines = await db.WarrantyReportLaborLines.Where(l => l.OrgId == Org && l.WarrantyReportId == w.Id).ToListAsync();
+        var pLines = await db.WarrantyReportPartLines.Where(p => p.OrgId == Org && p.WarrantyReportId == w.Id).ToListAsync();
+        RecalculateWarrantyReportTotals(w, lLines, pLines);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            line.Id,
+            line.ROWNo,
+            line.SerCode,
+            line.SerName,
+            line.LaborAmount,
+            line.ApprovedLaborAmount,
+            line.Status,
+            reportTotalAmount = w.TotalAmount,
+            reportApprovedTotalAmount = w.ApprovedTotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveWarrantyReportLaborLineAsync(string rowNo, long lineId)
+    {
+        rowNo = rowNo.Trim().ToUpperInvariant();
+        var w = await db.WarrantyReports.FirstOrDefaultAsync(x => x.OrgId == Org && x.ROWNo == rowNo);
+        if (w == null) return null;
+        if (w.Status is "Settled" or "Cancelled" or "Approved")
+            throw new InvalidOperationException($"Hồ sơ bảo hành {rowNo} đang ở trạng thái {w.Status}, không thể xóa dòng công việc.");
+
+        var line = await db.WarrantyReportLaborLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.WarrantyReportId == w.Id && l.Id == lineId);
+        if (line == null) return null;
+
+        db.WarrantyReportLaborLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var lLines = await db.WarrantyReportLaborLines.Where(l => l.OrgId == Org && l.WarrantyReportId == w.Id).ToListAsync();
+        var pLines = await db.WarrantyReportPartLines.Where(p => p.OrgId == Org && p.WarrantyReportId == w.Id).ToListAsync();
+        RecalculateWarrantyReportTotals(w, lLines, pLines);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            w.ROWNo,
+            deletedLineId = lineId,
+            w.TotalLaborAmount,
+            w.TotalAmount,
+            w.ApprovedTotalAmount
+        };
+    }
+
+    public async Task<object?> AddWarrantyReportPartLinesAsync(string rowNo, List<WarrantyReportPartItemInputDto> items)
+    {
+        rowNo = rowNo.Trim().ToUpperInvariant();
+        var w = await db.WarrantyReports.FirstOrDefaultAsync(x => x.OrgId == Org && x.ROWNo == rowNo);
+        if (w == null) return null;
+        if (w.Status is "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Hồ sơ bảo hành {rowNo} đang ở trạng thái {w.Status}, không thể thêm phụ tùng.");
+
+        var newLines = new List<WarrantyReportPartLine>();
+        foreach (var p in items)
+        {
+            if (string.IsNullOrWhiteSpace(p.PartCode) || string.IsNullOrWhiteSpace(p.PartName)) continue;
+            var qty = p.Quantity > 0 ? p.Quantity : 1;
+            var unitPrice = p.UnitPrice >= 0 ? p.UnitPrice : 0;
+            var totalAmt = p.TotalAmount ?? (qty * unitPrice);
+            var appQty = p.ApprovedQty ?? qty;
+            var appAmt = p.ApprovedAmount ?? (appQty * unitPrice);
+
+            var line = new WarrantyReportPartLine
+            {
+                OrgId = Org,
+                WarrantyReportId = w.Id,
+                ROWNo = w.ROWNo,
+                PartCode = p.PartCode.Trim(),
+                PartName = p.PartName.Trim(),
+                Unit = p.Unit ?? "Cái",
+                Quantity = qty,
+                UnitPrice = unitPrice,
+                TotalAmount = totalAmt,
+                ApprovedQty = appQty,
+                ApprovedAmount = appAmt,
+                IsMainPart = p.IsMainPart,
+                OldPartSerialNo = p.OldPartSerialNo?.Trim(),
+                OldPartReturnStatus = p.OldPartReturnStatus ?? "PendingReturn",
+                Status = w.Status == "Draft" ? "Pending" : w.Status,
+                Remark = p.Remark?.Trim()
+            };
+            newLines.Add(line);
+            db.WarrantyReportPartLines.Add(line);
+        }
+
+        await db.SaveChangesAsync();
+
+        var lLines = await db.WarrantyReportLaborLines.Where(l => l.OrgId == Org && l.WarrantyReportId == w.Id).ToListAsync();
+        var pLines = await db.WarrantyReportPartLines.Where(p => p.OrgId == Org && p.WarrantyReportId == w.Id).ToListAsync();
+        RecalculateWarrantyReportTotals(w, lLines, pLines);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            w.ROWNo,
+            addedCount = newLines.Count,
+            w.TotalPartAmount,
+            w.TotalAmount,
+            w.ApprovedTotalAmount
+        };
+    }
+
+    public async Task<object?> UpdateWarrantyReportPartLineAsync(string rowNo, long lineId, UpdateWarrantyReportPartLineDto dto)
+    {
+        rowNo = rowNo.Trim().ToUpperInvariant();
+        var w = await db.WarrantyReports.FirstOrDefaultAsync(x => x.OrgId == Org && x.ROWNo == rowNo);
+        if (w == null) return null;
+        if (w.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Hồ sơ bảo hành {rowNo} đang ở trạng thái {w.Status}, không thể chỉnh sửa phụ tùng.");
+
+        var line = await db.WarrantyReportPartLines.FirstOrDefaultAsync(p => p.OrgId == Org && p.WarrantyReportId == w.Id && p.Id == lineId);
+        if (line == null) return null;
+
+        if (dto.PartCode != null) line.PartCode = dto.PartCode.Trim();
+        if (dto.PartName != null) line.PartName = dto.PartName.Trim();
+        if (dto.Unit != null) line.Unit = dto.Unit.Trim();
+        if (dto.Quantity.HasValue && dto.Quantity.Value > 0) line.Quantity = dto.Quantity.Value;
+        if (dto.UnitPrice.HasValue && dto.UnitPrice.Value >= 0) line.UnitPrice = dto.UnitPrice.Value;
+        if (dto.TotalAmount.HasValue && dto.TotalAmount.Value >= 0) line.TotalAmount = dto.TotalAmount.Value;
+        else if (dto.Quantity.HasValue || dto.UnitPrice.HasValue) line.TotalAmount = line.Quantity * line.UnitPrice;
+
+        if (dto.ApprovedQty.HasValue && dto.ApprovedQty.Value >= 0) line.ApprovedQty = dto.ApprovedQty.Value;
+        if (dto.ApprovedAmount.HasValue && dto.ApprovedAmount.Value >= 0) line.ApprovedAmount = dto.ApprovedAmount.Value;
+        else if (dto.ApprovedQty.HasValue) line.ApprovedAmount = line.ApprovedQty * line.UnitPrice;
+
+        if (dto.IsMainPart.HasValue) line.IsMainPart = dto.IsMainPart.Value;
+        if (dto.OldPartSerialNo != null) line.OldPartSerialNo = dto.OldPartSerialNo.Trim();
+        if (dto.OldPartReturnStatus != null) line.OldPartReturnStatus = dto.OldPartReturnStatus.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.RejectReason != null) line.RejectReason = dto.RejectReason.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var lLines = await db.WarrantyReportLaborLines.Where(l => l.OrgId == Org && l.WarrantyReportId == w.Id).ToListAsync();
+        var pLines = await db.WarrantyReportPartLines.Where(p => p.OrgId == Org && p.WarrantyReportId == w.Id).ToListAsync();
+        RecalculateWarrantyReportTotals(w, lLines, pLines);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            line.Id,
+            line.ROWNo,
+            line.PartCode,
+            line.PartName,
+            line.TotalAmount,
+            line.ApprovedAmount,
+            line.OldPartReturnStatus,
+            line.Status,
+            reportTotalAmount = w.TotalAmount,
+            reportApprovedTotalAmount = w.ApprovedTotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveWarrantyReportPartLineAsync(string rowNo, long lineId)
+    {
+        rowNo = rowNo.Trim().ToUpperInvariant();
+        var w = await db.WarrantyReports.FirstOrDefaultAsync(x => x.OrgId == Org && x.ROWNo == rowNo);
+        if (w == null) return null;
+        if (w.Status is "Settled" or "Cancelled" or "Approved")
+            throw new InvalidOperationException($"Hồ sơ bảo hành {rowNo} đang ở trạng thái {w.Status}, không thể xóa phụ tùng.");
+
+        var line = await db.WarrantyReportPartLines.FirstOrDefaultAsync(p => p.OrgId == Org && p.WarrantyReportId == w.Id && p.Id == lineId);
+        if (line == null) return null;
+
+        db.WarrantyReportPartLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var lLines = await db.WarrantyReportLaborLines.Where(l => l.OrgId == Org && l.WarrantyReportId == w.Id).ToListAsync();
+        var pLines = await db.WarrantyReportPartLines.Where(p => p.OrgId == Org && p.WarrantyReportId == w.Id).ToListAsync();
+        RecalculateWarrantyReportTotals(w, lLines, pLines);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            w.ROWNo,
+            deletedLineId = lineId,
+            w.TotalPartAmount,
+            w.TotalAmount,
+            w.ApprovedTotalAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleWarrantyReportHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle == null) return null;
+
+        var reports = await db.WarrantyReports.Where(w => w.OrgId == Org && w.Vin == vin).OrderByDescending(w => w.Id).ToListAsync();
+        var reportIds = reports.Select(r => r.Id).ToList();
+        var lLines = await db.WarrantyReportLaborLines.Where(l => l.OrgId == Org && reportIds.Contains(l.WarrantyReportId)).ToListAsync();
+        var pLines = await db.WarrantyReportPartLines.Where(p => p.OrgId == Org && reportIds.Contains(p.WarrantyReportId)).ToListAsync();
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            vehicle.Color,
+            vehicle.EngineNo,
+            vehicle.PlateNo,
+            vehicle.OwnerName,
+            vehicle.OwnerPhone,
+            vehicle.WarrantyStart,
+            vehicle.WarrantyEnd,
+            vehicle.WarrantyMonths,
+            vehicle.LastWarrantyReportNo,
+            vehicle.LastWarrantyReportDate,
+            vehicle.WarrantyClaimCount,
+            totalReports = reports.Count,
+            totalLaborAmount = reports.Sum(r => r.TotalLaborAmount),
+            totalPartAmount = reports.Sum(r => r.TotalPartAmount),
+            totalRequestedAmount = reports.Sum(r => r.TotalAmount),
+            totalApprovedAmount = reports.Sum(r => r.ApprovedTotalAmount),
+            totalReimbursedAmount = reports.Sum(r => r.ReimbursedAmount),
+            reports = reports.Select(w => new
+            {
+                w.Id,
+                w.ROWNo,
+                w.DealerCode,
+                w.DealerName,
+                w.RoNo,
+                w.OdoKm,
+                w.CheckInDate,
+                w.WarrantyType,
+                w.NaturalCode,
+                w.CauseCode,
+                w.MainPartCode,
+                w.MainPartName,
+                w.TotalLaborAmount,
+                w.TotalPartAmount,
+                w.TotalAmount,
+                w.ApprovedTotalAmount,
+                w.ReimbursedAmount,
+                w.AccountingRefNo,
+                w.OldPartsInspectionStatus,
+                w.Status,
+                w.CreatedAt,
+                w.ApprovedAt,
+                w.SettledAt,
+                laborLines = lLines.Where(l => l.WarrantyReportId == w.Id).Select(l => new
+                {
+                    l.SerCode,
+                    l.SerName,
+                    l.StdManHour,
+                    l.LaborPrice,
+                    l.LaborAmount,
+                    l.ApprovedLaborAmount,
+                    l.Status
+                }),
+                partLines = pLines.Where(p => p.WarrantyReportId == w.Id).Select(p => new
+                {
+                    p.PartCode,
+                    p.PartName,
+                    p.Quantity,
+                    p.UnitPrice,
+                    p.TotalAmount,
+                    p.ApprovedAmount,
+                    p.IsMainPart,
+                    p.OldPartReturnStatus,
+                    p.Status
+                })
+            })
+        };
+    }
+
+    public async Task<object> GetWarrantyReportSummaryAsync()
+    {
+        var reports = await db.WarrantyReports.Where(w => w.OrgId == Org).ToListAsync();
+
+        var totalReports = reports.Count;
+        var draftCount = reports.Count(w => w.Status == "Draft");
+        var submittedCount = reports.Count(w => w.Status == "Submitted");
+        var confirmedCount = reports.Count(w => w.Status == "Confirmed");
+        var approvedCount = reports.Count(w => w.Status == "Approved");
+        var settledCount = reports.Count(w => w.Status == "Settled");
+        var rejectedCount = reports.Count(w => w.Status == "Rejected");
+        var cancelledCount = reports.Count(w => w.Status == "Cancelled");
+
+        var totalLaborAmount = reports.Sum(w => w.TotalLaborAmount);
+        var totalPartAmount = reports.Sum(w => w.TotalPartAmount);
+        var totalRequestedAmount = reports.Sum(w => w.TotalAmount);
+        var totalApprovedAmount = reports.Sum(w => w.ApprovedTotalAmount);
+        var totalReimbursedAmount = reports.Sum(w => w.ReimbursedAmount);
+
+        var byType = reports.GroupBy(w => w.WarrantyType).Select(g => new
+        {
+            warrantyType = g.Key,
+            count = g.Count(),
+            totalRequested = g.Sum(x => x.TotalAmount),
+            totalApproved = g.Sum(x => x.ApprovedTotalAmount),
+            totalReimbursed = g.Sum(x => x.ReimbursedAmount)
+        }).ToList();
+
+        var byCause = reports.GroupBy(w => w.CauseCode).Select(g => new
+        {
+            causeCode = g.Key,
+            count = g.Count(),
+            totalRequested = g.Sum(x => x.TotalAmount),
+            totalApproved = g.Sum(x => x.ApprovedTotalAmount)
+        }).ToList();
+
+        var byNatural = reports.GroupBy(w => w.NaturalCode).Select(g => new
+        {
+            naturalCode = g.Key,
+            count = g.Count(),
+            totalRequested = g.Sum(x => x.TotalAmount),
+            totalApproved = g.Sum(x => x.ApprovedTotalAmount)
+        }).ToList();
+
+        var byDealer = reports.GroupBy(w => w.DealerCode).Select(g => new
+        {
+            dealerCode = g.Key,
+            count = g.Count(),
+            settledCount = g.Count(x => x.Status == "Settled"),
+            totalRequested = g.Sum(x => x.TotalAmount),
+            totalApproved = g.Sum(x => x.ApprovedTotalAmount),
+            totalReimbursed = g.Sum(x => x.ReimbursedAmount)
+        }).ToList();
+
+        return new
+        {
+            totalReports,
+            draftCount,
+            submittedCount,
+            confirmedCount,
+            approvedCount,
+            settledCount,
+            rejectedCount,
+            cancelledCount,
+            totalLaborAmount,
+            totalPartAmount,
+            totalRequestedAmount,
+            totalApprovedAmount,
+            totalReimbursedAmount,
+            approvalRatePercent = totalRequestedAmount > 0 ? Math.Round(totalApprovedAmount / totalRequestedAmount * 100, 1) : 0,
+            byType,
+            byCause,
+            byNatural,
             byDealer
         };
     }

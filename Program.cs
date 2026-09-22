@@ -2209,6 +2209,145 @@ app.MapGet("/api/vehicles/{vin}/campaign-history", async (string vin, IVehicleSe
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Báo cáo & Quyết toán Bảo hành xe ô tô OEM / Đại lý ủy quyền (BizCarSv.WarrantyReport / Ser_ROWarrantyReport / WarrantyReport) ----
+app.MapPost("/api/warranty-reports", async (CreateWarrantyReportDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode và số khung Vin để lập báo cáo bảo hành." });
+    try { return Results.Ok(await svc.CreateWarrantyReportAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/warranty-reports", async (IVehicleService svc, string? status, string? dealer, string? vin, string? plateNo, string? rowNo, string? warrantyType, string? causeCode, string? naturalCode) =>
+    Results.Ok(await svc.ListWarrantyReportsAsync(status, dealer, vin, plateNo, rowNo, warrantyType, causeCode, naturalCode))).RequireAuthorization();
+
+app.MapGet("/api/warranty-reports/summary", async (IVehicleService svc) =>
+    Results.Ok(await svc.GetWarrantyReportSummaryAsync())).RequireAuthorization();
+
+app.MapGet("/api/warranty-reports/{rowNo}", async (string rowNo, IVehicleService svc) =>
+{
+    var r = await svc.GetWarrantyReportAsync(rowNo);
+    return r is null ? Results.NotFound(new { rowNo, error = "Không tìm thấy hồ sơ báo cáo bảo hành." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/warranty-reports/{rowNo}", async (string rowNo, UpdateWarrantyReportHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateWarrantyReportHeaderAsync(rowNo, dto);
+        return r is null ? Results.NotFound(new { rowNo, error = "Không tìm thấy hồ sơ bảo hành hoặc hồ sơ đã quyết toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/warranty-reports/{rowNo}/{action}", async (string rowNo, string action, WarrantyReportTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "confirm" or "approve" or "settle" or "pay" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|confirm|approve|settle|reject|cancel" });
+    try
+    {
+        var r = await svc.WarrantyReportTransitionAsync(rowNo, action, dto);
+        return r is null ? Results.NotFound(new { rowNo, error = "Không thấy hồ sơ bảo hành hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/warranty-reports/{rowNo}/labor-lines", async (string rowNo, List<WarrantyReportLaborItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items hạng mục công việc bảo hành." });
+    try
+    {
+        var r = await svc.AddWarrantyReportLaborLinesAsync(rowNo, items);
+        return r is null ? Results.NotFound(new { rowNo, error = "Không tìm thấy hồ sơ bảo hành hoặc hồ sơ đã quyết toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/warranty-reports/{rowNo}/labor-lines/{lineId:long}/update", async (string rowNo, long lineId, UpdateWarrantyReportLaborLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateWarrantyReportLaborLineAsync(rowNo, lineId, dto);
+        return r is null ? Results.NotFound(new { rowNo, lineId, error = "Không tìm thấy dòng công việc hoặc hồ sơ đã quyết toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/warranty-reports/{rowNo}/labor-lines/{lineId:long}", async (string rowNo, long lineId, UpdateWarrantyReportLaborLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateWarrantyReportLaborLineAsync(rowNo, lineId, dto);
+        return r is null ? Results.NotFound(new { rowNo, lineId, error = "Không tìm thấy dòng công việc hoặc hồ sơ đã quyết toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/warranty-reports/{rowNo}/labor-lines/{lineId:long}", async (string rowNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveWarrantyReportLaborLineAsync(rowNo, lineId);
+        return r is null ? Results.NotFound(new { rowNo, lineId, error = "Không tìm thấy dòng công việc hoặc hồ sơ đã quyết toán/phê duyệt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/warranty-reports/{rowNo}/part-lines", async (string rowNo, List<WarrantyReportPartItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items phụ tùng bảo hành." });
+    try
+    {
+        var r = await svc.AddWarrantyReportPartLinesAsync(rowNo, items);
+        return r is null ? Results.NotFound(new { rowNo, error = "Không tìm thấy hồ sơ bảo hành hoặc hồ sơ đã quyết toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/warranty-reports/{rowNo}/part-lines/{lineId:long}/update", async (string rowNo, long lineId, UpdateWarrantyReportPartLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateWarrantyReportPartLineAsync(rowNo, lineId, dto);
+        return r is null ? Results.NotFound(new { rowNo, lineId, error = "Không tìm thấy dòng phụ tùng hoặc hồ sơ đã quyết toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/warranty-reports/{rowNo}/part-lines/{lineId:long}", async (string rowNo, long lineId, UpdateWarrantyReportPartLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateWarrantyReportPartLineAsync(rowNo, lineId, dto);
+        return r is null ? Results.NotFound(new { rowNo, lineId, error = "Không tìm thấy dòng phụ tùng hoặc hồ sơ đã quyết toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/warranty-reports/{rowNo}/part-lines/{lineId:long}", async (string rowNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveWarrantyReportPartLineAsync(rowNo, lineId);
+        return r is null ? Results.NotFound(new { rowNo, lineId, error = "Không tìm thấy dòng phụ tùng hoặc hồ sơ đã quyết toán/phê duyệt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/warranty-reports", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleWarrantyReportHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/warranty-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleWarrantyReportHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

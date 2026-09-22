@@ -2220,6 +2220,131 @@ public static class Seeder
                 v1Vehicle.LastCampaignDate = DateTime.Now.AddDays(-6);
             }
         }
+
+        if (!await db.WarrantyReports.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var wr1 = new WarrantyReport
+            {
+                OrgId = org,
+                ROWNo = "WR-HN01-2026-0001",
+                ROWNoUser = "WR/2026/03/HN01-01",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                RoNo = "RO-HN01-2026-0001",
+                Vin = "DEMOVIN00000001",
+                PlateNo = "30K-988.66",
+                Model = "Accent 1.4 AT",
+                EngineNo = "G4LC0001",
+                OdoKm = 12500,
+                CheckInDate = DateTime.Now.AddDays(-10),
+                StartDate = DateTime.Now.AddDays(-10).AddHours(1),
+                FinishedDate = DateTime.Now.AddDays(-10).AddHours(4),
+                WarrantyStartDate = DateTime.Now.AddMonths(-6),
+                WarrantyEndDate = DateTime.Now.AddMonths(30),
+                WarrantyMonths = 36,
+                CusName = "Nguyễn Văn An",
+                CusTel = "0901234567",
+                CusAddress = "Số 12 phố Trần Duy Hưng, Cầu Giấy, Hà Nội",
+                CusRequest = "Cần số chuyển số giật cục và có tiếng kêu lục cục ở hệ thống lái trợ lực điện MDPS",
+                DiagnosticResult = "Hỏng vòng đệm cao su giảm chấn khớp nối trục lái điện MDPS (Coupling Flexible Steering Column) và cảm biến vị trí góc lái",
+                NaturalCode = "C05",
+                CauseCode = "M01",
+                MainPartCode = "56315-2K000-FFF",
+                MainPartName = "Khớp cao su giảm chấn trục lái điện MDPS (Coupling Flexible)",
+                WarrantyType = "Standard",
+                TotalLaborAmount = 600000m,
+                TotalPartAmount = 1450000m,
+                TotalAmount = 2050000m,
+                ApprovedLaborAmount = 600000m,
+                ApprovedPartAmount = 1450000m,
+                ApprovedTotalAmount = 2050000m,
+                ReimbursedAmount = 2050000m,
+                ReimburseDate = DateTime.Now.AddDays(-3),
+                AccountingRefNo = "UNC-WR-202603-HN01-001",
+                OldPartsInspectionStatus = "ReturnedToFactory",
+                Status = "Settled",
+                Remark = "Hồ sơ bảo hành tiêu chuẩn chính hãng đã được duyệt chi trả bù trừ công nợ đại lý",
+                CreatedBy = "cvdv.tuan",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ConfirmedBy = "TechSupport.NguyenVanDuc",
+                ConfirmedAt = DateTime.Now.AddDays(-8),
+                ApprovedBy = "WarrantyManager.TranThanhSon",
+                ApprovedAt = DateTime.Now.AddDays(-5),
+                SettledBy = "Accountant.HoangThiMai",
+                SettledAt = DateTime.Now.AddDays(-3)
+            };
+            db.WarrantyReports.Add(wr1);
+            await db.SaveChangesAsync();
+
+            db.WarrantyReportLaborLines.AddRange(
+                new WarrantyReportLaborLine
+                {
+                    OrgId = org,
+                    WarrantyReportId = wr1.Id,
+                    ROWNo = wr1.ROWNo,
+                    SerCode = "BH-MDPS-REPAIR",
+                    SerName = "Tháo hạ cụm cột lái điện MDPS, thay khớp cao su giảm chấn và căn chỉnh cảm biến góc lái",
+                    StdManHour = 1.5m,
+                    LaborPrice = 400000m,
+                    LaborAmount = 600000m,
+                    ApprovedManHour = 1.5m,
+                    ApprovedLaborAmount = 600000m,
+                    Technician = "KTV-Trưởng Phạm Văn Hưng",
+                    Status = "Settled",
+                    Remark = "Đã thực hiện đúng quy trình kỹ thuật TSB"
+                }
+            );
+
+            db.WarrantyReportPartLines.AddRange(
+                new WarrantyReportPartLine
+                {
+                    OrgId = org,
+                    WarrantyReportId = wr1.Id,
+                    ROWNo = wr1.ROWNo,
+                    PartCode = "56315-2K000-FFF",
+                    PartName = "Khớp cao su giảm chấn trục lái điện MDPS (Coupling Flexible Steering Column)",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 250000m,
+                    TotalAmount = 250000m,
+                    ApprovedQty = 1,
+                    ApprovedAmount = 250000m,
+                    IsMainPart = true,
+                    OldPartSerialNo = "MDPS-OLD-88912",
+                    OldPartReturnStatus = "Returned",
+                    Status = "Settled",
+                    Remark = "Phụ tùng lỗi vỡ cao su đã gửi về kho bảo hành OEM Ninh Bình"
+                },
+                new WarrantyReportPartLine
+                {
+                    OrgId = org,
+                    WarrantyReportId = wr1.Id,
+                    ROWNo = wr1.ROWNo,
+                    PartCode = "93480-3X000",
+                    PartName = "Cụm cảm biến góc lái điện tử EPS (Clock Spring / Steering Angle Sensor)",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 1200000m,
+                    TotalAmount = 1200000m,
+                    ApprovedQty = 1,
+                    ApprovedAmount = 1200000m,
+                    IsMainPart = false,
+                    OldPartSerialNo = "SAS-OLD-33120",
+                    OldPartReturnStatus = "Returned",
+                    Status = "Settled",
+                    Remark = "Đã thu hồi xác linh kiện"
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.LastWarrantyReportNo = wr1.ROWNo;
+                v1.LastWarrantyReportDate = wr1.CreatedAt;
+                v1.WarrantyClaimCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -2341,7 +2466,13 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCampaignNo\" text NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCampaignDate\" timestamp NULL",
             "CREATE TABLE IF NOT EXISTS public.\"ServiceCampaigns\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CamMarketingNo\" text NOT NULL DEFAULT '', \"CamMarketingNoUser\" text NULL, \"CampaignName\" text NOT NULL DEFAULT '', \"CampaignType\" text NOT NULL DEFAULT 'SeasonalService', \"Model\" text NULL, \"DateStart\" timestamp NOT NULL DEFAULT now(), \"DateEnd\" timestamp NOT NULL DEFAULT now(), \"DiscountLaborPercent\" numeric NOT NULL DEFAULT 0, \"DiscountPartPercent\" numeric NOT NULL DEFAULT 0, \"FreeInspectionItems\" text NULL, \"GiftDescription\" text NULL, \"BudgetAmount\" numeric NOT NULL DEFAULT 0, \"ActualAmount\" numeric NOT NULL DEFAULT 0, \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"AttendedVehicleCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"ServiceCampaignLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceCampaignId\" bigint NOT NULL, \"CamMarketingNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NULL, \"CustomerPhone\" text NULL, \"ServiceDate\" timestamp NULL, \"RoNo\" text NULL, \"DiscountLaborAmount\" numeric NOT NULL DEFAULT 0, \"DiscountPartAmount\" numeric NOT NULL DEFAULT 0, \"TotalDiscountAmount\" numeric NOT NULL DEFAULT 0, \"IsGiftDelivered\" boolean NOT NULL DEFAULT false, \"GiftName\" text NULL, \"Technician\" text NULL, \"ServiceAdvisor\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceCampaignLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceCampaignId\" bigint NOT NULL, \"CamMarketingNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NULL, \"CustomerPhone\" text NULL, \"ServiceDate\" timestamp NULL, \"RoNo\" text NULL, \"DiscountLaborAmount\" numeric NOT NULL DEFAULT 0, \"DiscountPartAmount\" numeric NOT NULL DEFAULT 0, \"TotalDiscountAmount\" numeric NOT NULL DEFAULT 0, \"IsGiftDelivered\" boolean NOT NULL DEFAULT false, \"GiftName\" text NULL, \"Technician\" text NULL, \"ServiceAdvisor\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastWarrantyReportNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastWarrantyReportDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"WarrantyClaimCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"WarrantyReports\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ROWNo\" text NOT NULL DEFAULT '', \"ROWNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RoNo\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"PlateNo\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"OdoKm\" integer NOT NULL DEFAULT 0, \"CheckInDate\" timestamp NOT NULL DEFAULT now(), \"StartDate\" timestamp NULL, \"FinishedDate\" timestamp NULL, \"WarrantyStartDate\" timestamp NULL, \"WarrantyEndDate\" timestamp NULL, \"WarrantyMonths\" integer NOT NULL DEFAULT 36, \"CusName\" text NULL, \"CusTel\" text NULL, \"CusAddress\" text NULL, \"CusRequest\" text NULL, \"DiagnosticResult\" text NULL, \"NaturalCode\" text NOT NULL DEFAULT 'C01', \"CauseCode\" text NOT NULL DEFAULT 'M01', \"MainPartCode\" text NULL, \"MainPartName\" text NULL, \"WarrantyType\" text NOT NULL DEFAULT 'Standard', \"TotalLaborAmount\" numeric NOT NULL DEFAULT 0, \"TotalPartAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"ApprovedLaborAmount\" numeric NOT NULL DEFAULT 0, \"ApprovedPartAmount\" numeric NOT NULL DEFAULT 0, \"ApprovedTotalAmount\" numeric NOT NULL DEFAULT 0, \"ReimbursedAmount\" numeric NOT NULL DEFAULT 0, \"ReimburseDate\" timestamp NULL, \"AccountingRefNo\" text NULL, \"OldPartsInspectionStatus\" text NOT NULL DEFAULT 'PendingReturn', \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ConfirmedBy\" text NULL, \"ConfirmedAt\" timestamp NULL, \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"WarrantyReportLaborLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"WarrantyReportId\" bigint NOT NULL, \"ROWNo\" text NOT NULL DEFAULT '', \"SerCode\" text NOT NULL DEFAULT '', \"SerName\" text NOT NULL DEFAULT '', \"StdManHour\" numeric NOT NULL DEFAULT 1.0, \"LaborPrice\" numeric NOT NULL DEFAULT 300000, \"LaborAmount\" numeric NOT NULL DEFAULT 300000, \"ApprovedManHour\" numeric NOT NULL DEFAULT 1.0, \"ApprovedLaborAmount\" numeric NOT NULL DEFAULT 300000, \"Technician\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"RejectReason\" text NULL, \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"WarrantyReportPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"WarrantyReportId\" bigint NOT NULL, \"ROWNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"ApprovedQty\" numeric NOT NULL DEFAULT 1, \"ApprovedAmount\" numeric NOT NULL DEFAULT 0, \"IsMainPart\" boolean NOT NULL DEFAULT false, \"OldPartSerialNo\" text NULL, \"OldPartReturnStatus\" text NOT NULL DEFAULT 'PendingReturn', \"Status\" text NOT NULL DEFAULT 'Pending', \"RejectReason\" text NULL, \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }
