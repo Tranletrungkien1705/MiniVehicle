@@ -116,6 +116,13 @@
 <li><code>POST /api/letters-of-credit/{lcNo}/lines/{lineId}/update</code> — cập nhật đơn giá ngoại tệ, quy đổi VNĐ, liên kết Packing List và Tờ khai hải quan theo dòng xe L/C</li>
 <li><code>POST /api/letters-of-credit/{lcNo}/lines</code> &amp; <code>DELETE /api/letters-of-credit/{lcNo}/lines/{lineId}</code> — bổ sung hoặc rút bớt xe trong thư tín dụng L/C</li>
 <li><code>GET /api/vehicles/{vin}/lc-info</code> — tra cứu thông tin thư tín dụng L/C, ngân hàng phát hành, hạn mức ký quỹ và lịch sử thanh toán quốc tế của số khung VIN</li>
+<li><code>POST /api/repair-orders</code> &amp; <code>/api/repair-orders/{roNo}/{action}</code> — tiếp nhận, nộp duyệt, đưa vào xưởng, sửa chữa, nghiệm thu bàn giao xe &amp; thanh toán Lệnh sửa chữa / Dịch vụ xưởng đại lý (BizHTC.Car / DMS.CarService / SerROService / Ser_RO: submit, start/in-garage, repair/repaired, deliver/delivered, pay/paid, cancel/reject)</li>
+<li><code>GET /api/repair-orders?status=&amp;dealer=&amp;roType=&amp;vin=&amp;plateNo=&amp;roNo=</code> — tra cứu danh sách lệnh sửa chữa xưởng dịch vụ (bảo dưỡng định kỳ, sửa chữa chung, đồng sơn, bảo hành, khắc phục PDI)</li>
+<li><code>GET /api/repair-orders/summary</code> — báo cáo tổng hợp xưởng dịch vụ theo trạng thái, loại dịch vụ, đại lý, doanh thu tiền công &amp; phụ tùng</li>
+<li><code>PUT /api/repair-orders/{roNo}</code> — điều chỉnh thông tin khách hàng, số km ODO, cố vấn dịch vụ, kỹ thuật viên, chẩn đoán hư hỏng, chiết khấu và thuế VAT</li>
+<li><code>POST /api/repair-orders/{roNo}/service-lines/{lineId}/update</code> &amp; <code>POST /api/repair-orders/{roNo}/service-lines</code> &amp; <code>DELETE /api/repair-orders/{roNo}/service-lines/{lineId}</code> — thêm, sửa, xóa hạng mục công việc dịch vụ / tiền công (Labor)</li>
+<li><code>POST /api/repair-orders/{roNo}/part-lines/{lineId}/update</code> &amp; <code>POST /api/repair-orders/{roNo}/part-lines</code> &amp; <code>DELETE /api/repair-orders/{roNo}/part-lines/{lineId}</code> — thêm, sửa, xóa phụ tùng thay thế chính hãng và nguồn thanh toán (Khách / Bảo hành / Bảo hiểm)</li>
+<li><code>GET /api/vehicles/{vin}/repair-history</code> &amp; <code>GET /api/vehicles/{vin}/ro-history</code> — tra cứu toàn bộ lịch sử các lần vào xưởng bảo dưỡng, sửa chữa và thay thế phụ tùng của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

@@ -1612,6 +1612,145 @@ app.MapGet("/api/vehicles/{vin}/lc-info", async (string vin, IVehicleService svc
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Lệnh sửa chữa & Dịch vụ xưởng đại lý ủy quyền (BizHTC.Car / DMS.CarService / SerROService / Ser_RO) ----
+app.MapPost("/api/repair-orders", async (CreateRepairOrderDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode và số khung Vin để lập lệnh sửa chữa." });
+    try { return Results.Ok(await svc.CreateRepairOrderAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/repair-orders", async (IVehicleService svc, string? status, string? dealer, string? roType, string? vin, string? plateNo, string? roNo) =>
+    Results.Ok(await svc.ListRepairOrdersAsync(status, dealer, roType, vin, plateNo, roNo))).RequireAuthorization();
+
+app.MapGet("/api/repair-orders/summary", async (IVehicleService svc) =>
+    Results.Ok(await svc.GetRepairOrderSummaryAsync())).RequireAuthorization();
+
+app.MapGet("/api/repair-orders/{roNo}", async (string roNo, IVehicleService svc) =>
+{
+    var r = await svc.GetRepairOrderAsync(roNo);
+    return r is null ? Results.NotFound(new { roNo, error = "Không tìm thấy lệnh sửa chữa." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/repair-orders/{roNo}", async (string roNo, UpdateRepairOrderHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateRepairOrderHeaderAsync(roNo, dto);
+        return r is null ? Results.NotFound(new { roNo, error = "Không tìm thấy lệnh sửa chữa hoặc lệnh đã thanh toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/repair-orders/{roNo}/{action}", async (string roNo, string action, RepairOrderTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "request" or "start" or "in-garage" or "ingarage" or "in-progress" or "inprogress" or "repair" or "repaired" or "pass-qc" or "qc-pass" or "deliver" or "delivered" or "complete" or "finish" or "pay" or "paid" or "settle" or "cancel" or "reject"))
+        return Results.BadRequest(new { error = "action = submit|start|repair|deliver|pay|cancel" });
+    try
+    {
+        var r = await svc.RepairOrderTransitionAsync(roNo, action, dto);
+        return r is null ? Results.NotFound(new { roNo, error = "Không thấy lệnh sửa chữa hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/repair-orders/{roNo}/service-lines/{lineId:long}/update", async (string roNo, long lineId, UpdateRepairOrderServiceLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateRepairOrderServiceLineAsync(roNo, lineId, dto);
+        return r is null ? Results.NotFound(new { roNo, lineId, error = "Không tìm thấy dòng dịch vụ hoặc lệnh đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/repair-orders/{roNo}/service-lines/{lineId:long}", async (string roNo, long lineId, UpdateRepairOrderServiceLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateRepairOrderServiceLineAsync(roNo, lineId, dto);
+        return r is null ? Results.NotFound(new { roNo, lineId, error = "Không tìm thấy dòng dịch vụ hoặc lệnh đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/repair-orders/{roNo}/service-lines", async (string roNo, List<RepairOrderServiceItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items hạng mục dịch vụ để thêm vào lệnh sửa chữa." });
+    try
+    {
+        var r = await svc.AddRepairOrderServiceLinesAsync(roNo, items);
+        return r is null ? Results.NotFound(new { roNo, error = "Không tìm thấy lệnh sửa chữa hoặc lệnh đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/repair-orders/{roNo}/service-lines/{lineId:long}", async (string roNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveRepairOrderServiceLineAsync(roNo, lineId);
+        return r is null ? Results.NotFound(new { roNo, lineId, error = "Không tìm thấy dòng dịch vụ hoặc lệnh đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/repair-orders/{roNo}/part-lines/{lineId:long}/update", async (string roNo, long lineId, UpdateRepairOrderPartLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateRepairOrderPartLineAsync(roNo, lineId, dto);
+        return r is null ? Results.NotFound(new { roNo, lineId, error = "Không tìm thấy dòng phụ tùng hoặc lệnh đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/repair-orders/{roNo}/part-lines/{lineId:long}", async (string roNo, long lineId, UpdateRepairOrderPartLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateRepairOrderPartLineAsync(roNo, lineId, dto);
+        return r is null ? Results.NotFound(new { roNo, lineId, error = "Không tìm thấy dòng phụ tùng hoặc lệnh đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/repair-orders/{roNo}/part-lines", async (string roNo, List<RepairOrderPartItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items phụ tùng để thêm vào lệnh sửa chữa." });
+    try
+    {
+        var r = await svc.AddRepairOrderPartLinesAsync(roNo, items);
+        return r is null ? Results.NotFound(new { roNo, error = "Không tìm thấy lệnh sửa chữa hoặc lệnh đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/repair-orders/{roNo}/part-lines/{lineId:long}", async (string roNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveRepairOrderPartLineAsync(roNo, lineId);
+        return r is null ? Results.NotFound(new { roNo, lineId, error = "Không tìm thấy dòng phụ tùng hoặc lệnh đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/repair-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleRepairOrderHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/ro-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleRepairOrderHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

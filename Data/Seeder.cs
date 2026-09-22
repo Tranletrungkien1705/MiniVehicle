@@ -1412,6 +1412,270 @@ public static class Seeder
             var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
             if (v2 != null) v2.LCNo = lc1.LCNo;
         }
+
+        if (!await db.RepairOrders.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var ro1 = new RepairOrder
+            {
+                OrgId = org,
+                RoNo = "RO-HN01-2026-0001",
+                RoNoUser = "RO/2026/03/HN01-001",
+                DealerCode = "DLR-HN01",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                EngineNo = "G4LC0001",
+                PlateNo = "30K-988.66",
+                CustomerName = "Nguyễn Văn An",
+                CustomerPhone = "0901234567",
+                RoType = "PeriodicMaintenance",
+                ServiceAdvisor = "CVDV Trần Quốc Tuấn",
+                Technician = "KTV-Trưởng Phạm Văn Hưng",
+                OdoKm = 5120,
+                FuelLevel = "3/4",
+                CarStatus = "Xe sạch sẽ, không trầy xước phát sinh, có thảm lót sàn cao su",
+                CustomerRequest = "Bảo dưỡng định kỳ 5.000 km, thay dầu máy, lọc nhớt, kiểm tra phanh và hệ thống điện",
+                DiagnosisNotes = "Ắc quy 12.6V tốt, má phanh trước/sau độ mòn chuẩn, lốp 2.3 bar, không có mã lỗi DTC",
+                CheckInDate = DateTime.Now.AddDays(-6),
+                ExpectedDeliveryDate = DateTime.Now.AddDays(-6).AddHours(3),
+                ActualDeliveryDate = DateTime.Now.AddDays(-6).AddHours(2),
+                TotalLaborAmount = 400000m,
+                TotalPartAmount = 900000m,
+                DiscountAmount = 50000m,
+                VatRate = 10,
+                TotalVatAmount = 125000m,
+                TotalAmount = 1375000m,
+                PaymentStatus = "Paid",
+                PaymentMethod = "Cash",
+                PaymentNotes = "Khách thanh toán tiền mặt tại quầy thu ngân đại lý",
+                Status = "Paid",
+                Remark = "Bảo dưỡng cấp 1 (5.000 km) hoàn tất đúng tiến độ, khách hài lòng",
+                CreatedBy = "cvdv.tuan",
+                CreatedAt = DateTime.Now.AddDays(-6),
+                ApprovedBy = "Quản Đốc Xưởng Lê Văn Thắng",
+                ApprovedAt = DateTime.Now.AddDays(-6).AddMinutes(15),
+                RepairedBy = "QC Inspector Nguyễn Tuấn Anh",
+                RepairedAt = DateTime.Now.AddDays(-6).AddHours(1).AddMinutes(45),
+                DeliveredBy = "CVDV Trần Quốc Tuấn",
+                DeliveredAt = DateTime.Now.AddDays(-6).AddHours(2),
+                PaidBy = "Thu Ngân Phạm Thu Hương",
+                PaidAt = DateTime.Now.AddDays(-6).AddHours(2).AddMinutes(10)
+            };
+            db.RepairOrders.Add(ro1);
+            await db.SaveChangesAsync();
+
+            db.RepairOrderServiceLines.AddRange(
+                new RepairOrderServiceLine
+                {
+                    OrgId = org,
+                    RepairOrderId = ro1.Id,
+                    RoNo = ro1.RoNo,
+                    SerCode = "BD-5K",
+                    SerName = "Bảo dưỡng định kỳ cấp 5.000 km tiêu chuẩn",
+                    ServiceType = "Maintenance",
+                    StandardHours = 1.0m,
+                    LaborPrice = 300000m,
+                    Discount = 0,
+                    LaborAmount = 300000m,
+                    Technician = "KTV Phạm Văn Hưng",
+                    Status = "Completed",
+                    Remark = "Kiểm tra 24 hạng mục tiêu chuẩn Hyundai toàn cầu"
+                },
+                new RepairOrderServiceLine
+                {
+                    OrgId = org,
+                    RepairOrderId = ro1.Id,
+                    RoNo = ro1.RoNo,
+                    SerCode = "KT-DIEN",
+                    SerName = "Kiểm tra hệ thống điện, ắc quy & chẩn đoán ECU GDS-Mobile",
+                    ServiceType = "Inspection",
+                    StandardHours = 0.5m,
+                    LaborPrice = 200000m,
+                    Discount = 0,
+                    LaborAmount = 100000m,
+                    Technician = "KTV Điện Bùi Văn Khoa",
+                    Status = "Completed",
+                    Remark = "Quét chẩn đoán không phát hiện lỗi (No DTCs)"
+                }
+            );
+
+            db.RepairOrderPartLines.AddRange(
+                new RepairOrderPartLine
+                {
+                    OrgId = org,
+                    RepairOrderId = ro1.Id,
+                    RoNo = ro1.RoNo,
+                    PartCode = "26300-35505",
+                    PartName = "Lọc dầu động cơ chính hãng Mobis",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 120000m,
+                    Discount = 0,
+                    TotalAmount = 120000m,
+                    PaymentType = "Customer",
+                    Status = "Issued",
+                    Remark = "Xuất kho xưởng dịch vụ"
+                },
+                new RepairOrderPartLine
+                {
+                    OrgId = org,
+                    RepairOrderId = ro1.Id,
+                    RoNo = ro1.RoNo,
+                    PartCode = "05100-00441",
+                    PartName = "Dầu nhờn động cơ cao cấp Hyundai Genuine Oil 5W-30 SN/CF",
+                    Unit = "Lít",
+                    Quantity = 3.5m,
+                    UnitPrice = 160000m,
+                    Discount = 0,
+                    TotalAmount = 560000m,
+                    PaymentType = "Customer",
+                    Status = "Issued",
+                    Remark = "Thay đủ 3.5 lít theo tài liệu kỹ thuật"
+                },
+                new RepairOrderPartLine
+                {
+                    OrgId = org,
+                    RepairOrderId = ro1.Id,
+                    RoNo = ro1.RoNo,
+                    PartCode = "97133-2E210",
+                    PartName = "Lọc gió điều hòa cabin kháng khuẩn",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 220000m,
+                    Discount = 0,
+                    TotalAmount = 220000m,
+                    PaymentType = "Customer",
+                    Status = "Issued",
+                    Remark = "Thay mới theo yêu cầu khách hàng"
+                }
+            );
+
+            var ro2 = new RepairOrder
+            {
+                OrgId = org,
+                RoNo = "RO-HN01-2026-0002",
+                RoNoUser = "RO/2026/03/HN01-002",
+                DealerCode = "DLR-HN01",
+                Vin = "DEMOVIN00000002",
+                Model = "Creta 1.5 Cao cấp",
+                EngineNo = "G4FL0002",
+                PlateNo = "30K-678.90",
+                CustomerName = "Lê Thanh Bình",
+                CustomerPhone = "0912345678",
+                RoType = "BodyPaint",
+                ServiceAdvisor = "CVDV Vũ Hồng Sơn",
+                Technician = "Quản Đốc Sơn Đỗ Mạnh Cường",
+                OdoKm = 3200,
+                FuelLevel = "1/2",
+                CarStatus = "Trầy xước và móp nhẹ mép cản trước bên phụ do quẹt vỉa hè",
+                CustomerRequest = "Làm đồng sơn phục hồi cản trước theo hợp đồng bảo hiểm PJICO",
+                DiagnosisNotes = "Cản trước biến dạng nhẹ, cần nẹp viền mạ crom và sơn hấp nhiệt màu Đen SAW",
+                CheckInDate = DateTime.Now.AddDays(-1),
+                ExpectedDeliveryDate = DateTime.Now.AddDays(1),
+                TotalLaborAmount = 1425000m,
+                TotalPartAmount = 2300000m,
+                DiscountAmount = 100000m,
+                VatRate = 10,
+                TotalVatAmount = 362500m,
+                TotalAmount = 3987500m,
+                PaymentStatus = "InsuranceCovered",
+                PaymentMethod = "Insurance",
+                PaymentNotes = "Hồ sơ bồi thường Bảo hiểm PJICO Hà Nội - Giám định viên Trần Hải Long",
+                Status = "InGarage",
+                Remark = "Đang trong phòng sấy sơn nhiệt, dự kiến bàn giao chiều mai",
+                CreatedBy = "cvdv.son",
+                CreatedAt = DateTime.Now.AddDays(-1),
+                ApprovedBy = "Quản Đốc Đồng Sơn Đỗ Mạnh Cường",
+                ApprovedAt = DateTime.Now.AddDays(-1).AddHours(1)
+            };
+            db.RepairOrders.Add(ro2);
+            await db.SaveChangesAsync();
+
+            db.RepairOrderServiceLines.AddRange(
+                new RepairOrderServiceLine
+                {
+                    OrgId = org,
+                    RepairOrderId = ro2.Id,
+                    RoNo = ro2.RoNo,
+                    SerCode = "DS-CAN-TRUOC",
+                    SerName = "Gò nắn căn chỉnh phục hồi form cản trước",
+                    ServiceType = "BodyPaint",
+                    StandardHours = 1.5m,
+                    LaborPrice = 350000m,
+                    Discount = 0,
+                    LaborAmount = 525000m,
+                    Technician = "KTV Đồng Nguyễn Hữu Toàn",
+                    Status = "Completed",
+                    Remark = "Phục hồi chuẩn khe hở cản và tai xe"
+                },
+                new RepairOrderServiceLine
+                {
+                    OrgId = org,
+                    RepairOrderId = ro2.Id,
+                    RoNo = ro2.RoNo,
+                    SerCode = "SON-CAN-TRUOC",
+                    SerName = "Sơn lót, sơn màu Đen SAW và sơn bóng hấp nhiệt cản trước",
+                    ServiceType = "BodyPaint",
+                    StandardHours = 2.0m,
+                    LaborPrice = 450000m,
+                    Discount = 0,
+                    LaborAmount = 900000m,
+                    Technician = "KTV Sơn Đỗ Mạnh Cường",
+                    Status = "InProgress",
+                    Remark = "Sơn trong buồng sấy nhiệt tiêu chuẩn OEM"
+                }
+            );
+
+            db.RepairOrderPartLines.AddRange(
+                new RepairOrderPartLine
+                {
+                    OrgId = org,
+                    RepairOrderId = ro2.Id,
+                    RoNo = ro2.RoNo,
+                    PartCode = "86511-BW000",
+                    PartName = "Vỏ cản trước xe Hyundai Creta chính hãng",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 1850000m,
+                    Discount = 0,
+                    TotalAmount = 1850000m,
+                    PaymentType = "Insurance",
+                    Status = "Issued",
+                    Remark = "Bảo hiểm PJICO duyệt bồi thường 100%"
+                },
+                new RepairOrderPartLine
+                {
+                    OrgId = org,
+                    RepairOrderId = ro2.Id,
+                    RoNo = ro2.RoNo,
+                    PartCode = "86519-BW000",
+                    PartName = "Nẹp trang trí mạ crom cản trước Creta",
+                    Unit = "Cái",
+                    Quantity = 1,
+                    UnitPrice = 450000m,
+                    Discount = 0,
+                    TotalAmount = 450000m,
+                    PaymentType = "Insurance",
+                    Status = "Issued",
+                    Remark = "Bảo hiểm PJICO duyệt bồi thường 100%"
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.LastRoNo = ro1.RoNo;
+                v1.LastRoDate = ro1.CheckInDate;
+                v1.LastOdoKm = ro1.OdoKm;
+            }
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null)
+            {
+                v2.LastRoNo = ro2.RoNo;
+                v2.LastRoDate = ro2.CheckInDate;
+                v2.LastOdoKm = ro2.OdoKm;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -1509,8 +1773,14 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"ContractOverseas\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ContractNo\" text NOT NULL DEFAULT '', \"ContractNoUser\" text NULL, \"SupplierCode\" text NOT NULL DEFAULT '', \"SupplierName\" text NULL, \"IncotermsCode\" text NOT NULL DEFAULT 'CIF_HAI_PHONG', \"Currency\" text NOT NULL DEFAULT 'USD', \"ExchangeRate\" numeric NOT NULL DEFAULT 25450, \"PaymentTerm\" text NOT NULL DEFAULT 'LC', \"DeparturePort\" text NOT NULL DEFAULT 'BUSAN', \"ArrivalPort\" text NOT NULL DEFAULT 'CANG_HAI_PHONG', \"OrderMonth\" text NULL, \"ProductionMonth\" text NULL, \"ExpectedDeliveryMonth\" text NULL, \"ContractDate\" timestamp NOT NULL DEFAULT now(), \"DeliveryDeadline\" timestamp NULL, \"TotalQuantity\" integer NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"FileSigned\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"ContractOverseaLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ContractOverseaId\" bigint NOT NULL, \"ContractNo\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"Color\" text NULL, \"ColorCode\" text NULL, \"ModelYear\" integer NULL DEFAULT 2026, \"PlantCode\" text NULL, \"PortCode\" text NULL, \"WorkOrderNo\" text NULL, \"LCTemp\" text NULL, \"OrderQty\" integer NOT NULL DEFAULT 1, \"UnitPriceForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LCNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastRoNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastRoDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastOdoKm\" integer NULL",
             "CREATE TABLE IF NOT EXISTS public.\"LettersOfCredit\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"LCNo\" text NOT NULL DEFAULT '', \"LCNoUser\" text NULL, \"ContractNo\" text NOT NULL DEFAULT '', \"BankCode\" text NOT NULL DEFAULT 'VCB', \"BankName\" text NULL, \"BeneficiaryName\" text NULL, \"ApplicantName\" text NULL, \"Currency\" text NOT NULL DEFAULT 'USD', \"ExchangeRate\" numeric NOT NULL DEFAULT 25450, \"LCAmountForeign\" numeric NOT NULL DEFAULT 0, \"LCAmount\" numeric NOT NULL DEFAULT 0, \"MarginRate\" numeric NOT NULL DEFAULT 10, \"MarginAmount\" numeric NOT NULL DEFAULT 0, \"IssueDate\" timestamp NOT NULL DEFAULT now(), \"ExpiryDate\" timestamp NOT NULL DEFAULT now(), \"LatestShipmentDate\" timestamp NULL, \"PaymentTerm\" text NOT NULL DEFAULT 'AtSight', \"DeparturePort\" text NOT NULL DEFAULT 'BUSAN', \"ArrivalPort\" text NOT NULL DEFAULT 'CANG_HAI_PHONG', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"UtilizedAmountForeign\" numeric NOT NULL DEFAULT 0, \"UtilizedAmount\" numeric NOT NULL DEFAULT 0, \"RemainingAmountForeign\" numeric NOT NULL DEFAULT 0, \"RemainingAmount\" numeric NOT NULL DEFAULT 0, \"SwiftCode\" text NULL, \"FileSigned\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"UtilizedBy\" text NULL, \"UtilizedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"LetterOfCreditLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"LetterOfCreditId\" bigint NOT NULL, \"LCNo\" text NOT NULL DEFAULT '', \"ContractNo\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"OrderQty\" integer NOT NULL DEFAULT 1, \"UnitPriceForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PackingListNo\" text NULL, \"DeclarationNo\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"RepairOrders\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RoNo\" text NOT NULL DEFAULT '', \"RoNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NULL, \"CustomerPhone\" text NULL, \"RoType\" text NOT NULL DEFAULT 'PeriodicMaintenance', \"ServiceAdvisor\" text NULL, \"Technician\" text NULL, \"OdoKm\" integer NOT NULL DEFAULT 0, \"FuelLevel\" text NULL DEFAULT '1/2', \"CarStatus\" text NULL, \"CustomerRequest\" text NULL, \"DiagnosisNotes\" text NULL, \"CheckInDate\" timestamp NOT NULL DEFAULT now(), \"ExpectedDeliveryDate\" timestamp NULL, \"ActualDeliveryDate\" timestamp NULL, \"TotalLaborAmount\" numeric NOT NULL DEFAULT 0, \"TotalPartAmount\" numeric NOT NULL DEFAULT 0, \"DiscountAmount\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PaymentStatus\" text NOT NULL DEFAULT 'Unpaid', \"PaymentMethod\" text NOT NULL DEFAULT 'Cash', \"PaymentNotes\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"RepairedBy\" text NULL, \"RepairedAt\" timestamp NULL, \"DeliveredBy\" text NULL, \"DeliveredAt\" timestamp NULL, \"PaidBy\" text NULL, \"PaidAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"RepairOrderServiceLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RepairOrderId\" bigint NOT NULL, \"RoNo\" text NOT NULL DEFAULT '', \"SerCode\" text NOT NULL DEFAULT '', \"SerName\" text NOT NULL DEFAULT '', \"ServiceType\" text NOT NULL DEFAULT 'Maintenance', \"StandardHours\" numeric NOT NULL DEFAULT 1.0, \"LaborPrice\" numeric NOT NULL DEFAULT 300000, \"Discount\" numeric NOT NULL DEFAULT 0, \"LaborAmount\" numeric NOT NULL DEFAULT 300000, \"Technician\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"RepairOrderPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RepairOrderId\" bigint NOT NULL, \"RoNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"Discount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PaymentType\" text NOT NULL DEFAULT 'Customer', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

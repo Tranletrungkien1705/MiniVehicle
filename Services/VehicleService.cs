@@ -773,6 +773,118 @@ public record UpdateLetterOfCreditLineDto(
     string? Remark = null
 );
 
+public record RepairOrderServiceItemInputDto(
+    string SerCode,
+    string SerName,
+    string? ServiceType = "Maintenance",
+    decimal StandardHours = 1.0m,
+    decimal LaborPrice = 300000m,
+    decimal Discount = 0,
+    decimal? LaborAmount = null,
+    string? Technician = null,
+    string? Remark = null
+);
+
+public record RepairOrderPartItemInputDto(
+    string PartCode,
+    string PartName,
+    string? Unit = "Cái",
+    decimal Quantity = 1,
+    decimal UnitPrice = 0,
+    decimal Discount = 0,
+    decimal? TotalAmount = null,
+    string? PaymentType = "Customer",
+    string? Remark = null
+);
+
+public record CreateRepairOrderDto(
+    string DealerCode,
+    string Vin,
+    List<RepairOrderServiceItemInputDto>? ServiceItems = null,
+    List<RepairOrderPartItemInputDto>? PartItems = null,
+    string? RoNo = null,
+    string? RoNoUser = null,
+    string? Model = null,
+    string? EngineNo = null,
+    string? PlateNo = null,
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    string? RoType = "PeriodicMaintenance",
+    string? ServiceAdvisor = null,
+    string? Technician = null,
+    int OdoKm = 0,
+    string? FuelLevel = "1/2",
+    string? CarStatus = null,
+    string? CustomerRequest = null,
+    string? DiagnosisNotes = null,
+    DateTime? CheckInDate = null,
+    DateTime? ExpectedDeliveryDate = null,
+    decimal DiscountAmount = 0,
+    decimal VatRate = 10,
+    string? PaymentMethod = "Cash",
+    string? Remark = null,
+    string? CreatedBy = null
+);
+
+public record RepairOrderTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? ServiceAdvisor = null,
+    string? Technician = null,
+    int? OdoKm = null,
+    DateTime? ActualDeliveryDate = null,
+    string? PaymentStatus = null,
+    string? PaymentMethod = null,
+    string? PaymentNotes = null,
+    string? Reason = null
+);
+
+public record UpdateRepairOrderHeaderDto(
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    string? PlateNo = null,
+    string? RoType = null,
+    string? ServiceAdvisor = null,
+    string? Technician = null,
+    int? OdoKm = null,
+    string? FuelLevel = null,
+    string? CarStatus = null,
+    string? CustomerRequest = null,
+    string? DiagnosisNotes = null,
+    DateTime? ExpectedDeliveryDate = null,
+    decimal? DiscountAmount = null,
+    decimal? VatRate = null,
+    string? PaymentMethod = null,
+    string? PaymentNotes = null,
+    string? Remark = null
+);
+
+public record UpdateRepairOrderServiceLineDto(
+    string? SerCode = null,
+    string? SerName = null,
+    string? ServiceType = null,
+    decimal? StandardHours = null,
+    decimal? LaborPrice = null,
+    decimal? Discount = null,
+    decimal? LaborAmount = null,
+    string? Technician = null,
+    string? Status = null,
+    string? Remark = null
+);
+
+public record UpdateRepairOrderPartLineDto(
+    string? PartCode = null,
+    string? PartName = null,
+    string? Unit = null,
+    decimal? Quantity = null,
+    decimal? UnitPrice = null,
+    decimal? Discount = null,
+    decimal? TotalAmount = null,
+    string? PaymentType = null,
+    string? Status = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -988,6 +1100,19 @@ public interface IVehicleService
     Task<object?> RemoveLetterOfCreditLineAsync(string lcNo, long lineId);
     Task<object?> GetVehicleLetterOfCreditInfoAsync(string vin);
     Task<object> GetLetterOfCreditSummaryAsync();
+    Task<object> CreateRepairOrderAsync(CreateRepairOrderDto dto);
+    Task<object> ListRepairOrdersAsync(string? status, string? dealer, string? roType, string? vin, string? plateNo, string? roNo);
+    Task<object?> GetRepairOrderAsync(string roNo);
+    Task<object?> RepairOrderTransitionAsync(string roNo, string action, RepairOrderTransitionDto? dto);
+    Task<object?> UpdateRepairOrderHeaderAsync(string roNo, UpdateRepairOrderHeaderDto dto);
+    Task<object?> UpdateRepairOrderServiceLineAsync(string roNo, long lineId, UpdateRepairOrderServiceLineDto dto);
+    Task<object?> AddRepairOrderServiceLinesAsync(string roNo, List<RepairOrderServiceItemInputDto> items);
+    Task<object?> RemoveRepairOrderServiceLineAsync(string roNo, long lineId);
+    Task<object?> UpdateRepairOrderPartLineAsync(string roNo, long lineId, UpdateRepairOrderPartLineDto dto);
+    Task<object?> AddRepairOrderPartLinesAsync(string roNo, List<RepairOrderPartItemInputDto> items);
+    Task<object?> RemoveRepairOrderPartLineAsync(string roNo, long lineId);
+    Task<object?> GetVehicleRepairOrderHistoryAsync(string vin);
+    Task<object> GetRepairOrderSummaryAsync();
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -15022,6 +15147,896 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byBank,
             byCurrency,
             byPaymentTerm
+        };
+    }
+
+    // ==========================================
+    // Lệnh sửa chữa & Dịch vụ xưởng đại lý (BizHTC.Car / DMS.CarService / SerROService / Ser_RO)
+    // ==========================================
+
+    private static void RecalculateRepairOrderTotals(RepairOrder ro, List<RepairOrderServiceLine> sLines, List<RepairOrderPartLine> pLines)
+    {
+        ro.TotalLaborAmount = sLines.Where(l => l.Status != "Cancelled").Sum(l => l.LaborAmount);
+        ro.TotalPartAmount = pLines.Where(l => l.Status != "Cancelled").Sum(l => l.TotalAmount);
+        var subTotal = Math.Max(0, ro.TotalLaborAmount + ro.TotalPartAmount - ro.DiscountAmount);
+        ro.TotalVatAmount = Math.Round(subTotal * ro.VatRate / 100m, 2);
+        ro.TotalAmount = subTotal + ro.TotalVatAmount;
+    }
+
+    public async Task<object> CreateRepairOrderAsync(CreateRepairOrderDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.Vin))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode và số khung Vin để lập lệnh sửa chữa.");
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var dealerCode = dto.DealerCode.Trim();
+        var roNo = !string.IsNullOrWhiteSpace(dto.RoNo)
+            ? dto.RoNo.Trim().ToUpperInvariant()
+            : $"RO-{dealerCode}-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+
+        if (await db.RepairOrders.AnyAsync(r => r.OrgId == Org && r.RoNo == roNo))
+            throw new InvalidOperationException($"Lệnh sửa chữa {roNo} đã tồn tại.");
+
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        var model = !string.IsNullOrWhiteSpace(dto.Model) ? dto.Model.Trim() : (v?.Model ?? "Unknown");
+        var engineNo = !string.IsNullOrWhiteSpace(dto.EngineNo) ? dto.EngineNo.Trim() : v?.EngineNo;
+        var plateNo = !string.IsNullOrWhiteSpace(dto.PlateNo) ? dto.PlateNo.Trim() : v?.PlateNo;
+        var custName = !string.IsNullOrWhiteSpace(dto.CustomerName) ? dto.CustomerName.Trim() : (v?.OwnerName ?? "Khách hàng dịch vụ");
+        var custPhone = !string.IsNullOrWhiteSpace(dto.CustomerPhone) ? dto.CustomerPhone.Trim() : v?.OwnerPhone;
+
+        var ro = new RepairOrder
+        {
+            OrgId = Org,
+            RoNo = roNo,
+            RoNoUser = dto.RoNoUser?.Trim(),
+            DealerCode = dealerCode,
+            Vin = vin,
+            Model = model,
+            EngineNo = engineNo,
+            PlateNo = plateNo,
+            CustomerName = custName,
+            CustomerPhone = custPhone,
+            RoType = !string.IsNullOrWhiteSpace(dto.RoType) ? dto.RoType.Trim() : "PeriodicMaintenance",
+            ServiceAdvisor = dto.ServiceAdvisor?.Trim(),
+            Technician = dto.Technician?.Trim(),
+            OdoKm = dto.OdoKm,
+            FuelLevel = dto.FuelLevel ?? "1/2",
+            CarStatus = dto.CarStatus?.Trim(),
+            CustomerRequest = dto.CustomerRequest?.Trim(),
+            DiagnosisNotes = dto.DiagnosisNotes?.Trim(),
+            CheckInDate = dto.CheckInDate ?? DateTime.Now,
+            ExpectedDeliveryDate = dto.ExpectedDeliveryDate,
+            DiscountAmount = dto.DiscountAmount,
+            VatRate = dto.VatRate >= 0 ? dto.VatRate : 10,
+            PaymentMethod = dto.PaymentMethod ?? "Cash",
+            PaymentStatus = "Unpaid",
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.RepairOrders.Add(ro);
+        await db.SaveChangesAsync();
+
+        var sLines = new List<RepairOrderServiceLine>();
+        if (dto.ServiceItems != null && dto.ServiceItems.Count > 0)
+        {
+            foreach (var s in dto.ServiceItems)
+            {
+                if (string.IsNullOrWhiteSpace(s.SerCode) || string.IsNullOrWhiteSpace(s.SerName)) continue;
+                var stdHours = s.StandardHours > 0 ? s.StandardHours : 1.0m;
+                var laborPrice = s.LaborPrice >= 0 ? s.LaborPrice : 300000m;
+                var sDiscount = s.Discount >= 0 ? s.Discount : 0;
+                var laborAmt = s.LaborAmount ?? Math.Max(0, stdHours * laborPrice - sDiscount);
+
+                var sLine = new RepairOrderServiceLine
+                {
+                    OrgId = Org,
+                    RepairOrderId = ro.Id,
+                    RoNo = ro.RoNo,
+                    SerCode = s.SerCode.Trim(),
+                    SerName = s.SerName.Trim(),
+                    ServiceType = s.ServiceType ?? "Maintenance",
+                    StandardHours = stdHours,
+                    LaborPrice = laborPrice,
+                    Discount = sDiscount,
+                    LaborAmount = laborAmt,
+                    Technician = s.Technician?.Trim() ?? ro.Technician,
+                    Status = "Pending",
+                    Remark = s.Remark?.Trim()
+                };
+                sLines.Add(sLine);
+            }
+            db.RepairOrderServiceLines.AddRange(sLines);
+        }
+
+        var pLines = new List<RepairOrderPartLine>();
+        if (dto.PartItems != null && dto.PartItems.Count > 0)
+        {
+            foreach (var p in dto.PartItems)
+            {
+                if (string.IsNullOrWhiteSpace(p.PartCode) || string.IsNullOrWhiteSpace(p.PartName)) continue;
+                var qty = p.Quantity > 0 ? p.Quantity : 1;
+                var unitPrice = p.UnitPrice >= 0 ? p.UnitPrice : 0;
+                var pDiscount = p.Discount >= 0 ? p.Discount : 0;
+                var totalAmt = p.TotalAmount ?? Math.Max(0, qty * unitPrice - pDiscount);
+
+                var pLine = new RepairOrderPartLine
+                {
+                    OrgId = Org,
+                    RepairOrderId = ro.Id,
+                    RoNo = ro.RoNo,
+                    PartCode = p.PartCode.Trim(),
+                    PartName = p.PartName.Trim(),
+                    Unit = p.Unit ?? "Cái",
+                    Quantity = qty,
+                    UnitPrice = unitPrice,
+                    Discount = pDiscount,
+                    TotalAmount = totalAmt,
+                    PaymentType = p.PaymentType ?? "Customer",
+                    Status = "Pending",
+                    Remark = p.Remark?.Trim()
+                };
+                pLines.Add(pLine);
+            }
+            db.RepairOrderPartLines.AddRange(pLines);
+        }
+
+        RecalculateRepairOrderTotals(ro, sLines, pLines);
+
+        if (v != null)
+        {
+            v.LastRoNo = ro.RoNo;
+            v.LastRoDate = ro.CheckInDate;
+            if (ro.OdoKm > 0) v.LastOdoKm = ro.OdoKm;
+        }
+
+        Log(vin, "RepairOrderCreated", $"RoNo={ro.RoNo}, Type={ro.RoType}, Dealer={ro.DealerCode}, Odo={ro.OdoKm}km, Total={ro.TotalAmount:N0}d");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ro.Id,
+            ro.RoNo,
+            ro.DealerCode,
+            ro.Vin,
+            ro.Model,
+            ro.PlateNo,
+            ro.CustomerName,
+            ro.RoType,
+            ro.OdoKm,
+            ro.TotalLaborAmount,
+            ro.TotalPartAmount,
+            ro.DiscountAmount,
+            ro.TotalVatAmount,
+            ro.TotalAmount,
+            ro.Status,
+            ro.PaymentStatus,
+            serviceLinesCount = sLines.Count,
+            partLinesCount = pLines.Count
+        };
+    }
+
+    public async Task<object> ListRepairOrdersAsync(string? status, string? dealer, string? roType, string? vin, string? plateNo, string? roNo)
+    {
+        var q = db.RepairOrders.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(r => r.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(roType)) q = q.Where(r => r.RoType == roType);
+        if (!string.IsNullOrWhiteSpace(vin)) q = q.Where(r => r.Vin.Contains(vin.ToUpperInvariant()));
+        if (!string.IsNullOrWhiteSpace(plateNo)) q = q.Where(r => r.PlateNo != null && r.PlateNo.Contains(plateNo.ToUpperInvariant()));
+        if (!string.IsNullOrWhiteSpace(roNo)) q = q.Where(r => r.RoNo.Contains(roNo.ToUpperInvariant()));
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.Id,
+            r.RoNo,
+            r.RoNoUser,
+            r.DealerCode,
+            r.Vin,
+            r.Model,
+            r.PlateNo,
+            r.CustomerName,
+            r.CustomerPhone,
+            r.RoType,
+            r.ServiceAdvisor,
+            r.Technician,
+            r.OdoKm,
+            r.CheckInDate,
+            r.ExpectedDeliveryDate,
+            r.ActualDeliveryDate,
+            r.TotalLaborAmount,
+            r.TotalPartAmount,
+            r.DiscountAmount,
+            r.TotalVatAmount,
+            r.TotalAmount,
+            r.PaymentStatus,
+            r.PaymentMethod,
+            r.Status,
+            r.CreatedAt,
+            serviceLineCount = db.RepairOrderServiceLines.Count(l => l.OrgId == r.OrgId && l.RepairOrderId == r.Id && l.Status != "Cancelled"),
+            partLineCount = db.RepairOrderPartLines.Count(l => l.OrgId == r.OrgId && l.RepairOrderId == r.Id && l.Status != "Cancelled")
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetRepairOrderAsync(string roNo)
+    {
+        var no = roNo.Trim().ToUpperInvariant();
+        var ro = await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == no);
+        if (ro == null) return null;
+
+        var sLines = await db.RepairOrderServiceLines
+            .Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id)
+            .OrderBy(l => l.Id)
+            .ToListAsync();
+
+        var pLines = await db.RepairOrderPartLines
+            .Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id)
+            .OrderBy(l => l.Id)
+            .ToListAsync();
+
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == ro.Vin);
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == ro.Vin)
+            .OrderByDescending(e => e.At)
+            .Take(20)
+            .ToListAsync();
+
+        return new
+        {
+            ro.Id,
+            ro.RoNo,
+            ro.RoNoUser,
+            ro.DealerCode,
+            ro.Vin,
+            ro.Model,
+            ro.EngineNo,
+            ro.PlateNo,
+            ro.CustomerName,
+            ro.CustomerPhone,
+            ro.RoType,
+            ro.ServiceAdvisor,
+            ro.Technician,
+            ro.OdoKm,
+            ro.FuelLevel,
+            ro.CarStatus,
+            ro.CustomerRequest,
+            ro.DiagnosisNotes,
+            ro.CheckInDate,
+            ro.ExpectedDeliveryDate,
+            ro.ActualDeliveryDate,
+            ro.TotalLaborAmount,
+            ro.TotalPartAmount,
+            ro.DiscountAmount,
+            ro.VatRate,
+            ro.TotalVatAmount,
+            ro.TotalAmount,
+            ro.PaymentStatus,
+            ro.PaymentMethod,
+            ro.PaymentNotes,
+            ro.Status,
+            ro.Remark,
+            ro.CreatedBy,
+            ro.CreatedAt,
+            ro.ApprovedBy,
+            ro.ApprovedAt,
+            ro.RepairedBy,
+            ro.RepairedAt,
+            ro.DeliveredBy,
+            ro.DeliveredAt,
+            ro.PaidBy,
+            ro.PaidAt,
+            ro.CancelledBy,
+            ro.CancelledAt,
+            ro.CancelReason,
+            vehicle = v != null ? new
+            {
+                v.Vin,
+                v.Model,
+                v.Color,
+                status = v.Status.ToString(),
+                v.OwnerName,
+                v.PlateNo,
+                v.WarrantyStart,
+                v.WarrantyEnd,
+                v.LastOdoKm,
+                v.LastRoNo,
+                v.LastRoDate
+            } : null,
+            serviceLines = sLines.Select(s => new
+            {
+                s.Id,
+                s.RoNo,
+                s.SerCode,
+                s.SerName,
+                s.ServiceType,
+                s.StandardHours,
+                s.LaborPrice,
+                s.Discount,
+                s.LaborAmount,
+                s.Technician,
+                s.Status,
+                s.Remark
+            }),
+            partLines = pLines.Select(p => new
+            {
+                p.Id,
+                p.RoNo,
+                p.PartCode,
+                p.PartName,
+                p.Unit,
+                p.Quantity,
+                p.UnitPrice,
+                p.Discount,
+                p.TotalAmount,
+                p.PaymentType,
+                p.Status,
+                p.Remark
+            }),
+            events = events.Select(e => new
+            {
+                e.Kind,
+                e.Note,
+                e.At
+            })
+        };
+    }
+
+    public async Task<object?> RepairOrderTransitionAsync(string roNo, string action, RepairOrderTransitionDto? dto)
+    {
+        var no = roNo.Trim().ToUpperInvariant();
+        var ro = await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == no);
+        if (ro == null) return null;
+
+        var act = action.ToLowerInvariant();
+        var now = DateTime.Now;
+        var user = dto?.User ?? dto?.ServiceAdvisor ?? "system";
+
+        switch (act)
+        {
+            case "submit" or "request":
+                if (ro.Status is not ("Draft" or "Created"))
+                    throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể nộp duyệt.");
+                ro.Status = "Submitted";
+                Log(ro.Vin, "RepairOrderSubmitted", $"RoNo={no}, Note={dto?.Note}");
+                break;
+
+            case "start" or "in-garage" or "ingarage" or "in-progress" or "inprogress":
+                if (ro.Status is not ("Draft" or "Submitted"))
+                    throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể đưa xe vào xưởng.");
+                ro.Status = "InGarage";
+                ro.ApprovedBy = user;
+                ro.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Technician)) ro.Technician = dto.Technician.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.ServiceAdvisor)) ro.ServiceAdvisor = dto.ServiceAdvisor.Trim();
+
+                // Chuyển các dòng dịch vụ và phụ tùng sang InProgress / Issued
+                var sLinesToStart = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id && l.Status == "Pending").ToListAsync();
+                foreach (var s in sLinesToStart) s.Status = "InProgress";
+                var pLinesToStart = await db.RepairOrderPartLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id && l.Status == "Pending").ToListAsync();
+                foreach (var p in pLinesToStart) p.Status = "Issued";
+
+                Log(ro.Vin, "RepairOrderInGarage", $"RoNo={no}, Technician={ro.Technician}, Note={dto?.Note}");
+                break;
+
+            case "repair" or "repaired" or "pass-qc" or "qc-pass":
+                if (ro.Status is not ("InGarage" or "InProgress"))
+                    throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể nghiệm thu kỹ thuật.");
+                ro.Status = "Repaired";
+                ro.RepairedBy = user;
+                ro.RepairedAt = now;
+
+                var sLinesToComplete = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id && l.Status != "Cancelled").ToListAsync();
+                foreach (var s in sLinesToComplete) s.Status = "Completed";
+
+                Log(ro.Vin, "RepairOrderRepaired", $"RoNo={no}, RepairedBy={user}, Note={dto?.Note}");
+                break;
+
+            case "deliver" or "delivered" or "complete" or "finish":
+                if (ro.Status is not ("Repaired" or "InGarage"))
+                    throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể bàn giao xe.");
+                ro.Status = "Delivered";
+                ro.DeliveredBy = user;
+                ro.DeliveredAt = dto?.ActualDeliveryDate ?? now;
+                ro.ActualDeliveryDate = ro.DeliveredAt;
+
+                if (dto?.OdoKm is > 0) ro.OdoKm = dto.OdoKm.Value;
+
+                var veh = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == ro.Vin);
+                if (veh != null)
+                {
+                    veh.LastRoNo = ro.RoNo;
+                    veh.LastRoDate = ro.ActualDeliveryDate;
+                    if (ro.OdoKm > 0) veh.LastOdoKm = ro.OdoKm;
+                    if (!string.IsNullOrWhiteSpace(ro.PlateNo) && string.IsNullOrWhiteSpace(veh.PlateNo)) veh.PlateNo = ro.PlateNo;
+                }
+
+                Log(ro.Vin, "RepairOrderDelivered", $"RoNo={no}, Odo={ro.OdoKm}km, DeliveredTo={ro.CustomerName}");
+                break;
+
+            case "pay" or "paid" or "settle":
+                if (ro.Status is "Cancelled")
+                    throw new InvalidOperationException($"Lệnh sửa chữa {no} đã bị hủy, không thể thanh toán.");
+                ro.Status = "Paid";
+                ro.PaymentStatus = dto?.PaymentStatus ?? "Paid";
+                if (!string.IsNullOrWhiteSpace(dto?.PaymentMethod)) ro.PaymentMethod = dto.PaymentMethod.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.PaymentNotes)) ro.PaymentNotes = dto.PaymentNotes.Trim();
+                ro.PaidBy = user;
+                ro.PaidAt = now;
+
+                Log(ro.Vin, "RepairOrderPaid", $"RoNo={no}, Amount={ro.TotalAmount:N0}d, Method={ro.PaymentMethod}");
+                break;
+
+            case "cancel" or "reject":
+                if (ro.Status is "Paid")
+                    throw new InvalidOperationException($"Lệnh sửa chữa {no} đã thanh toán hoàn tất, không thể hủy.");
+                ro.Status = "Cancelled";
+                ro.PaymentStatus = "Cancelled";
+                ro.CancelledBy = user;
+                ro.CancelledAt = now;
+                ro.CancelReason = dto?.Reason ?? dto?.Note;
+
+                var allSLines = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+                foreach (var s in allSLines) s.Status = "Cancelled";
+                var allPLines = await db.RepairOrderPartLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+                foreach (var p in allPLines) p.Status = "Cancelled";
+
+                Log(ro.Vin, "RepairOrderCancelled", $"RoNo={no}, Reason={ro.CancelReason}");
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không được hỗ trợ.");
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            ro.Id,
+            ro.RoNo,
+            ro.Status,
+            ro.PaymentStatus,
+            ro.PaymentMethod,
+            ro.TotalAmount,
+            ro.ActualDeliveryDate,
+            ro.PaidAt,
+            ro.CancelledAt,
+            message = $"Chuyển trạng thái lệnh sửa chữa {no} thành {ro.Status} thành công."
+        };
+    }
+
+    public async Task<object?> UpdateRepairOrderHeaderAsync(string roNo, UpdateRepairOrderHeaderDto dto)
+    {
+        var no = roNo.Trim().ToUpperInvariant();
+        var ro = await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == no);
+        if (ro == null) return null;
+        if (ro.Status is "Paid" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể chỉnh sửa thông tin.");
+
+        if (dto.CustomerName != null) ro.CustomerName = dto.CustomerName.Trim();
+        if (dto.CustomerPhone != null) ro.CustomerPhone = dto.CustomerPhone.Trim();
+        if (dto.PlateNo != null) ro.PlateNo = dto.PlateNo.Trim();
+        if (dto.RoType != null) ro.RoType = dto.RoType.Trim();
+        if (dto.ServiceAdvisor != null) ro.ServiceAdvisor = dto.ServiceAdvisor.Trim();
+        if (dto.Technician != null) ro.Technician = dto.Technician.Trim();
+        if (dto.OdoKm.HasValue) ro.OdoKm = dto.OdoKm.Value;
+        if (dto.FuelLevel != null) ro.FuelLevel = dto.FuelLevel;
+        if (dto.CarStatus != null) ro.CarStatus = dto.CarStatus.Trim();
+        if (dto.CustomerRequest != null) ro.CustomerRequest = dto.CustomerRequest.Trim();
+        if (dto.DiagnosisNotes != null) ro.DiagnosisNotes = dto.DiagnosisNotes.Trim();
+        if (dto.ExpectedDeliveryDate.HasValue) ro.ExpectedDeliveryDate = dto.ExpectedDeliveryDate;
+        if (dto.DiscountAmount.HasValue) ro.DiscountAmount = Math.Max(0, dto.DiscountAmount.Value);
+        if (dto.VatRate.HasValue) ro.VatRate = Math.Max(0, dto.VatRate.Value);
+        if (dto.PaymentMethod != null) ro.PaymentMethod = dto.PaymentMethod.Trim();
+        if (dto.PaymentNotes != null) ro.PaymentNotes = dto.PaymentNotes.Trim();
+        if (dto.Remark != null) ro.Remark = dto.Remark.Trim();
+
+        var sLines = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        var pLines = await db.RepairOrderPartLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        RecalculateRepairOrderTotals(ro, sLines, pLines);
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            ro.Id,
+            ro.RoNo,
+            ro.TotalLaborAmount,
+            ro.TotalPartAmount,
+            ro.DiscountAmount,
+            ro.TotalVatAmount,
+            ro.TotalAmount,
+            ro.Status,
+            message = $"Cập nhật thông tin lệnh sửa chữa {no} thành công."
+        };
+    }
+
+    public async Task<object?> UpdateRepairOrderServiceLineAsync(string roNo, long lineId, UpdateRepairOrderServiceLineDto dto)
+    {
+        var no = roNo.Trim().ToUpperInvariant();
+        var ro = await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == no);
+        if (ro == null) return null;
+        if (ro.Status is "Paid" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể chỉnh sửa dòng dịch vụ.");
+
+        var line = await db.RepairOrderServiceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.RepairOrderId == ro.Id && l.Id == lineId);
+        if (line == null) return null;
+
+        if (dto.SerCode != null) line.SerCode = dto.SerCode.Trim();
+        if (dto.SerName != null) line.SerName = dto.SerName.Trim();
+        if (dto.ServiceType != null) line.ServiceType = dto.ServiceType.Trim();
+        if (dto.StandardHours.HasValue && dto.StandardHours.Value > 0) line.StandardHours = dto.StandardHours.Value;
+        if (dto.LaborPrice.HasValue && dto.LaborPrice.Value >= 0) line.LaborPrice = dto.LaborPrice.Value;
+        if (dto.Discount.HasValue && dto.Discount.Value >= 0) line.Discount = dto.Discount.Value;
+
+        if (dto.LaborAmount.HasValue && dto.LaborAmount.Value >= 0)
+            line.LaborAmount = dto.LaborAmount.Value;
+        else
+            line.LaborAmount = Math.Max(0, line.StandardHours * line.LaborPrice - line.Discount);
+
+        if (dto.Technician != null) line.Technician = dto.Technician.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var sLines = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        var pLines = await db.RepairOrderPartLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        RecalculateRepairOrderTotals(ro, sLines, pLines);
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            line.Id,
+            line.RoNo,
+            line.SerCode,
+            line.SerName,
+            line.LaborAmount,
+            line.Status,
+            orderTotalAmount = ro.TotalAmount
+        };
+    }
+
+    public async Task<object?> AddRepairOrderServiceLinesAsync(string roNo, List<RepairOrderServiceItemInputDto> items)
+    {
+        var no = roNo.Trim().ToUpperInvariant();
+        var ro = await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == no);
+        if (ro == null) return null;
+        if (ro.Status is "Paid" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể thêm hạng mục dịch vụ.");
+
+        var newLines = new List<RepairOrderServiceLine>();
+        foreach (var s in items)
+        {
+            if (string.IsNullOrWhiteSpace(s.SerCode) || string.IsNullOrWhiteSpace(s.SerName)) continue;
+            var stdHours = s.StandardHours > 0 ? s.StandardHours : 1.0m;
+            var laborPrice = s.LaborPrice >= 0 ? s.LaborPrice : 300000m;
+            var sDiscount = s.Discount >= 0 ? s.Discount : 0;
+            var laborAmt = s.LaborAmount ?? Math.Max(0, stdHours * laborPrice - sDiscount);
+
+            var sLine = new RepairOrderServiceLine
+            {
+                OrgId = Org,
+                RepairOrderId = ro.Id,
+                RoNo = ro.RoNo,
+                SerCode = s.SerCode.Trim(),
+                SerName = s.SerName.Trim(),
+                ServiceType = s.ServiceType ?? "Maintenance",
+                StandardHours = stdHours,
+                LaborPrice = laborPrice,
+                Discount = sDiscount,
+                LaborAmount = laborAmt,
+                Technician = s.Technician?.Trim() ?? ro.Technician,
+                Status = ro.Status == "InGarage" ? "InProgress" : "Pending",
+                Remark = s.Remark?.Trim()
+            };
+            newLines.Add(sLine);
+        }
+
+        db.RepairOrderServiceLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        var sLines = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        var pLines = await db.RepairOrderPartLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        RecalculateRepairOrderTotals(ro, sLines, pLines);
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            ro.RoNo,
+            addedCount = newLines.Count,
+            totalServiceLines = sLines.Count,
+            ro.TotalLaborAmount,
+            ro.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveRepairOrderServiceLineAsync(string roNo, long lineId)
+    {
+        var no = roNo.Trim().ToUpperInvariant();
+        var ro = await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == no);
+        if (ro == null) return null;
+        if (ro.Status is "Paid" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể xóa dòng dịch vụ.");
+
+        var line = await db.RepairOrderServiceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.RepairOrderId == ro.Id && l.Id == lineId);
+        if (line == null) return null;
+
+        db.RepairOrderServiceLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var sLines = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        var pLines = await db.RepairOrderPartLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        RecalculateRepairOrderTotals(ro, sLines, pLines);
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            ro.RoNo,
+            removedLineId = lineId,
+            remainingServiceLines = sLines.Count,
+            ro.TotalLaborAmount,
+            ro.TotalAmount
+        };
+    }
+
+    public async Task<object?> UpdateRepairOrderPartLineAsync(string roNo, long lineId, UpdateRepairOrderPartLineDto dto)
+    {
+        var no = roNo.Trim().ToUpperInvariant();
+        var ro = await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == no);
+        if (ro == null) return null;
+        if (ro.Status is "Paid" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể chỉnh sửa dòng phụ tùng.");
+
+        var line = await db.RepairOrderPartLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.RepairOrderId == ro.Id && l.Id == lineId);
+        if (line == null) return null;
+
+        if (dto.PartCode != null) line.PartCode = dto.PartCode.Trim();
+        if (dto.PartName != null) line.PartName = dto.PartName.Trim();
+        if (dto.Unit != null) line.Unit = dto.Unit.Trim();
+        if (dto.Quantity.HasValue && dto.Quantity.Value > 0) line.Quantity = dto.Quantity.Value;
+        if (dto.UnitPrice.HasValue && dto.UnitPrice.Value >= 0) line.UnitPrice = dto.UnitPrice.Value;
+        if (dto.Discount.HasValue && dto.Discount.Value >= 0) line.Discount = dto.Discount.Value;
+
+        if (dto.TotalAmount.HasValue && dto.TotalAmount.Value >= 0)
+            line.TotalAmount = dto.TotalAmount.Value;
+        else
+            line.TotalAmount = Math.Max(0, line.Quantity * line.UnitPrice - line.Discount);
+
+        if (dto.PaymentType != null) line.PaymentType = dto.PaymentType.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var sLines = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        var pLines = await db.RepairOrderPartLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        RecalculateRepairOrderTotals(ro, sLines, pLines);
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            line.Id,
+            line.RoNo,
+            line.PartCode,
+            line.PartName,
+            line.TotalAmount,
+            line.Status,
+            orderTotalAmount = ro.TotalAmount
+        };
+    }
+
+    public async Task<object?> AddRepairOrderPartLinesAsync(string roNo, List<RepairOrderPartItemInputDto> items)
+    {
+        var no = roNo.Trim().ToUpperInvariant();
+        var ro = await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == no);
+        if (ro == null) return null;
+        if (ro.Status is "Paid" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể thêm phụ tùng thay thế.");
+
+        var newLines = new List<RepairOrderPartLine>();
+        foreach (var p in items)
+        {
+            if (string.IsNullOrWhiteSpace(p.PartCode) || string.IsNullOrWhiteSpace(p.PartName)) continue;
+            var qty = p.Quantity > 0 ? p.Quantity : 1;
+            var unitPrice = p.UnitPrice >= 0 ? p.UnitPrice : 0;
+            var pDiscount = p.Discount >= 0 ? p.Discount : 0;
+            var totalAmt = p.TotalAmount ?? Math.Max(0, qty * unitPrice - pDiscount);
+
+            var pLine = new RepairOrderPartLine
+            {
+                OrgId = Org,
+                RepairOrderId = ro.Id,
+                RoNo = ro.RoNo,
+                PartCode = p.PartCode.Trim(),
+                PartName = p.PartName.Trim(),
+                Unit = p.Unit ?? "Cái",
+                Quantity = qty,
+                UnitPrice = unitPrice,
+                Discount = pDiscount,
+                TotalAmount = totalAmt,
+                PaymentType = p.PaymentType ?? "Customer",
+                Status = ro.Status == "InGarage" ? "Issued" : "Pending",
+                Remark = p.Remark?.Trim()
+            };
+            newLines.Add(pLine);
+        }
+
+        db.RepairOrderPartLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        var sLines = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        var pLines = await db.RepairOrderPartLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        RecalculateRepairOrderTotals(ro, sLines, pLines);
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            ro.RoNo,
+            addedCount = newLines.Count,
+            totalPartLines = pLines.Count,
+            ro.TotalPartAmount,
+            ro.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveRepairOrderPartLineAsync(string roNo, long lineId)
+    {
+        var no = roNo.Trim().ToUpperInvariant();
+        var ro = await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == no);
+        if (ro == null) return null;
+        if (ro.Status is "Paid" or "Cancelled")
+            throw new InvalidOperationException($"Lệnh sửa chữa {no} đang ở trạng thái {ro.Status}, không thể xóa dòng phụ tùng.");
+
+        var line = await db.RepairOrderPartLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.RepairOrderId == ro.Id && l.Id == lineId);
+        if (line == null) return null;
+
+        db.RepairOrderPartLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var sLines = await db.RepairOrderServiceLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        var pLines = await db.RepairOrderPartLines.Where(l => l.OrgId == Org && l.RepairOrderId == ro.Id).ToListAsync();
+        RecalculateRepairOrderTotals(ro, sLines, pLines);
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            ro.RoNo,
+            removedLineId = lineId,
+            remainingPartLines = pLines.Count,
+            ro.TotalPartAmount,
+            ro.TotalAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleRepairOrderHistoryAsync(string vin)
+    {
+        var vVin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vVin);
+        if (v == null) return null;
+
+        var orders = await db.RepairOrders
+            .Where(r => r.OrgId == Org && r.Vin == vVin)
+            .OrderByDescending(r => r.CheckInDate)
+            .ToListAsync();
+
+        var orderIds = orders.Select(o => o.Id).ToList();
+
+        var sLines = await db.RepairOrderServiceLines
+            .Where(l => l.OrgId == Org && orderIds.Contains(l.RepairOrderId))
+            .ToListAsync();
+
+        var pLines = await db.RepairOrderPartLines
+            .Where(l => l.OrgId == Org && orderIds.Contains(l.RepairOrderId))
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vVin && e.Kind.StartsWith("RepairOrder"))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vin = v.Vin,
+            model = v.Model,
+            plateNo = v.PlateNo,
+            ownerName = v.OwnerName,
+            status = v.Status.ToString(),
+            lastOdoKm = v.LastOdoKm,
+            lastRoNo = v.LastRoNo,
+            lastRoDate = v.LastRoDate,
+            totalVisitCount = orders.Count,
+            totalSpent = orders.Where(o => o.Status != "Cancelled").Sum(o => o.TotalAmount),
+            repairOrders = orders.Select(o => new
+            {
+                o.Id,
+                o.RoNo,
+                o.RoNoUser,
+                o.DealerCode,
+                o.RoType,
+                o.ServiceAdvisor,
+                o.Technician,
+                o.OdoKm,
+                o.CheckInDate,
+                o.ActualDeliveryDate,
+                o.TotalLaborAmount,
+                o.TotalPartAmount,
+                o.DiscountAmount,
+                o.TotalAmount,
+                o.Status,
+                o.PaymentStatus,
+                o.PaymentMethod,
+                serviceLines = sLines.Where(s => s.RepairOrderId == o.Id).Select(s => new
+                {
+                    s.SerCode,
+                    s.SerName,
+                    s.ServiceType,
+                    s.LaborAmount,
+                    s.Status
+                }),
+                partLines = pLines.Where(p => p.RepairOrderId == o.Id).Select(p => new
+                {
+                    p.PartCode,
+                    p.PartName,
+                    p.Quantity,
+                    p.Unit,
+                    p.TotalAmount,
+                    p.PaymentType,
+                    p.Status
+                })
+            }),
+            events = events.Select(e => new
+            {
+                e.Kind,
+                e.Note,
+                e.At
+            })
+        };
+    }
+
+    public async Task<object> GetRepairOrderSummaryAsync()
+    {
+        var orders = await db.RepairOrders.Where(r => r.OrgId == Org).ToListAsync();
+
+        var byStatus = orders.GroupBy(r => r.Status).Select(g => new
+        {
+            status = g.Key,
+            count = g.Count(),
+            totalLaborAmount = g.Sum(r => r.TotalLaborAmount),
+            totalPartAmount = g.Sum(r => r.TotalPartAmount),
+            totalAmount = g.Sum(r => r.TotalAmount)
+        }).ToList();
+
+        var byType = orders.GroupBy(r => r.RoType).Select(g => new
+        {
+            roType = g.Key,
+            count = g.Count(),
+            totalAmount = g.Sum(r => r.TotalAmount)
+        }).ToList();
+
+        var byDealer = orders.GroupBy(r => r.DealerCode).Select(g => new
+        {
+            dealerCode = g.Key,
+            count = g.Count(),
+            totalAmount = g.Sum(r => r.TotalAmount)
+        }).ToList();
+
+        var byPaymentStatus = orders.GroupBy(r => r.PaymentStatus).Select(g => new
+        {
+            paymentStatus = g.Key,
+            count = g.Count(),
+            totalAmount = g.Sum(r => r.TotalAmount)
+        }).ToList();
+
+        return new
+        {
+            totalRepairOrders = orders.Count,
+            totalLaborAmount = orders.Where(r => r.Status != "Cancelled").Sum(r => r.TotalLaborAmount),
+            totalPartAmount = orders.Where(r => r.Status != "Cancelled").Sum(r => r.TotalPartAmount),
+            totalDiscountAmount = orders.Where(r => r.Status != "Cancelled").Sum(r => r.DiscountAmount),
+            totalVatAmount = orders.Where(r => r.Status != "Cancelled").Sum(r => r.TotalVatAmount),
+            totalRevenue = orders.Where(r => r.Status != "Cancelled").Sum(r => r.TotalAmount),
+            byStatus,
+            byType,
+            byDealer,
+            byPaymentStatus
         };
     }
 }
