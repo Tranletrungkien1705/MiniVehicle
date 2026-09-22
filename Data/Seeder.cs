@@ -1238,6 +1238,180 @@ public static class Seeder
             var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
             if (v2 != null) v2.ContractNoOversea = cto1.ContractNo;
         }
+
+        if (!await db.LettersOfCredit.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var lc1 = new LetterOfCredit
+            {
+                OrgId = org,
+                LCNo = "LC-VCB-2026-901",
+                LCNoUser = "LC/VCB/2026/03/901",
+                ContractNo = "CTO-HMC-2026-001",
+                BankCode = "VCB",
+                BankName = "Ngân hàng TMCP Ngoại Thương Việt Nam (Vietcombank - Sở Giao Dịch)",
+                BeneficiaryName = "Hyundai Motor Company (Korea)",
+                ApplicantName = "Công ty Cổ phần Liên doanh Ô tô Hyundai Thành Công Việt Nam",
+                Currency = "USD",
+                ExchangeRate = 25450m,
+                LCAmountForeign = 49115.91m,
+                LCAmount = 1250000000m,
+                MarginRate = 10m,
+                MarginAmount = 125000000m,
+                IssueDate = DateTime.Now.AddDays(-50),
+                ExpiryDate = DateTime.Now.AddDays(40),
+                LatestShipmentDate = DateTime.Now.AddDays(10),
+                PaymentTerm = "AtSight",
+                DeparturePort = "BUSAN",
+                ArrivalPort = "CANG_HAI_PHONG",
+                TotalVehicleCount = 2,
+                UtilizedAmountForeign = 49115.91m,
+                UtilizedAmount = 1250000000m,
+                RemainingAmountForeign = 0m,
+                RemainingAmount = 0m,
+                SwiftCode = "MT700-VCB-202603-901001",
+                FileSigned = "https://doc.hyundai.thanhcong.vn/letters-of-credit/LC-VCB-2026-901.pdf",
+                Status = "Settled",
+                Remark = "Thư tín dụng L/C không hủy ngang trả ngay (Irrevocable L/C at sight) thanh toán hợp đồng nhập khẩu lô xe Accent & Creta từ Hyundai Motor Hàn Quốc",
+                CreatedBy = "import.finance",
+                CreatedAt = DateTime.Now.AddDays(-50),
+                ApprovedBy = "FinanceDirector.NguyenVanNam",
+                ApprovedAt = DateTime.Now.AddDays(-48),
+                UtilizedBy = "TradeFinance.TranThiHang",
+                UtilizedAt = DateTime.Now.AddDays(-10),
+                SettledBy = "ChiefAccountant.TranThiMai",
+                SettledAt = DateTime.Now.AddDays(-2)
+            };
+            db.LettersOfCredit.Add(lc1);
+            await db.SaveChangesAsync();
+
+            db.LetterOfCreditLines.AddRange(
+                new LetterOfCreditLine
+                {
+                    OrgId = org,
+                    LetterOfCreditId = lc1.Id,
+                    LCNo = lc1.LCNo,
+                    ContractNo = lc1.ContractNo,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    EngineNo = "G4LC0001",
+                    Color = "Trắng",
+                    OrderQty = 1,
+                    UnitPriceForeign = 21610.99m,
+                    TotalAmountForeign = 21610.99m,
+                    UnitPrice = 550000000m,
+                    TotalAmount = 550000000m,
+                    PackingListNo = "PL202603-001",
+                    DeclarationNo = "TKHQ202603-001",
+                    Status = "Settled",
+                    Remark = "Đã khớp bộ chứng từ gốc B/L, Packing List, Invoice và giải phóng L/C"
+                },
+                new LetterOfCreditLine
+                {
+                    OrgId = org,
+                    LetterOfCreditId = lc1.Id,
+                    LCNo = lc1.LCNo,
+                    ContractNo = lc1.ContractNo,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    EngineNo = "G4FL0002",
+                    Color = "Đen",
+                    OrderQty = 1,
+                    UnitPriceForeign = 27504.92m,
+                    TotalAmountForeign = 27504.92m,
+                    UnitPrice = 700000000m,
+                    TotalAmount = 700000000m,
+                    PackingListNo = "PL202603-001",
+                    DeclarationNo = "TKHQ202603-001",
+                    Status = "Settled",
+                    Remark = "Đã khớp bộ chứng từ gốc B/L, Packing List, Invoice và giải phóng L/C"
+                }
+            );
+
+            var lc2 = new LetterOfCredit
+            {
+                OrgId = org,
+                LCNo = "LC-CTG-2026-902",
+                LCNoUser = "LC/CTG/2026/02/902",
+                ContractNo = "CTO-HMI-2026-002",
+                BankCode = "CTG",
+                BankName = "Ngân hàng TMCP Công Thương Việt Nam (VietinBank - Chi nhánh Hà Nội)",
+                BeneficiaryName = "Hyundai Motor India",
+                ApplicantName = "Công ty Cổ phần Liên doanh Ô tô Hyundai Thành Công Việt Nam",
+                Currency = "USD",
+                ExchangeRate = 25450m,
+                LCAmountForeign = 40000m,
+                LCAmount = 1018000000m,
+                MarginRate = 10m,
+                MarginAmount = 101800000m,
+                IssueDate = DateTime.Now.AddDays(-15),
+                ExpiryDate = DateTime.Now.AddDays(75),
+                LatestShipmentDate = DateTime.Now.AddDays(30),
+                PaymentTerm = "Usance30",
+                DeparturePort = "CHENNAI",
+                ArrivalPort = "CANG_HAI_PHONG",
+                TotalVehicleCount = 2,
+                UtilizedAmountForeign = 0m,
+                UtilizedAmount = 0m,
+                RemainingAmountForeign = 40000m,
+                RemainingAmount = 1018000000m,
+                SwiftCode = "MT700-CTG-202603-902002",
+                FileSigned = "https://doc.hyundai.thanhcong.vn/letters-of-credit/LC-CTG-2026-902.pdf",
+                Status = "Issued",
+                Remark = "Thư tín dụng L/C trả chậm 30 ngày mở tại VietinBank phục vụ nhập khẩu lô xe Venue & Grand i10 từ Hyundai Ấn Độ",
+                CreatedBy = "import.finance",
+                CreatedAt = DateTime.Now.AddDays(-15),
+                ApprovedBy = "FinanceDirector.NguyenVanNam",
+                ApprovedAt = DateTime.Now.AddDays(-14)
+            };
+            db.LettersOfCredit.Add(lc2);
+            await db.SaveChangesAsync();
+
+            db.LetterOfCreditLines.AddRange(
+                new LetterOfCreditLine
+                {
+                    OrgId = org,
+                    LetterOfCreditId = lc2.Id,
+                    LCNo = lc2.LCNo,
+                    ContractNo = lc2.ContractNo,
+                    Model = "Hyundai Venue 1.0 T-GDi",
+                    SpecCode = "1.0 T-GDi Cao cấp",
+                    Color = "Đỏ",
+                    OrderQty = 1,
+                    UnitPriceForeign = 22000m,
+                    TotalAmountForeign = 22000m,
+                    UnitPrice = 559900000m,
+                    TotalAmount = 559900000m,
+                    Status = "Issued",
+                    Remark = "Đang chờ tàu bốc hàng từ cảng Chennai"
+                },
+                new LetterOfCreditLine
+                {
+                    OrgId = org,
+                    LetterOfCreditId = lc2.Id,
+                    LCNo = lc2.LCNo,
+                    ContractNo = lc2.ContractNo,
+                    Model = "Hyundai Grand i10 Hatchback",
+                    SpecCode = "1.2 AT Tiêu chuẩn",
+                    Color = "Bạc",
+                    OrderQty = 1,
+                    UnitPriceForeign = 18000m,
+                    TotalAmountForeign = 18000m,
+                    UnitPrice = 458100000m,
+                    TotalAmount = 458100000m,
+                    Status = "Issued",
+                    Remark = "Đang chờ tàu bốc hàng từ cảng Chennai"
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null) v1.LCNo = lc1.LCNo;
+
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null) v2.LCNo = lc1.LCNo;
+        }
         await db.SaveChangesAsync();
     }
 
@@ -1334,6 +1508,9 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"ContractNoOversea\" text NULL",
             "CREATE TABLE IF NOT EXISTS public.\"ContractOverseas\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ContractNo\" text NOT NULL DEFAULT '', \"ContractNoUser\" text NULL, \"SupplierCode\" text NOT NULL DEFAULT '', \"SupplierName\" text NULL, \"IncotermsCode\" text NOT NULL DEFAULT 'CIF_HAI_PHONG', \"Currency\" text NOT NULL DEFAULT 'USD', \"ExchangeRate\" numeric NOT NULL DEFAULT 25450, \"PaymentTerm\" text NOT NULL DEFAULT 'LC', \"DeparturePort\" text NOT NULL DEFAULT 'BUSAN', \"ArrivalPort\" text NOT NULL DEFAULT 'CANG_HAI_PHONG', \"OrderMonth\" text NULL, \"ProductionMonth\" text NULL, \"ExpectedDeliveryMonth\" text NULL, \"ContractDate\" timestamp NOT NULL DEFAULT now(), \"DeliveryDeadline\" timestamp NULL, \"TotalQuantity\" integer NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"FileSigned\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"ContractOverseaLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ContractOverseaId\" bigint NOT NULL, \"ContractNo\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"Color\" text NULL, \"ColorCode\" text NULL, \"ModelYear\" integer NULL DEFAULT 2026, \"PlantCode\" text NULL, \"PortCode\" text NULL, \"WorkOrderNo\" text NULL, \"LCTemp\" text NULL, \"OrderQty\" integer NOT NULL DEFAULT 1, \"UnitPriceForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LCNo\" text NULL",
+            "CREATE TABLE IF NOT EXISTS public.\"LettersOfCredit\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"LCNo\" text NOT NULL DEFAULT '', \"LCNoUser\" text NULL, \"ContractNo\" text NOT NULL DEFAULT '', \"BankCode\" text NOT NULL DEFAULT 'VCB', \"BankName\" text NULL, \"BeneficiaryName\" text NULL, \"ApplicantName\" text NULL, \"Currency\" text NOT NULL DEFAULT 'USD', \"ExchangeRate\" numeric NOT NULL DEFAULT 25450, \"LCAmountForeign\" numeric NOT NULL DEFAULT 0, \"LCAmount\" numeric NOT NULL DEFAULT 0, \"MarginRate\" numeric NOT NULL DEFAULT 10, \"MarginAmount\" numeric NOT NULL DEFAULT 0, \"IssueDate\" timestamp NOT NULL DEFAULT now(), \"ExpiryDate\" timestamp NOT NULL DEFAULT now(), \"LatestShipmentDate\" timestamp NULL, \"PaymentTerm\" text NOT NULL DEFAULT 'AtSight', \"DeparturePort\" text NOT NULL DEFAULT 'BUSAN', \"ArrivalPort\" text NOT NULL DEFAULT 'CANG_HAI_PHONG', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"UtilizedAmountForeign\" numeric NOT NULL DEFAULT 0, \"UtilizedAmount\" numeric NOT NULL DEFAULT 0, \"RemainingAmountForeign\" numeric NOT NULL DEFAULT 0, \"RemainingAmount\" numeric NOT NULL DEFAULT 0, \"SwiftCode\" text NULL, \"FileSigned\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"UtilizedBy\" text NULL, \"UtilizedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"LetterOfCreditLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"LetterOfCreditId\" bigint NOT NULL, \"LCNo\" text NOT NULL DEFAULT '', \"ContractNo\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"OrderQty\" integer NOT NULL DEFAULT 1, \"UnitPriceForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PackingListNo\" text NULL, \"DeclarationNo\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

@@ -109,6 +109,13 @@
 <li><code>POST /api/contract-overseas/{contractNo}/lines/{lineId}/update</code> — cập nhật model, phiên bản spec, màu sắc, nhà máy, đơn giá ngoại tệ USD/EUR và quy đổi VNĐ theo từng dòng xe</li>
 <li><code>POST /api/contract-overseas/{contractNo}/lines</code> &amp; <code>DELETE /api/contract-overseas/{contractNo}/lines/{lineId}</code> — bổ sung hoặc rút bớt xe trong hợp đồng ngoại thương</li>
 <li><code>GET /api/vehicles/{vin}/contract-oversea-info</code> — tra cứu thông tin hợp đồng ngoại thương, nhà sản xuất và lịch sử ngoại thương theo số khung VIN</li>
+<li><code>POST /api/letters-of-credit</code> &amp; <code>/api/letters-of-credit/{lcNo}/{action}</code> — tạo, nộp, phát hành, thanh toán &amp; tất toán Thư tín dụng L/C thanh toán quốc tế nhập khẩu xe CBU/CKD (BizHTC.Contract.ContractLC / CT_LC: submit, issue/approve, utilize/pay, settle, reject, cancel)</li>
+<li><code>GET /api/letters-of-credit?status=&amp;bank=&amp;contractNo=&amp;currency=&amp;paymentTerm=&amp;lcNo=&amp;vin=</code> — tra cứu danh sách thư tín dụng L/C ngân hàng (Vietcombank, VietinBank, BIDV, Techcombank, MBBank...)</li>
+<li><code>GET /api/letters-of-credit/summary</code> — báo cáo tổng hợp L/C theo trạng thái, ngân hàng mở, đồng tiền và phương thức trả chậm/trả ngay</li>
+<li><code>PUT /api/letters-of-credit/{lcNo}</code> — điều chỉnh thông tin ngân hàng, tỷ giá L/C, tỷ lệ ký quỹ margin, hạn giao hàng và mã điện SWIFT MT700</li>
+<li><code>POST /api/letters-of-credit/{lcNo}/lines/{lineId}/update</code> — cập nhật đơn giá ngoại tệ, quy đổi VNĐ, liên kết Packing List và Tờ khai hải quan theo dòng xe L/C</li>
+<li><code>POST /api/letters-of-credit/{lcNo}/lines</code> &amp; <code>DELETE /api/letters-of-credit/{lcNo}/lines/{lineId}</code> — bổ sung hoặc rút bớt xe trong thư tín dụng L/C</li>
+<li><code>GET /api/vehicles/{vin}/lc-info</code> — tra cứu thông tin thư tín dụng L/C, ngân hàng phát hành, hạn mức ký quỹ và lịch sử thanh toán quốc tế của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

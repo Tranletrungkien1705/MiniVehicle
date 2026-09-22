@@ -44,6 +44,7 @@ public sealed class Vehicle
     public string? LoaiThung { get; set; }          // Loại thùng hiện tại (ThungBat, ThungKin, ThungLanh, ThungLung, ThungComposite, ThungChuyenDung)
     public string? CBReqNo { get; set; }            // Mã yêu cầu đóng thùng gần nhất (Sto_CBReq)
     public string? ContractNoOversea { get; set; }  // Mã hợp đồng mua bán ngoại thương CBU/CKD (CT_ContractOversea)
+    public string? LCNo { get; set; }               // Mã Thư tín dụng L/C ngân hàng thanh toán nhập khẩu (CT_LC / LetterOfCredit)
     public bool IsInvoiced { get; set; } = false;   // Đã xuất hóa đơn GTGT bán xe cho đại lý (Car_InvoiceList)
     public string? InvoiceNo { get; set; }          // Số hóa đơn GTGT điện tử (HD26-...)
     public DateTime? InvoiceDate { get; set; }      // Ngày xuất hóa đơn GTGT
@@ -1406,6 +1407,79 @@ public sealed class ContractOverseaLine
     public decimal UnitPrice { get; set; } = 0;            // Đơn giá quy đổi (VNĐ) = UnitPriceForeign * ExchangeRate
     public decimal TotalAmount { get; set; } = 0;          // Thành tiền quy đổi (VNĐ) = TotalAmountForeign * ExchangeRate
     public string Status { get; set; } = "Pending";        // Pending → Submitted → Approved → InProduction → Shipped → Delivered (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Thư tín dụng thanh toán quốc tế nhập khẩu ô tô CBU/CKD (BizHTC.Contract.ContractLC / CT_LC): mở L/C tại ngân hàng bảo đảm thanh toán hợp đồng ngoại thương cho nhà sản xuất quốc tế (HMC Hàn Quốc, Ấn Độ...).</summary>
+public sealed class LetterOfCredit
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string LCNo { get; set; } = "";             // Số thư tín dụng L/C (LC-VCB-2026-...)
+    public string? LCNoUser { get; set; }            // Mã L/C nội bộ / tham chiếu
+    public string ContractNo { get; set; } = "";     // Số hợp đồng ngoại thương liên kết (CT_ContractOversea)
+    public string BankCode { get; set; } = "VCB";    // Ngân hàng mở L/C (VCB, CTG, BIDV, TCB, MBB...)
+    public string? BankName { get; set; }            // Tên ngân hàng mở L/C
+    public string? BeneficiaryName { get; set; }     // Đơn vị thụ hưởng (Hyundai Motor Company - Ulsan / Seoul)
+    public string? ApplicantName { get; set; }       // Đơn vị mở L/C (Công ty CP Liên doanh Ô tô Hyundai Thành Công VN)
+    public string Currency { get; set; } = "USD";    // Đồng tiền L/C (USD, EUR, KRW, JPY, VND)
+    public decimal ExchangeRate { get; set; } = 25450m; // Tỷ giá quy đổi L/C sang VNĐ
+    public decimal LCAmountForeign { get; set; } = 0; // Trị giá L/C ngoại tệ (USD)
+    public decimal LCAmount { get; set; } = 0;       // Trị giá L/C quy đổi (VNĐ) = LCAmountForeign * ExchangeRate
+    public decimal MarginRate { get; set; } = 10m;   // Tỷ lệ ký quỹ mở L/C (%) (VD: 10% = 10)
+    public decimal MarginAmount { get; set; } = 0;   // Tiền ký quỹ mở L/C thực tế (VNĐ) = LCAmount * MarginRate / 100
+    public DateTime IssueDate { get; set; } = DateTime.Now; // Ngày phát hành mở L/C
+    public DateTime ExpiryDate { get; set; } = DateTime.Now.AddDays(90); // Ngày hết hạn hiệu lực L/C
+    public DateTime? LatestShipmentDate { get; set; } // Hạn chót bốc hàng / giao hàng lên tàu
+    public string PaymentTerm { get; set; } = "AtSight"; // Điều kiện: AtSight (Trả ngay), Usance30 (Trả chậm 30 ngày), Usance60, Usance90, Usance180
+    public string DeparturePort { get; set; } = "BUSAN"; // Cảng bốc hàng (BUSAN, ULSAN, CHENNAI...)
+    public string ArrivalPort { get; set; } = "CANG_HAI_PHONG"; // Cảng dỡ hàng (CANG_HAI_PHONG, CANG_CAT_LAI, CANG_CAI_MEP...)
+    public int TotalVehicleCount { get; set; } = 0;  // Tổng số lượng xe thanh toán qua L/C
+    public decimal UtilizedAmountForeign { get; set; } = 0; // Giá trị ngoại tệ đã thanh toán theo chứng từ
+    public decimal UtilizedAmount { get; set; } = 0; // Giá trị quy đổi VNĐ đã thanh toán
+    public decimal RemainingAmountForeign { get; set; } = 0; // Giá trị ngoại tệ còn lại chưa giải ngân
+    public decimal RemainingAmount { get; set; } = 0; // Giá trị quy đổi VNĐ còn lại
+    public string? SwiftCode { get; set; }           // Mã điện SWIFT MT700 / số điện chuyển tiền
+    public string? FileSigned { get; set; }          // File chứng thư L/C ký số điện tử
+    public string Status { get; set; } = "Draft";    // Draft → Submitted → Issued → Utilized → Settled (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }              // Ghi chú điều hành L/C
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }          // Lãnh đạo tài chính OEM duyệt mở L/C
+    public DateTime? ApprovedAt { get; set; }
+    public string? UtilizedBy { get; set; }          // Kế toán thanh toán quốc tế xác nhận khớp chứng từ
+    public DateTime? UtilizedAt { get; set; }
+    public string? SettledBy { get; set; }           // Kế toán trưởng duyệt tất toán L/C
+    public DateTime? SettledAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe / lô hàng trong Thư tín dụng L/C (BizHTC.Contract.CT_LCDetail / LetterOfCreditLine): danh mục VIN/model, số lượng, đơn giá ngoại tệ USD, quy đổi VNĐ, liên kết Packing List và Tờ khai hải quan.</summary>
+public sealed class LetterOfCreditLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long LetterOfCreditId { get; set; }
+    public string LCNo { get; set; } = "";
+    public string ContractNo { get; set; } = "";
+    public string? Vin { get; set; }
+    public string Model { get; set; } = "";
+    public string? SpecCode { get; set; }
+    public string? EngineNo { get; set; }
+    public string? Color { get; set; }
+    public int OrderQty { get; set; } = 1;
+    public decimal UnitPriceForeign { get; set; } = 0;
+    public decimal TotalAmountForeign { get; set; } = 0;
+    public decimal UnitPrice { get; set; } = 0;
+    public decimal TotalAmount { get; set; } = 0;
+    public string? PackingListNo { get; set; }
+    public string? DeclarationNo { get; set; }
+    public string Status { get; set; } = "Pending";  // Pending → Issued → Utilized → Settled (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
 }
 

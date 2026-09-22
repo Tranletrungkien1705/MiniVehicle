@@ -68,6 +68,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<GuaranteeClaimLine> GuaranteeClaimLines => Set<GuaranteeClaimLine>();
     public DbSet<ContractOversea> ContractOverseas => Set<ContractOversea>();
     public DbSet<ContractOverseaLine> ContractOverseaLines => Set<ContractOverseaLine>();
+    public DbSet<LetterOfCredit> LettersOfCredit => Set<LetterOfCredit>();
+    public DbSet<LetterOfCreditLine> LetterOfCreditLines => Set<LetterOfCreditLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -102,5 +104,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<BankBillMinutes>().HasIndex(x => new { x.OrgId, x.BankBillMnNo }).IsUnique();
         b.Entity<GuaranteeClaim>().HasIndex(x => new { x.OrgId, x.ClaimNo }).IsUnique();
         b.Entity<ContractOversea>().HasIndex(x => new { x.OrgId, x.ContractNo }).IsUnique();
+        b.Entity<LetterOfCredit>().HasIndex(x => new { x.OrgId, x.LCNo }).IsUnique();
     }
 }

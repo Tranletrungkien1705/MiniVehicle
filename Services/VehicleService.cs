@@ -692,6 +692,87 @@ public record UpdateContractOverseaLineDto(
     string? Remark = null
 );
 
+public record LetterOfCreditItemInputDto(
+    string Model,
+    string? Vin = null,
+    string? SpecCode = null,
+    string? EngineNo = null,
+    string? Color = null,
+    int OrderQty = 1,
+    decimal UnitPriceForeign = 0,
+    decimal? TotalAmountForeign = null,
+    decimal? UnitPrice = null,
+    decimal? TotalAmount = null,
+    string? PackingListNo = null,
+    string? DeclarationNo = null,
+    string? Remark = null
+);
+
+public record CreateLetterOfCreditDto(
+    string ContractNo,
+    string BankCode,
+    List<LetterOfCreditItemInputDto>? Items = null,
+    string? LCNo = null,
+    string? LCNoUser = null,
+    string? BankName = null,
+    string? BeneficiaryName = null,
+    string? ApplicantName = null,
+    string? Currency = "USD",
+    decimal ExchangeRate = 25450m,
+    decimal MarginRate = 10m,
+    DateTime? IssueDate = null,
+    DateTime? ExpiryDate = null,
+    DateTime? LatestShipmentDate = null,
+    string? PaymentTerm = "AtSight",
+    string? DeparturePort = "BUSAN",
+    string? ArrivalPort = "CANG_HAI_PHONG",
+    string? SwiftCode = null,
+    string? FileSigned = null,
+    string? Remark = null,
+    string? CreatedBy = null
+);
+
+public record LetterOfCreditTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? SwiftCode = null,
+    string? FileSigned = null,
+    decimal? UtilizedAmountForeign = null,
+    string? Reason = null
+);
+
+public record UpdateLetterOfCreditHeaderDto(
+    string? BankCode = null,
+    string? BankName = null,
+    string? BeneficiaryName = null,
+    string? ApplicantName = null,
+    string? Currency = null,
+    decimal? ExchangeRate = null,
+    decimal? MarginRate = null,
+    DateTime? ExpiryDate = null,
+    DateTime? LatestShipmentDate = null,
+    string? PaymentTerm = null,
+    string? DeparturePort = null,
+    string? ArrivalPort = null,
+    string? SwiftCode = null,
+    string? FileSigned = null,
+    string? Remark = null
+);
+
+public record UpdateLetterOfCreditLineDto(
+    string? Model = null,
+    string? SpecCode = null,
+    string? EngineNo = null,
+    string? Color = null,
+    int? OrderQty = null,
+    decimal? UnitPriceForeign = null,
+    decimal? ExchangeRate = null,
+    string? Vin = null,
+    string? PackingListNo = null,
+    string? DeclarationNo = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -897,6 +978,16 @@ public interface IVehicleService
     Task<object?> RemoveContractOverseaLineAsync(string contractNo, long lineId);
     Task<object?> GetVehicleContractOverseaInfoAsync(string vin);
     Task<object> GetContractOverseaSummaryAsync();
+    Task<object> CreateLetterOfCreditAsync(CreateLetterOfCreditDto dto);
+    Task<object> ListLettersOfCreditAsync(string? status, string? bank, string? contractNo, string? currency, string? paymentTerm, string? lcNo, string? vin);
+    Task<object?> GetLetterOfCreditAsync(string lcNo);
+    Task<object?> LetterOfCreditTransitionAsync(string lcNo, string action, LetterOfCreditTransitionDto? dto);
+    Task<object?> UpdateLetterOfCreditHeaderAsync(string lcNo, UpdateLetterOfCreditHeaderDto dto);
+    Task<object?> UpdateLetterOfCreditLineAsync(string lcNo, long lineId, UpdateLetterOfCreditLineDto dto);
+    Task<object?> AddLetterOfCreditLinesAsync(string lcNo, List<LetterOfCreditItemInputDto> items);
+    Task<object?> RemoveLetterOfCreditLineAsync(string lcNo, long lineId);
+    Task<object?> GetVehicleLetterOfCreditInfoAsync(string vin);
+    Task<object> GetLetterOfCreditSummaryAsync();
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -13952,6 +14043,985 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byStatus,
             bySupplier,
             byModel
+        };
+    }
+
+    // ===== Thư tín dụng L/C thanh toán quốc tế nhập khẩu CBU/CKD (BizHTC.Contract.ContractLC / CT_LC) =====
+    public async Task<object> CreateLetterOfCreditAsync(CreateLetterOfCreditDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.ContractNo))
+            throw new InvalidOperationException("Cần mã hợp đồng ngoại thương ContractNo để mở L/C.");
+        if (string.IsNullOrWhiteSpace(dto.BankCode))
+            throw new InvalidOperationException("Cần mã ngân hàng mở L/C (BankCode).");
+
+        var contractNo = dto.ContractNo.Trim().ToUpperInvariant();
+        var bankCode = dto.BankCode.Trim().ToUpperInvariant();
+
+        var overseaContract = await db.ContractOverseas.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == contractNo);
+
+        var lcNo = string.IsNullOrWhiteSpace(dto.LCNo)
+            ? $"LC-{bankCode}-{DateTime.Now:yyyyMMddHHmmss}"
+            : dto.LCNo.Trim().ToUpperInvariant();
+
+        if (await db.LettersOfCredit.AnyAsync(l => l.OrgId == Org && l.LCNo == lcNo))
+            throw new InvalidOperationException($"Số L/C '{lcNo}' đã tồn tại trong hệ thống.");
+
+        var bankName = dto.BankName?.Trim();
+        if (string.IsNullOrWhiteSpace(bankName))
+        {
+            bankName = bankCode switch
+            {
+                "VCB" => "Ngân hàng TMCP Ngoại Thương Việt Nam (Vietcombank)",
+                "CTG" => "Ngân hàng TMCP Công Thương Việt Nam (VietinBank)",
+                "BIDV" => "Ngân hàng TMCP Đầu tư và Phát triển Việt Nam (BIDV)",
+                "TCB" => "Ngân hàng TMCP Kỹ Thương Việt Nam (Techcombank)",
+                "MBB" or "MB" => "Ngân hàng TMCP Quân Đội (MBBank)",
+                "VPB" => "Ngân hàng TMCP Việt Nam Thịnh Vượng (VPBank)",
+                "ACB" => "Ngân hàng TMCP Á Châu (ACB)",
+                "SHB" => "Ngân hàng TMCP Sài Gòn - Hà Nội (SHB)",
+                "MSB" => "Ngân hàng TMCP Hàng Hải Việt Nam (MSB)",
+                _ => $"Ngân hàng {bankCode}"
+            };
+        }
+
+        var beneficiary = dto.BeneficiaryName?.Trim() ?? overseaContract?.SupplierName ?? "Hyundai Motor Company";
+        var applicant = dto.ApplicantName?.Trim() ?? "Công ty Cổ phần Liên doanh Ô tô Hyundai Thành Công Việt Nam";
+        var currency = string.IsNullOrWhiteSpace(dto.Currency) ? (overseaContract?.Currency ?? "USD") : dto.Currency.Trim().ToUpperInvariant();
+        var exchangeRate = dto.ExchangeRate > 0 ? dto.ExchangeRate : (overseaContract?.ExchangeRate ?? 25450m);
+        var marginRate = dto.MarginRate >= 0 ? dto.MarginRate : 10m;
+        var paymentTerm = dto.PaymentTerm?.Trim() ?? overseaContract?.PaymentTerm ?? "AtSight";
+        var departurePort = dto.DeparturePort?.Trim().ToUpperInvariant() ?? overseaContract?.DeparturePort ?? "BUSAN";
+        var arrivalPort = dto.ArrivalPort?.Trim().ToUpperInvariant() ?? overseaContract?.ArrivalPort ?? "CANG_HAI_PHONG";
+
+        // Xử lý danh sách dòng xe trong L/C
+        var linesToCreate = new List<LetterOfCreditLine>();
+
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            var vins = dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)).Select(i => i.Vin!.Trim().ToUpperInvariant()).Distinct().ToList();
+            var vehicles = vins.Count > 0 ? await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync() : new List<Vehicle>();
+            var vDict = vehicles.ToDictionary(v => v.Vin);
+
+            foreach (var item in dto.Items)
+            {
+                if (string.IsNullOrWhiteSpace(item.Model))
+                    throw new InvalidOperationException("Tên dòng xe (Model) không được để trống.");
+
+                var qty = Math.Max(1, item.OrderQty);
+                var unitPriceForeign = item.UnitPriceForeign;
+                var lineTotalAmountForeign = item.TotalAmountForeign ?? (qty * unitPriceForeign);
+                var unitPrice = item.UnitPrice ?? (unitPriceForeign * exchangeRate);
+                var lineTotalAmount = item.TotalAmount ?? (lineTotalAmountForeign * exchangeRate);
+
+                string? itemVin = null;
+                if (!string.IsNullOrWhiteSpace(item.Vin))
+                {
+                    itemVin = item.Vin.Trim().ToUpperInvariant();
+                    if (vDict.TryGetValue(itemVin, out var v))
+                    {
+                        v.LCNo = lcNo;
+                    }
+                }
+
+                linesToCreate.Add(new LetterOfCreditLine
+                {
+                    OrgId = Org,
+                    LCNo = lcNo,
+                    ContractNo = contractNo,
+                    Vin = itemVin,
+                    Model = item.Model.Trim(),
+                    SpecCode = item.SpecCode?.Trim(),
+                    EngineNo = item.EngineNo?.Trim(),
+                    Color = item.Color?.Trim(),
+                    OrderQty = qty,
+                    UnitPriceForeign = unitPriceForeign,
+                    TotalAmountForeign = lineTotalAmountForeign,
+                    UnitPrice = unitPrice,
+                    TotalAmount = lineTotalAmount,
+                    PackingListNo = item.PackingListNo?.Trim().ToUpperInvariant(),
+                    DeclarationNo = item.DeclarationNo?.Trim().ToUpperInvariant(),
+                    Status = "Pending",
+                    Remark = item.Remark?.Trim()
+                });
+            }
+        }
+        else if (overseaContract != null)
+        {
+            // Lấy tự động từ dòng hợp đồng ngoại thương
+            var contractLines = await db.ContractOverseaLines.Where(l => l.OrgId == Org && l.ContractOverseaId == overseaContract.Id).ToListAsync();
+            foreach (var cl in contractLines)
+            {
+                linesToCreate.Add(new LetterOfCreditLine
+                {
+                    OrgId = Org,
+                    LCNo = lcNo,
+                    ContractNo = contractNo,
+                    Vin = cl.Vin,
+                    Model = cl.Model,
+                    SpecCode = cl.SpecCode,
+                    Color = cl.Color,
+                    OrderQty = cl.OrderQty,
+                    UnitPriceForeign = cl.UnitPriceForeign,
+                    TotalAmountForeign = cl.TotalAmountForeign,
+                    UnitPrice = cl.UnitPriceForeign * exchangeRate,
+                    TotalAmount = cl.TotalAmountForeign * exchangeRate,
+                    Status = "Pending",
+                    Remark = cl.Remark
+                });
+            }
+        }
+
+        if (linesToCreate.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng xe / lô hàng để mở L/C.");
+
+        var totalQty = linesToCreate.Sum(l => l.OrderQty);
+        var totalAmountForeign = linesToCreate.Sum(l => l.TotalAmountForeign);
+        var totalAmount = linesToCreate.Sum(l => l.TotalAmount);
+        var marginAmount = totalAmount * marginRate / 100m;
+
+        var lc = new LetterOfCredit
+        {
+            OrgId = Org,
+            LCNo = lcNo,
+            LCNoUser = dto.LCNoUser?.Trim(),
+            ContractNo = contractNo,
+            BankCode = bankCode,
+            BankName = bankName,
+            BeneficiaryName = beneficiary,
+            ApplicantName = applicant,
+            Currency = currency,
+            ExchangeRate = exchangeRate,
+            LCAmountForeign = totalAmountForeign,
+            LCAmount = totalAmount,
+            MarginRate = marginRate,
+            MarginAmount = marginAmount,
+            IssueDate = dto.IssueDate ?? DateTime.Now,
+            ExpiryDate = dto.ExpiryDate ?? DateTime.Now.AddDays(90),
+            LatestShipmentDate = dto.LatestShipmentDate,
+            PaymentTerm = paymentTerm,
+            DeparturePort = departurePort,
+            ArrivalPort = arrivalPort,
+            TotalVehicleCount = totalQty,
+            UtilizedAmountForeign = 0,
+            UtilizedAmount = 0,
+            RemainingAmountForeign = totalAmountForeign,
+            RemainingAmount = totalAmount,
+            SwiftCode = dto.SwiftCode?.Trim(),
+            FileSigned = dto.FileSigned?.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "finance.trade",
+            CreatedAt = DateTime.Now
+        };
+
+        db.LettersOfCredit.Add(lc);
+        await db.SaveChangesAsync();
+
+        foreach (var l in linesToCreate)
+        {
+            l.LetterOfCreditId = lc.Id;
+            if (!string.IsNullOrWhiteSpace(l.Vin))
+                Log(l.Vin, "LetterOfCreditCreated", $"Lập đề nghị mở L/C {lc.LCNo} tại ngân hàng {lc.BankCode} cho hợp đồng {lc.ContractNo}");
+        }
+
+        db.LetterOfCreditLines.AddRange(linesToCreate);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            lc.Id,
+            lc.LCNo,
+            lc.LCNoUser,
+            lc.ContractNo,
+            lc.BankCode,
+            lc.BankName,
+            lc.BeneficiaryName,
+            lc.Currency,
+            lc.ExchangeRate,
+            lc.LCAmountForeign,
+            lc.LCAmount,
+            lc.MarginRate,
+            lc.MarginAmount,
+            lc.IssueDate,
+            lc.ExpiryDate,
+            lc.LatestShipmentDate,
+            lc.PaymentTerm,
+            lc.DeparturePort,
+            lc.ArrivalPort,
+            totalQuantity = lc.TotalVehicleCount,
+            status = lc.Status,
+            linesCount = linesToCreate.Count
+        };
+    }
+
+    public async Task<object> ListLettersOfCreditAsync(string? status, string? bank, string? contractNo, string? currency, string? paymentTerm, string? lcNo, string? vin)
+    {
+        var q = db.LettersOfCredit.Where(l => l.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var st = status.Trim().ToLowerInvariant();
+            q = q.Where(l => l.Status.ToLower() == st);
+        }
+        if (!string.IsNullOrWhiteSpace(bank))
+        {
+            var b = bank.Trim().ToUpperInvariant();
+            q = q.Where(l => l.BankCode == b);
+        }
+        if (!string.IsNullOrWhiteSpace(contractNo))
+        {
+            var c = contractNo.Trim().ToUpperInvariant();
+            q = q.Where(l => l.ContractNo == c);
+        }
+        if (!string.IsNullOrWhiteSpace(currency))
+        {
+            var cur = currency.Trim().ToUpperInvariant();
+            q = q.Where(l => l.Currency == cur);
+        }
+        if (!string.IsNullOrWhiteSpace(paymentTerm))
+        {
+            var pt = paymentTerm.Trim().ToLowerInvariant();
+            q = q.Where(l => l.PaymentTerm.ToLower() == pt);
+        }
+        if (!string.IsNullOrWhiteSpace(lcNo))
+        {
+            var ln = lcNo.Trim().ToUpperInvariant();
+            q = q.Where(l => l.LCNo.Contains(ln) || (l.LCNoUser != null && l.LCNoUser.Contains(ln)));
+        }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            var lcNos = await db.LetterOfCreditLines
+                .Where(l => l.OrgId == Org && l.Vin == v)
+                .Select(l => l.LCNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(l => lcNos.Contains(l.LCNo));
+        }
+
+        var items = await q.OrderByDescending(l => l.Id).Take(500).Select(l => new
+        {
+            l.Id,
+            l.LCNo,
+            l.LCNoUser,
+            l.ContractNo,
+            l.BankCode,
+            l.BankName,
+            l.BeneficiaryName,
+            l.ApplicantName,
+            l.Currency,
+            l.ExchangeRate,
+            l.LCAmountForeign,
+            l.LCAmount,
+            l.MarginRate,
+            l.MarginAmount,
+            l.IssueDate,
+            l.ExpiryDate,
+            l.LatestShipmentDate,
+            l.PaymentTerm,
+            l.DeparturePort,
+            l.ArrivalPort,
+            l.TotalVehicleCount,
+            l.UtilizedAmountForeign,
+            l.UtilizedAmount,
+            l.RemainingAmountForeign,
+            l.RemainingAmount,
+            l.SwiftCode,
+            l.FileSigned,
+            l.Status,
+            l.Remark,
+            l.CreatedBy,
+            l.CreatedAt,
+            l.ApprovedBy,
+            l.ApprovedAt,
+            l.UtilizedBy,
+            l.UtilizedAt,
+            l.SettledBy,
+            l.SettledAt,
+            l.RejectedBy,
+            l.RejectedAt,
+            l.CancelledBy,
+            l.CancelledAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetLetterOfCreditAsync(string lcNo)
+    {
+        lcNo = lcNo.Trim().ToUpperInvariant();
+        var header = await db.LettersOfCredit.FirstOrDefaultAsync(l => l.OrgId == Org && l.LCNo == lcNo);
+        if (header is null) return null;
+
+        var lines = await db.LetterOfCreditLines
+            .Where(l => l.OrgId == Org && l.LetterOfCreditId == header.Id)
+            .OrderBy(l => l.Id)
+            .Select(l => new
+            {
+                l.Id,
+                l.LCNo,
+                l.ContractNo,
+                l.Vin,
+                l.Model,
+                l.SpecCode,
+                l.EngineNo,
+                l.Color,
+                l.OrderQty,
+                l.UnitPriceForeign,
+                l.TotalAmountForeign,
+                l.UnitPrice,
+                l.TotalAmount,
+                l.PackingListNo,
+                l.DeclarationNo,
+                l.Status,
+                l.Remark
+            })
+            .ToListAsync();
+
+        var overseaContract = await db.ContractOverseas
+            .FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == header.ContractNo);
+
+        var packingLists = await db.PackingLists
+            .Where(p => p.OrgId == Org && (p.LCNo == header.LCNo || p.ContractNo == header.ContractNo))
+            .Select(p => new { p.PackingListNo, p.PortCode, p.VesselName, p.TotalQuantity, p.Status })
+            .ToListAsync();
+
+        var declarations = await db.CustomsDeclarations
+            .Where(d => d.OrgId == Org && (d.LCNo == header.LCNo || d.ContractNo == header.ContractNo))
+            .Select(d => new { d.DeclarationNo, d.PortCode, d.DeclarationType, d.TotalVehicleCount, d.TotalTaxAmount, d.Status })
+            .ToListAsync();
+
+        return new
+        {
+            header.Id,
+            header.LCNo,
+            header.LCNoUser,
+            header.ContractNo,
+            contractSupplier = overseaContract?.SupplierName,
+            header.BankCode,
+            header.BankName,
+            header.BeneficiaryName,
+            header.ApplicantName,
+            header.Currency,
+            header.ExchangeRate,
+            header.LCAmountForeign,
+            header.LCAmount,
+            header.MarginRate,
+            header.MarginAmount,
+            header.IssueDate,
+            header.ExpiryDate,
+            header.LatestShipmentDate,
+            header.PaymentTerm,
+            header.DeparturePort,
+            header.ArrivalPort,
+            header.TotalVehicleCount,
+            header.UtilizedAmountForeign,
+            header.UtilizedAmount,
+            header.RemainingAmountForeign,
+            header.RemainingAmount,
+            header.SwiftCode,
+            header.FileSigned,
+            header.Status,
+            header.Remark,
+            header.CreatedBy,
+            header.CreatedAt,
+            header.ApprovedBy,
+            header.ApprovedAt,
+            header.UtilizedBy,
+            header.UtilizedAt,
+            header.SettledBy,
+            header.SettledAt,
+            header.RejectedBy,
+            header.RejectedAt,
+            header.RejectReason,
+            header.CancelledBy,
+            header.CancelledAt,
+            header.CancelReason,
+            lines,
+            packingLists,
+            declarations
+        };
+    }
+
+    public async Task<object?> LetterOfCreditTransitionAsync(string lcNo, string action, LetterOfCreditTransitionDto? dto)
+    {
+        lcNo = lcNo.Trim().ToUpperInvariant();
+        action = action.Trim().ToLowerInvariant();
+
+        var header = await db.LettersOfCredit.FirstOrDefaultAsync(l => l.OrgId == Org && l.LCNo == lcNo);
+        if (header is null) return null;
+
+        var lines = await db.LetterOfCreditLines.Where(l => l.OrgId == Org && l.LetterOfCreditId == header.Id).ToListAsync();
+        var now = DateTime.Now;
+
+        switch (action)
+        {
+            case "submit":
+                if (header.Status != "Draft")
+                    throw new InvalidOperationException($"Không thể nộp L/C khi đang ở trạng thái '{header.Status}'. Chỉ áp dụng cho 'Draft'.");
+                header.Status = "Submitted";
+                foreach (var l in lines)
+                {
+                    l.Status = "Submitted";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "LetterOfCreditSubmitted", $"Nộp hồ sơ mở L/C {header.LCNo} sang ngân hàng {header.BankCode}.");
+                }
+                break;
+
+            case "issue" or "approve":
+                if (header.Status != "Draft" && header.Status != "Submitted")
+                    throw new InvalidOperationException($"Không thể phát hành L/C khi đang ở trạng thái '{header.Status}'. Cần ở 'Draft' hoặc 'Submitted'.");
+                header.Status = "Issued";
+                header.ApprovedBy = dto?.User ?? "FinanceDirector.NguyenVanNam";
+                header.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.SwiftCode)) header.SwiftCode = dto.SwiftCode.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.FileSigned)) header.FileSigned = dto.FileSigned.Trim();
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Issued";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                    {
+                        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == l.Vin);
+                        if (v != null) v.LCNo = header.LCNo;
+                        Log(l.Vin, "LetterOfCreditIssued", $"Ngân hàng {header.BankCode} phát hành thành công L/C {header.LCNo}. SWIFT={header.SwiftCode ?? "N/A"} Trị giá={header.LCAmountForeign:N2} {header.Currency}");
+                    }
+                }
+                break;
+
+            case "utilize" or "pay" or "disburse":
+                if (header.Status != "Issued" && header.Status != "Utilized")
+                    throw new InvalidOperationException($"Không thể thực hiện thanh toán L/C khi đang ở trạng thái '{header.Status}'. Cần ở 'Issued'.");
+
+                var payAmountForeign = dto?.UtilizedAmountForeign ?? header.RemainingAmountForeign;
+                if (payAmountForeign <= 0) payAmountForeign = header.LCAmountForeign;
+
+                header.UtilizedAmountForeign = Math.Min(header.LCAmountForeign, header.UtilizedAmountForeign + payAmountForeign);
+                header.UtilizedAmount = header.UtilizedAmountForeign * header.ExchangeRate;
+                header.RemainingAmountForeign = Math.Max(0, header.LCAmountForeign - header.UtilizedAmountForeign);
+                header.RemainingAmount = header.RemainingAmountForeign * header.ExchangeRate;
+
+                header.Status = "Utilized";
+                header.UtilizedBy = dto?.User ?? "TradeFinance.TranThiHang";
+                header.UtilizedAt = now;
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Utilized";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "LetterOfCreditUtilized", $"Thanh toán thành công qua L/C {header.LCNo} tại {header.BankCode} cho nhà xuất khẩu {header.BeneficiaryName}.");
+                }
+                break;
+
+            case "settle" or "finish" or "complete":
+                if (header.Status != "Issued" && header.Status != "Utilized")
+                    throw new InvalidOperationException($"Không thể tất toán L/C khi đang ở trạng thái '{header.Status}'. Cần ở 'Issued' hoặc 'Utilized'.");
+                header.Status = "Settled";
+                header.UtilizedAmountForeign = header.LCAmountForeign;
+                header.UtilizedAmount = header.LCAmount;
+                header.RemainingAmountForeign = 0;
+                header.RemainingAmount = 0;
+                header.SettledBy = dto?.User ?? "ChiefAccountant.TranThiMai";
+                header.SettledAt = now;
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Settled";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "LetterOfCreditSettled", $"Tất toán L/C {header.LCNo} tại {header.BankCode}. Giải phóng toàn bộ ký quỹ {header.MarginAmount:N0} VNĐ.");
+                }
+                break;
+
+            case "reject":
+                if (header.Status != "Draft" && header.Status != "Submitted")
+                    throw new InvalidOperationException($"Không thể từ chối L/C khi đang ở trạng thái '{header.Status}'.");
+                header.Status = "Rejected";
+                header.RejectedBy = dto?.User ?? "Bank.Approver";
+                header.RejectedAt = now;
+                header.RejectReason = dto?.Reason ?? dto?.Note ?? "Hồ sơ L/C bị ngân hàng từ chối.";
+                foreach (var l in lines)
+                {
+                    l.Status = "Rejected";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                        Log(l.Vin, "LetterOfCreditRejected", $"Từ chối L/C {header.LCNo}: {header.RejectReason}");
+                }
+                break;
+
+            case "cancel":
+                if (header.Status is "Settled" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể hủy L/C khi đang ở trạng thái '{header.Status}'.");
+                header.Status = "Cancelled";
+                header.CancelledBy = dto?.User ?? "User";
+                header.CancelledAt = now;
+                header.CancelReason = dto?.Reason ?? dto?.Note ?? "Hủy thư tín dụng L/C.";
+                foreach (var l in lines)
+                {
+                    l.Status = "Cancelled";
+                    if (!string.IsNullOrWhiteSpace(l.Vin))
+                    {
+                        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == l.Vin);
+                        if (v != null && v.LCNo == header.LCNo) v.LCNo = null;
+                        Log(l.Vin, "LetterOfCreditCancelled", $"Hủy L/C {header.LCNo}: {header.CancelReason}");
+                    }
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ. Hỗ trợ: submit, issue (approve), utilize, settle, reject, cancel.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            header.Remark = string.IsNullOrWhiteSpace(header.Remark) ? dto.Note.Trim() : header.Remark + " | " + dto.Note.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.LCNo,
+            header.ContractNo,
+            header.BankCode,
+            header.Status,
+            header.ApprovedBy,
+            header.ApprovedAt,
+            header.UtilizedBy,
+            header.UtilizedAt,
+            header.SettledBy,
+            header.SettledAt,
+            header.RejectedBy,
+            header.RejectedAt,
+            header.RejectReason,
+            header.CancelledBy,
+            header.CancelledAt,
+            header.CancelReason,
+            header.LCAmountForeign,
+            header.LCAmount,
+            header.UtilizedAmountForeign,
+            header.UtilizedAmount,
+            header.RemainingAmountForeign,
+            header.RemainingAmount
+        };
+    }
+
+    public async Task<object?> UpdateLetterOfCreditHeaderAsync(string lcNo, UpdateLetterOfCreditHeaderDto dto)
+    {
+        lcNo = lcNo.Trim().ToUpperInvariant();
+        var header = await db.LettersOfCredit.FirstOrDefaultAsync(l => l.OrgId == Org && l.LCNo == lcNo);
+        if (header is null) return null;
+
+        if (header.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa L/C khi đang ở trạng thái '{header.Status}'.");
+
+        if (dto.BankCode != null) header.BankCode = dto.BankCode.Trim().ToUpperInvariant();
+        if (dto.BankName != null) header.BankName = dto.BankName.Trim();
+        if (dto.BeneficiaryName != null) header.BeneficiaryName = dto.BeneficiaryName.Trim();
+        if (dto.ApplicantName != null) header.ApplicantName = dto.ApplicantName.Trim();
+        if (dto.Currency != null) header.Currency = dto.Currency.Trim().ToUpperInvariant();
+        if (dto.PaymentTerm != null) header.PaymentTerm = dto.PaymentTerm.Trim();
+        if (dto.DeparturePort != null) header.DeparturePort = dto.DeparturePort.Trim().ToUpperInvariant();
+        if (dto.ArrivalPort != null) header.ArrivalPort = dto.ArrivalPort.Trim().ToUpperInvariant();
+        if (dto.ExpiryDate.HasValue) header.ExpiryDate = dto.ExpiryDate.Value;
+        if (dto.LatestShipmentDate.HasValue) header.LatestShipmentDate = dto.LatestShipmentDate.Value;
+        if (dto.SwiftCode != null) header.SwiftCode = dto.SwiftCode.Trim();
+        if (dto.FileSigned != null) header.FileSigned = dto.FileSigned.Trim();
+        if (dto.Remark != null) header.Remark = dto.Remark.Trim();
+
+        if (dto.ExchangeRate.HasValue && dto.ExchangeRate.Value > 0)
+        {
+            header.ExchangeRate = dto.ExchangeRate.Value;
+            var lines = await db.LetterOfCreditLines.Where(l => l.OrgId == Org && l.LetterOfCreditId == header.Id).ToListAsync();
+            foreach (var l in lines)
+            {
+                l.UnitPrice = l.UnitPriceForeign * header.ExchangeRate;
+                l.TotalAmount = l.TotalAmountForeign * header.ExchangeRate;
+            }
+            header.LCAmount = lines.Sum(l => l.TotalAmount);
+            header.UtilizedAmount = header.UtilizedAmountForeign * header.ExchangeRate;
+            header.RemainingAmount = header.RemainingAmountForeign * header.ExchangeRate;
+        }
+
+        if (dto.MarginRate.HasValue && dto.MarginRate.Value >= 0)
+        {
+            header.MarginRate = dto.MarginRate.Value;
+            header.MarginAmount = header.LCAmount * header.MarginRate / 100m;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.LCNo,
+            header.LCNoUser,
+            header.ContractNo,
+            header.BankCode,
+            header.BankName,
+            header.BeneficiaryName,
+            header.ApplicantName,
+            header.Currency,
+            header.ExchangeRate,
+            header.LCAmountForeign,
+            header.LCAmount,
+            header.MarginRate,
+            header.MarginAmount,
+            header.ExpiryDate,
+            header.LatestShipmentDate,
+            header.PaymentTerm,
+            header.DeparturePort,
+            header.ArrivalPort,
+            header.Status,
+            header.Remark
+        };
+    }
+
+    public async Task<object?> UpdateLetterOfCreditLineAsync(string lcNo, long lineId, UpdateLetterOfCreditLineDto dto)
+    {
+        lcNo = lcNo.Trim().ToUpperInvariant();
+        var header = await db.LettersOfCredit.FirstOrDefaultAsync(l => l.OrgId == Org && l.LCNo == lcNo);
+        if (header is null) return null;
+
+        if (header.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa dòng xe khi L/C đang ở trạng thái '{header.Status}'.");
+
+        var line = await db.LetterOfCreditLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.LetterOfCreditId == header.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (dto.Model != null) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (dto.EngineNo != null) line.EngineNo = dto.EngineNo.Trim();
+        if (dto.Color != null) line.Color = dto.Color.Trim();
+        if (dto.PackingListNo != null) line.PackingListNo = dto.PackingListNo.Trim().ToUpperInvariant();
+        if (dto.DeclarationNo != null) line.DeclarationNo = dto.DeclarationNo.Trim().ToUpperInvariant();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        if (dto.Vin != null)
+        {
+            var oldVin = line.Vin;
+            var newVin = string.IsNullOrWhiteSpace(dto.Vin) ? null : dto.Vin.Trim().ToUpperInvariant();
+            line.Vin = newVin;
+
+            if (!string.IsNullOrWhiteSpace(oldVin) && oldVin != newVin)
+            {
+                var oldV = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == oldVin);
+                if (oldV != null && oldV.LCNo == lcNo) oldV.LCNo = null;
+            }
+            if (!string.IsNullOrWhiteSpace(newVin))
+            {
+                var newV = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == newVin);
+                if (newV != null) newV.LCNo = lcNo;
+            }
+        }
+
+        if (dto.OrderQty.HasValue && dto.OrderQty.Value > 0) line.OrderQty = dto.OrderQty.Value;
+        if (dto.UnitPriceForeign.HasValue && dto.UnitPriceForeign.Value >= 0) line.UnitPriceForeign = dto.UnitPriceForeign.Value;
+
+        var rate = (dto.ExchangeRate.HasValue && dto.ExchangeRate.Value > 0) ? dto.ExchangeRate.Value : header.ExchangeRate;
+        line.TotalAmountForeign = line.OrderQty * line.UnitPriceForeign;
+        line.UnitPrice = line.UnitPriceForeign * rate;
+        line.TotalAmount = line.TotalAmountForeign * rate;
+
+        var allLines = await db.LetterOfCreditLines.Where(l => l.OrgId == Org && l.LetterOfCreditId == header.Id).ToListAsync();
+        header.TotalVehicleCount = allLines.Sum(l => l.OrderQty);
+        header.LCAmountForeign = allLines.Sum(l => l.TotalAmountForeign);
+        header.LCAmount = allLines.Sum(l => l.TotalAmount);
+        header.MarginAmount = header.LCAmount * header.MarginRate / 100m;
+        header.RemainingAmountForeign = Math.Max(0, header.LCAmountForeign - header.UtilizedAmountForeign);
+        header.RemainingAmount = header.RemainingAmountForeign * header.ExchangeRate;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.LCNo,
+            line.Id,
+            line.Vin,
+            line.Model,
+            line.SpecCode,
+            line.EngineNo,
+            line.Color,
+            line.OrderQty,
+            line.UnitPriceForeign,
+            line.TotalAmountForeign,
+            line.UnitPrice,
+            line.TotalAmount,
+            line.PackingListNo,
+            line.DeclarationNo,
+            line.Status,
+            line.Remark,
+            headerTotalVehicleCount = header.TotalVehicleCount,
+            headerLCAmountForeign = header.LCAmountForeign,
+            headerLCAmount = header.LCAmount,
+            headerMarginAmount = header.MarginAmount
+        };
+    }
+
+    public async Task<object?> AddLetterOfCreditLinesAsync(string lcNo, List<LetterOfCreditItemInputDto> items)
+    {
+        lcNo = lcNo.Trim().ToUpperInvariant();
+        var header = await db.LettersOfCredit.FirstOrDefaultAsync(l => l.OrgId == Org && l.LCNo == lcNo);
+        if (header is null) return null;
+
+        if (header.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm dòng xe khi L/C đang ở trạng thái '{header.Status}'.");
+
+        if (items is null || items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng xe mới.");
+
+        var vins = items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)).Select(i => i.Vin!.Trim().ToUpperInvariant()).Distinct().ToList();
+        var vehicles = vins.Count > 0 ? await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync() : new List<Vehicle>();
+        var vDict = vehicles.ToDictionary(v => v.Vin);
+
+        var newLines = new List<LetterOfCreditLine>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Model))
+                throw new InvalidOperationException("Tên dòng xe (Model) không được để trống.");
+
+            var qty = Math.Max(1, item.OrderQty);
+            var unitPriceForeign = item.UnitPriceForeign;
+            var lineTotalAmountForeign = item.TotalAmountForeign ?? (qty * unitPriceForeign);
+            var unitPrice = item.UnitPrice ?? (unitPriceForeign * header.ExchangeRate);
+            var lineTotalAmount = item.TotalAmount ?? (lineTotalAmountForeign * header.ExchangeRate);
+
+            string? itemVin = null;
+            if (!string.IsNullOrWhiteSpace(item.Vin))
+            {
+                itemVin = item.Vin.Trim().ToUpperInvariant();
+                if (vDict.TryGetValue(itemVin, out var v))
+                {
+                    v.LCNo = lcNo;
+                }
+            }
+
+            var line = new LetterOfCreditLine
+            {
+                OrgId = Org,
+                LetterOfCreditId = header.Id,
+                LCNo = header.LCNo,
+                ContractNo = header.ContractNo,
+                Vin = itemVin,
+                Model = item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                EngineNo = item.EngineNo?.Trim(),
+                Color = item.Color?.Trim(),
+                OrderQty = qty,
+                UnitPriceForeign = unitPriceForeign,
+                TotalAmountForeign = lineTotalAmountForeign,
+                UnitPrice = unitPrice,
+                TotalAmount = lineTotalAmount,
+                PackingListNo = item.PackingListNo?.Trim().ToUpperInvariant(),
+                DeclarationNo = item.DeclarationNo?.Trim().ToUpperInvariant(),
+                Status = header.Status == "Submitted" ? "Submitted" : header.Status == "Issued" ? "Issued" : "Pending",
+                Remark = item.Remark?.Trim()
+            };
+
+            newLines.Add(line);
+            if (!string.IsNullOrWhiteSpace(itemVin))
+                Log(itemVin, "LetterOfCreditLineAdded", $"Bổ sung xe vào L/C {header.LCNo} ngân hàng {header.BankCode}");
+        }
+
+        db.LetterOfCreditLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.LetterOfCreditLines.Where(l => l.OrgId == Org && l.LetterOfCreditId == header.Id).ToListAsync();
+        header.TotalVehicleCount = allLines.Sum(l => l.OrderQty);
+        header.LCAmountForeign = allLines.Sum(l => l.TotalAmountForeign);
+        header.LCAmount = allLines.Sum(l => l.TotalAmount);
+        header.MarginAmount = header.LCAmount * header.MarginRate / 100m;
+        header.RemainingAmountForeign = Math.Max(0, header.LCAmountForeign - header.UtilizedAmountForeign);
+        header.RemainingAmount = header.RemainingAmountForeign * header.ExchangeRate;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.LCNo,
+            addedCount = newLines.Count,
+            totalVehicleCount = header.TotalVehicleCount,
+            lcAmountForeign = header.LCAmountForeign,
+            lcAmount = header.LCAmount,
+            marginAmount = header.MarginAmount
+        };
+    }
+
+    public async Task<object?> RemoveLetterOfCreditLineAsync(string lcNo, long lineId)
+    {
+        lcNo = lcNo.Trim().ToUpperInvariant();
+        var header = await db.LettersOfCredit.FirstOrDefaultAsync(l => l.OrgId == Org && l.LCNo == lcNo);
+        if (header is null) return null;
+
+        if (header.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa dòng xe khi L/C đang ở trạng thái '{header.Status}'.");
+
+        var line = await db.LetterOfCreditLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.LetterOfCreditId == header.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(line.Vin))
+        {
+            var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == line.Vin);
+            if (v != null && v.LCNo == lcNo) v.LCNo = null;
+            Log(line.Vin, "LetterOfCreditLineRemoved", $"Rút xe khỏi L/C {header.LCNo}");
+        }
+
+        db.LetterOfCreditLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.LetterOfCreditLines.Where(l => l.OrgId == Org && l.LetterOfCreditId == header.Id).ToListAsync();
+        header.TotalVehicleCount = allLines.Sum(l => l.OrderQty);
+        header.LCAmountForeign = allLines.Sum(l => l.TotalAmountForeign);
+        header.LCAmount = allLines.Sum(l => l.TotalAmount);
+        header.MarginAmount = header.LCAmount * header.MarginRate / 100m;
+        header.RemainingAmountForeign = Math.Max(0, header.LCAmountForeign - header.UtilizedAmountForeign);
+        header.RemainingAmount = header.RemainingAmountForeign * header.ExchangeRate;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            header.LCNo,
+            removedLineId = lineId,
+            totalVehicleCount = header.TotalVehicleCount,
+            lcAmountForeign = header.LCAmountForeign,
+            lcAmount = header.LCAmount,
+            marginAmount = header.MarginAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleLetterOfCreditInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var lines = await db.LetterOfCreditLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var lcNos = lines.Select(l => l.LCNo).Distinct().ToList();
+        if (v.LCNo != null && !lcNos.Contains(v.LCNo))
+            lcNos.Add(v.LCNo);
+
+        var lcs = await db.LettersOfCredit
+            .Where(l => l.OrgId == Org && lcNos.Contains(l.LCNo))
+            .ToDictionaryAsync(l => l.LCNo);
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && e.Kind.StartsWith("LetterOfCredit"))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.EngineNo,
+            v.Color,
+            v.DealerCode,
+            v.StorageCode,
+            v.ContractNoOversea,
+            v.LCNo,
+            v.PackingListNo,
+            v.DeclarationNo,
+            v.IsCustomsCleared,
+            status = v.Status.ToString(),
+            lettersOfCredit = lines.Select(l => new
+            {
+                l.Id,
+                l.LCNo,
+                l.ContractNo,
+                bankCode = lcs.TryGetValue(l.LCNo, out var lc) ? lc.BankCode : "",
+                bankName = lc?.BankName,
+                beneficiaryName = lc?.BeneficiaryName,
+                currency = lc?.Currency,
+                exchangeRate = lc?.ExchangeRate,
+                paymentTerm = lc?.PaymentTerm,
+                departurePort = lc?.DeparturePort,
+                arrivalPort = lc?.ArrivalPort,
+                headerStatus = lc?.Status,
+                issueDate = lc?.IssueDate,
+                expiryDate = lc?.ExpiryDate,
+                latestShipmentDate = lc?.LatestShipmentDate,
+                swiftCode = lc?.SwiftCode,
+                l.Model,
+                l.SpecCode,
+                l.EngineNo,
+                l.Color,
+                l.OrderQty,
+                l.UnitPriceForeign,
+                l.TotalAmountForeign,
+                l.UnitPrice,
+                l.TotalAmount,
+                l.PackingListNo,
+                l.DeclarationNo,
+                l.Status,
+                l.Remark
+            }),
+            events = events.Select(e => new
+            {
+                e.Kind,
+                e.Note,
+                e.At
+            })
+        };
+    }
+
+    public async Task<object> GetLetterOfCreditSummaryAsync()
+    {
+        var lcs = await db.LettersOfCredit.Where(l => l.OrgId == Org).ToListAsync();
+        var lines = await db.LetterOfCreditLines.Where(l => l.OrgId == Org).ToListAsync();
+
+        var byStatus = lcs.GroupBy(l => l.Status).Select(g => new
+        {
+            status = g.Key,
+            lcCount = g.Count(),
+            totalVehicles = g.Sum(l => l.TotalVehicleCount),
+            totalAmountForeign = g.Sum(l => l.LCAmountForeign),
+            totalAmount = g.Sum(l => l.LCAmount),
+            totalMarginAmount = g.Sum(l => l.MarginAmount),
+            totalUtilizedAmountForeign = g.Sum(l => l.UtilizedAmountForeign),
+            totalRemainingAmountForeign = g.Sum(l => l.RemainingAmountForeign)
+        }).ToList();
+
+        var byBank = lcs.GroupBy(l => l.BankCode).Select(g => new
+        {
+            bankCode = g.Key,
+            bankName = g.First().BankName,
+            lcCount = g.Count(),
+            totalVehicles = g.Sum(l => l.TotalVehicleCount),
+            totalAmountForeign = g.Sum(l => l.LCAmountForeign),
+            totalAmount = g.Sum(l => l.LCAmount),
+            totalMarginAmount = g.Sum(l => l.MarginAmount)
+        }).ToList();
+
+        var byCurrency = lcs.GroupBy(l => l.Currency).Select(g => new
+        {
+            currency = g.Key,
+            lcCount = g.Count(),
+            totalAmountForeign = g.Sum(l => l.LCAmountForeign),
+            totalAmount = g.Sum(l => l.LCAmount)
+        }).ToList();
+
+        var byPaymentTerm = lcs.GroupBy(l => l.PaymentTerm).Select(g => new
+        {
+            paymentTerm = g.Key,
+            lcCount = g.Count(),
+            totalVehicles = g.Sum(l => l.TotalVehicleCount),
+            totalAmountForeign = g.Sum(l => l.LCAmountForeign),
+            totalAmount = g.Sum(l => l.LCAmount)
+        }).ToList();
+
+        return new
+        {
+            totalLCs = lcs.Count,
+            totalVehicles = lcs.Sum(l => l.TotalVehicleCount),
+            totalAmountForeign = lcs.Sum(l => l.LCAmountForeign),
+            totalAmount = lcs.Sum(l => l.LCAmount),
+            totalMarginAmount = lcs.Sum(l => l.MarginAmount),
+            totalUtilizedAmountForeign = lcs.Sum(l => l.UtilizedAmountForeign),
+            totalRemainingAmountForeign = lcs.Sum(l => l.RemainingAmountForeign),
+            byStatus,
+            byBank,
+            byCurrency,
+            byPaymentTerm
         };
     }
 }

@@ -1521,6 +1521,97 @@ app.MapGet("/api/vehicles/{vin}/contract-oversea-info", async (string vin, IVehi
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Thư tín dụng L/C thanh toán quốc tế nhập khẩu xe CBU/CKD (BizHTC.Contract.ContractLC / CT_LC) ----
+app.MapPost("/api/letters-of-credit", async (CreateLetterOfCreditDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.ContractNo) || string.IsNullOrWhiteSpace(dto.BankCode))
+        return Results.BadRequest(new { error = "Cần mã hợp đồng ngoại thương ContractNo và mã ngân hàng BankCode." });
+    try { return Results.Ok(await svc.CreateLetterOfCreditAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/letters-of-credit", async (IVehicleService svc, string? status, string? bank, string? contractNo, string? currency, string? paymentTerm, string? lcNo, string? vin) =>
+    Results.Ok(await svc.ListLettersOfCreditAsync(status, bank, contractNo, currency, paymentTerm, lcNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/letters-of-credit/summary", async (IVehicleService svc) =>
+    Results.Ok(await svc.GetLetterOfCreditSummaryAsync())).RequireAuthorization();
+
+app.MapGet("/api/letters-of-credit/{lcNo}", async (string lcNo, IVehicleService svc) =>
+{
+    var r = await svc.GetLetterOfCreditAsync(lcNo);
+    return r is null ? Results.NotFound(new { lcNo, error = "Không tìm thấy thư tín dụng L/C." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/letters-of-credit/{lcNo}", async (string lcNo, UpdateLetterOfCreditHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateLetterOfCreditHeaderAsync(lcNo, dto);
+        return r is null ? Results.NotFound(new { lcNo, error = "Không tìm thấy thư tín dụng L/C hoặc L/C đã tất toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/letters-of-credit/{lcNo}/{action}", async (string lcNo, string action, LetterOfCreditTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "issue" or "approve" or "utilize" or "pay" or "disburse" or "settle" or "finish" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|issue|utilize|settle|reject|cancel" });
+    try
+    {
+        var r = await svc.LetterOfCreditTransitionAsync(lcNo, action, dto);
+        return r is null ? Results.NotFound(new { lcNo, error = "Không thấy thư tín dụng L/C hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/letters-of-credit/{lcNo}/lines/{lineId:long}/update", async (string lcNo, long lineId, UpdateLetterOfCreditLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateLetterOfCreditLineAsync(lcNo, lineId, dto);
+        return r is null ? Results.NotFound(new { lcNo, lineId, error = "Không tìm thấy dòng xe trong L/C hoặc L/C đã tất toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/letters-of-credit/{lcNo}/lines/{lineId:long}", async (string lcNo, long lineId, UpdateLetterOfCreditLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateLetterOfCreditLineAsync(lcNo, lineId, dto);
+        return r is null ? Results.NotFound(new { lcNo, lineId, error = "Không tìm thấy dòng xe trong L/C hoặc L/C đã tất toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/letters-of-credit/{lcNo}/lines", async (string lcNo, List<LetterOfCreditItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào L/C." });
+    try
+    {
+        var r = await svc.AddLetterOfCreditLinesAsync(lcNo, items);
+        return r is null ? Results.NotFound(new { lcNo, error = "Không tìm thấy thư tín dụng L/C hoặc L/C đã tất toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/letters-of-credit/{lcNo}/lines/{lineId:long}", async (string lcNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveLetterOfCreditLineAsync(lcNo, lineId);
+        return r is null ? Results.NotFound(new { lcNo, lineId, error = "Không tìm thấy dòng xe trong L/C hoặc L/C đã tất toán/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/lc-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleLetterOfCreditInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
