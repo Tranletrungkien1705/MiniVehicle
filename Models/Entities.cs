@@ -505,6 +505,50 @@ public sealed class DealerDealLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Bảo lãnh thanh toán mua xe ô tô của Ngân hàng cho Đại lý (BizHTC.Payment / Pmt_Guarantee): cấp hạn mức bảo lãnh thanh toán cho đại lý nhận xe từ hãng OEM.</summary>
+public sealed class PaymentGuarantee
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string GuaranteeNo { get; set; } = "";        // Mã chứng thư bảo lãnh (GRT...)
+    public string BankGuaranteeNo { get; set; } = "";    // Số thư bảo lãnh ngân hàng (BL-VCB-...)
+    public string BankCode { get; set; } = "";           // Mã ngân hàng phát hành (VCB, VPB, TCB, BIDV, CTG, MB...)
+    public string BankName { get; set; } = "";           // Tên ngân hàng
+    public string DealerCode { get; set; } = "";         // Đại lý thụ hưởng bảo lãnh mua xe
+    public DateTime DateOpen { get; set; } = DateTime.Now; // Ngày mở / hiệu lực bảo lãnh
+    public DateTime DateExpired { get; set; }            // Ngày hết hạn hiệu lực bảo lãnh
+    public int Term { get; set; } = 30;                  // Thời hạn quy định (ngày)
+    public int TermActual { get; set; } = 30;            // Thời hạn thực tế (ngày)
+    public decimal TotalAmount { get; set; } = 0;        // Tổng hạn mức bảo lãnh (VNĐ)
+    public int TotalVehicleCount { get; set; } = 0;      // Tổng số lượng xe được bảo lãnh
+    public string Status { get; set; } = "Pending";      // Pending → Approved → Settled (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                  // Ghi chú hợp đồng tín dụng/bảo lãnh
+    public string? CreatedBy { get; set; }
+    public string? ApprovedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? SettledAt { get; set; }             // Ngày tất toán giải phóng hoàn toàn bảo lãnh
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong bảo lãnh thanh toán (BizHTC.Payment / Pmt_GuaranteeDetail): danh sách VIN được bảo lãnh, tỷ lệ và giá trị bảo lãnh, thời hạn cảnh báo đáo hạn.</summary>
+public sealed class PaymentGuaranteeLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long PaymentGuaranteeId { get; set; }
+    public string GuaranteeNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public decimal GuaranteePercent { get; set; } = 100; // Tỷ lệ bảo lãnh (%)
+    public decimal GuaranteeValue { get; set; } = 0;     // Giá trị bảo lãnh cho xe này (VNĐ)
+    public DateTime? DateStart { get; set; }             // Ngày bắt đầu tính bảo lãnh cho xe
+    public DateTime? DateWarning { get; set; }           // Ngày cảnh báo hạn bảo lãnh
+    public DateTime? DateExpired { get; set; }           // Ngày hết hạn bảo lãnh xe này
+    public string Status { get; set; } = "Pending";      // Pending → Approved → Settled (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

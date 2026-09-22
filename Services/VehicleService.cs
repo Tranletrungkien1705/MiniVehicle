@@ -70,6 +70,12 @@ public record CreateDealerDealDto(string DealerCode, string CustomerName, string
 public record DealerDealTransitionDto(string? Note = null, string? ApprovedBy = null, DateTime? DeliveryDate = null);
 public record UpdateDealerDealLineDto(string? PlateNo = null, string? SBHOnlineNo = null, int? DeliveryOdoKm = null, DateTime? WarrantyStartDate = null, int? WarrantyMonths = null, DateTime? DeliveryDate = null, string? Remark = null);
 
+public record GuaranteeItemInputDto(string Vin, decimal? GuaranteeValue = null, decimal GuaranteePercent = 100, DateTime? DateStart = null, string? Remark = null);
+public record CreatePaymentGuaranteeDto(string BankGuaranteeNo, string BankCode, string DealerCode, decimal TotalAmount, DateTime DateOpen, DateTime DateExpired, List<GuaranteeItemInputDto>? Items = null, List<string>? Vins = null, string? BankName = null, int Term = 30, int TermActual = 30, string? Remark = null, string? GuaranteeNo = null, string? CreatedBy = null);
+public record PaymentGuaranteeTransitionDto(string? Note = null, string? ApprovedBy = null, DateTime? DateExpired = null, int? Term = null, int? TermActual = null);
+public record UpdatePaymentGuaranteeDto(string? BankGuaranteeNo = null, string? BankName = null, DateTime? DateExpired = null, int? Term = null, int? TermActual = null, decimal? TotalAmount = null, string? Remark = null);
+public record CancelGuaranteeLineDto(string? Reason = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -144,6 +150,12 @@ public interface IVehicleService
     Task<object?> GetDealerDealAsync(string dealNo);
     Task<object?> DealerDealTransitionAsync(string dealNo, string action, DealerDealTransitionDto? dto);
     Task<object?> UpdateDealerDealLineAsync(string dealNo, string vin, UpdateDealerDealLineDto dto);
+    Task<object> CreatePaymentGuaranteeAsync(CreatePaymentGuaranteeDto dto);
+    Task<object> ListPaymentGuaranteesAsync(string? status, string? dealer, string? bank, string? vin);
+    Task<object?> GetPaymentGuaranteeAsync(string guaranteeNo);
+    Task<object?> PaymentGuaranteeTransitionAsync(string guaranteeNo, string action, PaymentGuaranteeTransitionDto? dto);
+    Task<object?> CancelPaymentGuaranteeLineAsync(string guaranteeNo, string vin, string? reason);
+    Task<object?> UpdatePaymentGuaranteeAsync(string guaranteeNo, UpdatePaymentGuaranteeDto dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -3277,6 +3289,424 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             line.DeliveryDate,
             line.Status,
             line.Remark
+        };
+    }
+
+    // ===== Bảo lãnh thanh toán mua xe ô tô của Ngân hàng cho Đại lý (BizHTC.Payment / Pmt_Guarantee / Pmt_GuaranteeDetail) =====
+    public async Task<object> CreatePaymentGuaranteeAsync(CreatePaymentGuaranteeDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.BankGuaranteeNo))
+            throw new InvalidOperationException("Cần số chứng thư thư bảo lãnh ngân hàng (BankGuaranteeNo).");
+        if (string.IsNullOrWhiteSpace(dto.BankCode))
+            throw new InvalidOperationException("Cần mã Ngân hàng bảo lãnh (BankCode).");
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã Đại lý được bảo lãnh (DealerCode).");
+        if (dto.TotalAmount <= 0)
+            throw new InvalidOperationException("Tổng hạn mức bảo lãnh TotalAmount phải lớn hơn 0.");
+        if (dto.DateExpired <= dto.DateOpen)
+            throw new InvalidOperationException("Ngày hết hạn bảo lãnh DateExpired phải sau ngày mở DateOpen.");
+
+        var distinctItems = new List<GuaranteeItemInputDto>();
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            distinctItems = dto.Items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).ToList();
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            var unitVal = dto.TotalAmount / dto.Vins.Count;
+            distinctItems = dto.Vins.Select(v => v.Trim().ToUpperInvariant()).Distinct()
+                .Select(v => new GuaranteeItemInputDto(v, unitVal, 100, dto.DateOpen, null)).ToList();
+        }
+
+        if (distinctItems.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe VIN trong chứng thư bảo lãnh.");
+
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        // Kiểm tra VIN đang thuộc bảo lãnh khác chưa quyết toán / chưa hủy
+        var activeLines = await db.GuaranteeLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && (l.Status == "Pending" || l.Status == "Approved"))
+            .ToListAsync();
+        if (activeLines.Count > 0)
+        {
+            var conflict = activeLines.First();
+            throw new InvalidOperationException($"VIN {conflict.Vin} đang nằm trong chứng thư bảo lãnh khác chưa tất toán ({conflict.GuaranteeNo}).");
+        }
+
+        var grtNo = string.IsNullOrWhiteSpace(dto.GuaranteeNo)
+            ? "GRT" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.GuaranteeNo!.Trim().ToUpperInvariant();
+
+        if (await db.Guarantees.AnyAsync(g => g.OrgId == Org && g.GuaranteeNo == grtNo))
+            throw new InvalidOperationException($"Mã chứng thư bảo lãnh {grtNo} đã tồn tại.");
+
+        var bankCode = dto.BankCode.Trim().ToUpperInvariant();
+        var bankName = !string.IsNullOrWhiteSpace(dto.BankName) ? dto.BankName.Trim() : bankCode switch
+        {
+            "VCB" => "Ngân hàng Ngoại thương Việt Nam (Vietcombank)",
+            "VPB" => "Ngân hàng TMCP Việt Nam Thịnh Vượng (VPBank)",
+            "TCB" => "Ngân hàng Kỹ thương Việt Nam (Techcombank)",
+            "BIDV" => "Ngân hàng Đầu tư và Phát triển Việt Nam (BIDV)",
+            "CTG" => "Ngân hàng Công thương Việt Nam (VietinBank)",
+            "MB" => "Ngân hàng Quân đội (MB Bank)",
+            _ => $"Ngân hàng {bankCode}"
+        };
+
+        var term = dto.Term > 0 ? dto.Term : 30;
+        var termActual = dto.TermActual > 0 ? dto.TermActual : term;
+
+        var grt = new PaymentGuarantee
+        {
+            OrgId = Org,
+            GuaranteeNo = grtNo,
+            BankGuaranteeNo = dto.BankGuaranteeNo.Trim().ToUpperInvariant(),
+            BankCode = bankCode,
+            BankName = bankName,
+            DealerCode = dto.DealerCode.Trim().ToUpperInvariant(),
+            DateOpen = dto.DateOpen,
+            DateExpired = dto.DateExpired,
+            Term = term,
+            TermActual = termActual,
+            TotalAmount = dto.TotalAmount,
+            TotalVehicleCount = distinctItems.Count,
+            Status = "Pending",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.Guarantees.Add(grt);
+        await db.SaveChangesAsync();
+
+        var vMap = vehicles.ToDictionary(v => v.Vin);
+        var dateWarning = dto.DateExpired.AddDays(-7); // cảnh báo trước 7 ngày
+
+        foreach (var item in distinctItems)
+        {
+            var v = vMap[item.Vin.Trim().ToUpperInvariant()];
+            var val = item.GuaranteeValue.HasValue && item.GuaranteeValue.Value > 0
+                ? item.GuaranteeValue.Value
+                : (dto.TotalAmount / distinctItems.Count);
+
+            db.GuaranteeLines.Add(new PaymentGuaranteeLine
+            {
+                OrgId = Org,
+                PaymentGuaranteeId = grt.Id,
+                GuaranteeNo = grt.GuaranteeNo,
+                Vin = v.Vin,
+                Model = v.Model,
+                GuaranteePercent = item.GuaranteePercent > 0 ? item.GuaranteePercent : 100,
+                GuaranteeValue = val,
+                DateStart = item.DateStart ?? dto.DateOpen,
+                DateWarning = dateWarning,
+                DateExpired = dto.DateExpired,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(v.Vin, "GuaranteeCreated", $"{grtNo} Tiếp nhận chứng thư bảo lãnh NH {bankCode} ({grt.BankGuaranteeNo}) cho ĐL {grt.DealerCode}. Hạn mức xe: {val:N0} VNĐ");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            grt.GuaranteeNo,
+            grt.BankGuaranteeNo,
+            grt.BankCode,
+            grt.BankName,
+            grt.DealerCode,
+            grt.DateOpen,
+            grt.DateExpired,
+            grt.TotalAmount,
+            grt.Status,
+            totalVehicles = distinctItems.Count,
+            vins = distinctItems.Select(i => i.Vin)
+        };
+    }
+
+    public async Task<object> ListPaymentGuaranteesAsync(string? status, string? dealer, string? bank, string? vin)
+    {
+        var q = db.Guarantees.Where(g => g.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(g => g.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim().ToUpperInvariant(); q = q.Where(g => g.DealerCode == d); }
+        if (!string.IsNullOrWhiteSpace(bank)) { var b = bank.Trim().ToUpperInvariant(); q = q.Where(g => g.BankCode == b); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.GuaranteeLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.GuaranteeNo).Distinct().ToListAsync();
+            q = q.Where(g => matchedNos.Contains(g.GuaranteeNo));
+        }
+
+        var today = DateTime.Today;
+        var items = await q.OrderByDescending(g => g.Id).Take(500).Select(g => new
+        {
+            g.GuaranteeNo,
+            g.BankGuaranteeNo,
+            g.BankCode,
+            g.BankName,
+            g.DealerCode,
+            g.DateOpen,
+            g.DateExpired,
+            g.Term,
+            g.TermActual,
+            g.TotalAmount,
+            g.TotalVehicleCount,
+            g.Status,
+            g.Remark,
+            g.CreatedBy,
+            g.ApprovedBy,
+            g.CreatedAt,
+            g.ApprovedAt,
+            g.SettledAt,
+            daysLeft = (int)(g.DateExpired.Date - today).TotalDays,
+            isExpiringSoon = g.Status == "Approved" && (g.DateExpired.Date - today).TotalDays <= 7 && (g.DateExpired.Date - today).TotalDays >= 0,
+            isExpired = g.Status == "Approved" && g.DateExpired.Date < today,
+            vinCount = db.GuaranteeLines.Count(l => l.OrgId == Org && l.PaymentGuaranteeId == g.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetPaymentGuaranteeAsync(string guaranteeNo)
+    {
+        guaranteeNo = guaranteeNo.Trim().ToUpperInvariant();
+        var grt = await db.Guarantees.FirstOrDefaultAsync(g => g.OrgId == Org && g.GuaranteeNo == guaranteeNo);
+        if (grt is null) return null;
+
+        var lines = await db.GuaranteeLines.Where(l => l.OrgId == Org && l.PaymentGuaranteeId == grt.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var today = DateTime.Today;
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.GuaranteePercent,
+            l.GuaranteeValue,
+            l.DateStart,
+            l.DateWarning,
+            l.DateExpired,
+            l.Status,
+            l.Remark,
+            daysLeft = l.DateExpired.HasValue ? (int)(l.DateExpired.Value.Date - today).TotalDays : 0,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.EngineNo,
+                v.Color,
+                v.ModelYear,
+                v.StorageCode,
+                v.DealerCode,
+                status = v.Status.ToString(),
+                v.OwnerName,
+                v.PlateNo,
+                v.DeliveredAt,
+                v.IsMortgaged
+            } : null
+        }).ToList();
+
+        return new
+        {
+            grt.GuaranteeNo,
+            grt.BankGuaranteeNo,
+            grt.BankCode,
+            grt.BankName,
+            grt.DealerCode,
+            grt.DateOpen,
+            grt.DateExpired,
+            grt.Term,
+            grt.TermActual,
+            grt.TotalAmount,
+            grt.TotalVehicleCount,
+            grt.Status,
+            grt.Remark,
+            grt.CreatedBy,
+            grt.ApprovedBy,
+            grt.CreatedAt,
+            grt.ApprovedAt,
+            grt.SettledAt,
+            grt.CancelledAt,
+            daysLeft = (int)(grt.DateExpired.Date - today).TotalDays,
+            isExpiringSoon = grt.Status == "Approved" && (grt.DateExpired.Date - today).TotalDays <= 7 && (grt.DateExpired.Date - today).TotalDays >= 0,
+            lines = details
+        };
+    }
+
+    public async Task<object?> PaymentGuaranteeTransitionAsync(string guaranteeNo, string action, PaymentGuaranteeTransitionDto? dto)
+    {
+        guaranteeNo = guaranteeNo.Trim().ToUpperInvariant();
+        var grt = await db.Guarantees.FirstOrDefaultAsync(g => g.OrgId == Org && g.GuaranteeNo == guaranteeNo);
+        if (grt is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.GuaranteeLines.Where(l => l.OrgId == Org && l.PaymentGuaranteeId == grt.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (grt.Status != "Pending") return null;
+                grt.Status = "Approved";
+                grt.ApprovedBy = dto?.ApprovedBy?.Trim() ?? "AccountantManager";
+                grt.ApprovedAt = now;
+                if (dto?.DateExpired.HasValue == true) grt.DateExpired = dto.DateExpired.Value;
+                if (dto?.Term.HasValue == true && dto.Term.Value > 0) grt.Term = dto.Term.Value;
+                if (dto?.TermActual.HasValue == true && dto.TermActual.Value > 0) grt.TermActual = dto.TermActual.Value;
+
+                var dateWarning = grt.DateExpired.AddDays(-7);
+                foreach (var l in lines)
+                {
+                    if (l.Status == "Pending")
+                    {
+                        l.Status = "Approved";
+                        l.DateStart ??= now;
+                        l.DateWarning = dateWarning;
+                        l.DateExpired = grt.DateExpired;
+                    }
+                }
+                foreach (var v in vehicles)
+                {
+                    Log(v.Vin, "GuaranteeApproved", $"{guaranteeNo} Phê duyệt bảo lãnh thanh toán NH {grt.BankCode} ({grt.BankGuaranteeNo}). Người duyệt: {grt.ApprovedBy}. Hạn bảo lãnh: {grt.DateExpired:yyyy-MM-dd}");
+                }
+                break;
+
+            case "settle":
+                if (grt.Status != "Approved") return null;
+                grt.Status = "Settled";
+                grt.SettledAt = now;
+                foreach (var l in lines)
+                {
+                    if (l.Status == "Approved") l.Status = "Settled";
+                }
+                foreach (var v in vehicles)
+                {
+                    Log(v.Vin, "GuaranteeSettled", $"{guaranteeNo} Tất toán hoàn tất nghĩa vụ bảo lãnh thanh toán NH {grt.BankCode}. Giải phóng hạn mức bảo lãnh.");
+                }
+                break;
+
+            case "reject":
+                if (grt.Status != "Pending") return null;
+                grt.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    grt.Remark = string.IsNullOrWhiteSpace(grt.Remark) ? dto.Note : $"{grt.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "GuaranteeRejected", $"{guaranteeNo} Từ chối thư bảo lãnh: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (grt.Status is not ("Pending" or "Approved")) return null;
+                grt.Status = "Cancelled";
+                grt.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    grt.Remark = string.IsNullOrWhiteSpace(grt.Remark) ? dto.Note : $"{grt.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) if (l.Status != "Settled") l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "GuaranteeCancelled", $"{guaranteeNo} Hủy bảo lãnh thanh toán: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            grt.GuaranteeNo,
+            grt.BankGuaranteeNo,
+            grt.DealerCode,
+            status = grt.Status,
+            grt.ApprovedAt,
+            grt.SettledAt,
+            grt.CancelledAt
+        };
+    }
+
+    public async Task<object?> CancelPaymentGuaranteeLineAsync(string guaranteeNo, string vin, string? reason)
+    {
+        guaranteeNo = guaranteeNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var grt = await db.Guarantees.FirstOrDefaultAsync(g => g.OrgId == Org && g.GuaranteeNo == guaranteeNo);
+        if (grt is null || grt.Status is "Cancelled" or "Rejected") return null;
+
+        var line = await db.GuaranteeLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.PaymentGuaranteeId == grt.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        line.Status = "Cancelled";
+        if (!string.IsNullOrWhiteSpace(reason))
+            line.Remark = string.IsNullOrWhiteSpace(line.Remark) ? reason : $"{line.Remark} | Hủy: {reason}";
+
+        Log(vin, "GuaranteeLineCancelled", $"{guaranteeNo} Hủy / giải tỏa bảo lãnh cho xe VIN {vin}. Lý do: {reason ?? "Thanh toán trực tiếp / thay thế"}");
+
+        // Nếu tất cả các dòng đều đã Settled hoặc Cancelled, cập nhật trạng thái master
+        var allLines = await db.GuaranteeLines.Where(l => l.OrgId == Org && l.PaymentGuaranteeId == grt.Id).ToListAsync();
+        if (allLines.All(l => l.Status == "Settled"))
+        {
+            grt.Status = "Settled";
+            grt.SettledAt = DateTime.Now;
+        }
+        else if (allLines.All(l => l.Status == "Cancelled"))
+        {
+            grt.Status = "Cancelled";
+            grt.CancelledAt = DateTime.Now;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            grt.GuaranteeNo,
+            line.Vin,
+            line.Status,
+            line.GuaranteeValue,
+            masterStatus = grt.Status
+        };
+    }
+
+    public async Task<object?> UpdatePaymentGuaranteeAsync(string guaranteeNo, UpdatePaymentGuaranteeDto dto)
+    {
+        guaranteeNo = guaranteeNo.Trim().ToUpperInvariant();
+        var grt = await db.Guarantees.FirstOrDefaultAsync(g => g.OrgId == Org && g.GuaranteeNo == guaranteeNo);
+        if (grt is null || grt.Status is "Cancelled" or "Settled") return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.BankGuaranteeNo)) grt.BankGuaranteeNo = dto.BankGuaranteeNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.BankName)) grt.BankName = dto.BankName.Trim();
+        if (dto.DateExpired.HasValue && dto.DateExpired.Value > grt.DateOpen)
+        {
+            grt.DateExpired = dto.DateExpired.Value;
+            var lines = await db.GuaranteeLines.Where(l => l.OrgId == Org && l.PaymentGuaranteeId == grt.Id).ToListAsync();
+            var dateWarning = grt.DateExpired.AddDays(-7);
+            foreach (var l in lines)
+            {
+                l.DateExpired = grt.DateExpired;
+                l.DateWarning = dateWarning;
+            }
+        }
+        if (dto.Term.HasValue && dto.Term.Value > 0) grt.Term = dto.Term.Value;
+        if (dto.TermActual.HasValue && dto.TermActual.Value > 0) grt.TermActual = dto.TermActual.Value;
+        if (dto.TotalAmount.HasValue && dto.TotalAmount.Value > 0) grt.TotalAmount = dto.TotalAmount.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Remark))
+            grt.Remark = string.IsNullOrWhiteSpace(grt.Remark) ? dto.Remark : $"{grt.Remark} | {dto.Remark}";
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            grt.GuaranteeNo,
+            grt.BankGuaranteeNo,
+            grt.BankName,
+            grt.DateExpired,
+            grt.Term,
+            grt.TermActual,
+            grt.TotalAmount,
+            grt.Status,
+            grt.Remark
         };
     }
 }

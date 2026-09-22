@@ -39,6 +39,10 @@
 <li><code>POST /api/dealer-deals</code> &amp; <code>/api/dealer-deals/{no}/{action}</code> — tạo &amp; phê duyệt giao dịch bán lẻ xe của đại lý, trả góp ngân hàng, bàn giao xe kích hoạt Sổ Bảo Hành Online (BizHTC.DealerSales / DLS_Deal: submit, approve, deliver, reject, cancel)</li>
 <li><code>GET /api/dealer-deals?status=&dealer=&customer=&salesMan=&paymentType=&vin=</code> — tra cứu danh sách giao dịch bán lẻ đại lý</li>
 <li><code>POST /api/dealer-deals/{no}/lines/{vin}/update-delivery</code> — cập nhật thông tin bàn giao xe (biển số, ODO, số sổ bảo hành điện tử, hạn bảo hành)</li>
+<li><code>POST /api/guarantees</code> &amp; <code>/api/guarantees/{no}/{action}</code> — tiếp nhận, phê duyệt &amp; tất toán chứng thư bảo lãnh thanh toán mua xe của ngân hàng cho đại lý (BizHTC.Payment / Pmt_Guarantee: approve, settle, reject, cancel)</li>
+<li><code>GET /api/guarantees?status=&dealer=&bank=&vin=</code> — tra cứu danh sách chứng thư bảo lãnh thanh toán ngân hàng (ngày đáo hạn, cảnh báo hết hạn)</li>
+<li><code>POST /api/guarantees/{no}/lines/{vin}/cancel</code> — hủy / giải tỏa bảo lãnh từng dòng xe VIN khi thanh toán hoặc hoàn trả xe</li>
+<li><code>PUT /api/guarantees/{no}</code> — điều chỉnh số thư bảo lãnh, ngân hàng, gia hạn ngày hết hạn &amp; hạn mức</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

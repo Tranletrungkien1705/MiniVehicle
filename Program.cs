@@ -571,6 +571,46 @@ app.MapPost("/api/dealer-deals/{dealNo}/lines/{vin}/update-delivery", async (str
     return r is null ? Results.NotFound(new { dealNo, vin, error = "Không tìm thấy dòng xe trong giao dịch." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Bảo lãnh thanh toán ngân hàng mua xe ô tô cho Đại lý (BizHTC.Payment / Pmt_Guarantee) ----
+app.MapPost("/api/guarantees", async (CreatePaymentGuaranteeDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.BankGuaranteeNo) || string.IsNullOrWhiteSpace(dto.BankCode) || string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần BankGuaranteeNo, BankCode và DealerCode." });
+    if (dto.TotalAmount <= 0)
+        return Results.BadRequest(new { error = "Tổng hạn mức TotalAmount phải > 0." });
+    try { return Results.Ok(await svc.CreatePaymentGuaranteeAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/guarantees", async (IVehicleService svc, string? status, string? dealer, string? bank, string? vin) =>
+    Results.Ok(await svc.ListPaymentGuaranteesAsync(status, dealer, bank, vin))).RequireAuthorization();
+
+app.MapGet("/api/guarantees/{guaranteeNo}", async (string guaranteeNo, IVehicleService svc) =>
+{
+    var r = await svc.GetPaymentGuaranteeAsync(guaranteeNo);
+    return r is null ? Results.NotFound(new { guaranteeNo, error = "Không tìm thấy chứng thư bảo lãnh ngân hàng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/guarantees/{guaranteeNo}/{action}", async (string guaranteeNo, string action, PaymentGuaranteeTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "settle" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|settle|reject|cancel" });
+    var r = await svc.PaymentGuaranteeTransitionAsync(guaranteeNo, action, dto);
+    return r is null ? Results.NotFound(new { guaranteeNo, error = "Không thấy chứng thư bảo lãnh hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/guarantees/{guaranteeNo}/lines/{vin}/cancel", async (string guaranteeNo, string vin, CancelGuaranteeLineDto? dto, IVehicleService svc) =>
+{
+    var r = await svc.CancelPaymentGuaranteeLineAsync(guaranteeNo, vin, dto?.Reason);
+    return r is null ? Results.NotFound(new { guaranteeNo, vin, error = "Không tìm thấy dòng xe trong chứng thư bảo lãnh." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/guarantees/{guaranteeNo}", async (string guaranteeNo, UpdatePaymentGuaranteeDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdatePaymentGuaranteeAsync(guaranteeNo, dto);
+    return r is null ? Results.NotFound(new { guaranteeNo, error = "Không thấy chứng thư bảo lãnh hoặc bảo lãnh đã đóng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
