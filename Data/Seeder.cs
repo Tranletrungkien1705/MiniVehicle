@@ -1987,6 +1987,103 @@ public static class Seeder
                 v2Vehicle.LastBulletinDate = DateTime.Now.AddDays(-3);
             }
         }
+
+        if (!await db.BankDisbursements.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var dis1 = new BankDisbursement
+            {
+                OrgId = org,
+                RQ_BankingTransNo = "BDIS202603-001",
+                RQ_BankingTransNoUser = "DNGN/2026/03/CTG-HN01-01",
+                DealerCode = "DLR-HN01",
+                BankCode = "VIETINBANK",
+                BankName = "Ngân hàng TMCP Công thương Việt Nam - Chi nhánh Hà Nội",
+                BizResNumber = "HĐTD-CTG-2026-HN01",
+                BeneficiaryAccountNo = "110002899999",
+                BeneficiaryAccountName = "Công ty Cổ phần Liên doanh Ô tô Hyundai Thành Công Việt Nam",
+                BeneficiaryBankCode = "VIETINBANK",
+                DisbursementType = "AutoLoan",
+                TotalVehicleCount = 2,
+                TotalCollateralValue = 1250000000m,
+                DisbursementRate = 80m,
+                TotalDisbursementAmount = 1000000000m,
+                DisbursedAmount = 1000000000m,
+                BkTransStatus = "Disbursed",
+                BkTransBankStatus = "Disbursed",
+                RefBankCode = "REF-CTG-20260315-8899",
+                DisbursementDate = DateTime.Now.AddDays(-2),
+                BankRemark = "Hạch toán giải ngân thành công từ HĐTD hạn mức số HĐTD-CTG-2026-HN01",
+                FilePath = "https://doc.hyundai.thanhcong.vn/disbursements/BDIS202603-001.pdf",
+                Remark = "Hồ sơ đề nghị giải ngân ngân hàng VietinBank tài trợ vốn lưu động mua lô xe Accent & Creta đại lý Hà Nội 01",
+                CreatedBy = "credit.officer.ctg",
+                CreatedAt = DateTime.Now.AddDays(-5),
+                ApprovedBy = "FinanceDirector.TranMinhDuc",
+                ApprovedAt = DateTime.Now.AddDays(-4),
+                PushedBy = "System.CoreBankingGateway",
+                PushedAt = DateTime.Now.AddDays(-3),
+                DisbursedBy = "ChiefAccountant.NguyenThanhHa",
+                DisbursedAt = DateTime.Now.AddDays(-2)
+            };
+            db.BankDisbursements.Add(dis1);
+            await db.SaveChangesAsync();
+
+            db.BankDisbursementLines.AddRange(
+                new BankDisbursementLine
+                {
+                    OrgId = org,
+                    BankDisbursementId = dis1.Id,
+                    RQ_BankingTransNo = dis1.RQ_BankingTransNo,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    EngineNo = "G4LC0001",
+                    Color = "Trắng",
+                    InvoiceNo = "HD26-0001001",
+                    InvoiceDate = DateTime.Now.AddDays(-4),
+                    GuaranteeNo = "GRT202603-001",
+                    UnitPrice = 550000000m,
+                    CollateralValue = 550000000m,
+                    DisbursementPercent = 80m,
+                    DisbursementAmount = 440000000m,
+                    DisbursedAmount = 440000000m,
+                    Status = "Disbursed",
+                    Remark = "Giải ngân 80% giá trị xuất bán buôn"
+                },
+                new BankDisbursementLine
+                {
+                    OrgId = org,
+                    BankDisbursementId = dis1.Id,
+                    RQ_BankingTransNo = dis1.RQ_BankingTransNo,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    EngineNo = "G4FL0002",
+                    Color = "Đen",
+                    InvoiceNo = "HD26-0001002",
+                    InvoiceDate = DateTime.Now.AddDays(-4),
+                    GuaranteeNo = "GRT202603-001",
+                    UnitPrice = 700000000m,
+                    CollateralValue = 700000000m,
+                    DisbursementPercent = 80m,
+                    DisbursementAmount = 560000000m,
+                    DisbursedAmount = 560000000m,
+                    Status = "Disbursed",
+                    Remark = "Giải ngân 80% giá trị xuất bán buôn"
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.LastDisbursementNo = dis1.RQ_BankingTransNo;
+                v1.LastDisbursementDate = dis1.DisbursementDate;
+            }
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null)
+            {
+                v2.LastDisbursementNo = dis1.RQ_BankingTransNo;
+                v2.LastDisbursementDate = dis1.DisbursementDate;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -2100,7 +2197,11 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastBulletinNo\" text NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastBulletinDate\" timestamp NULL",
             "CREATE TABLE IF NOT EXISTS public.\"TechnicalBulletins\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"BulletinNo\" text NOT NULL DEFAULT '', \"BulletinNoUser\" text NULL, \"Title\" text NOT NULL DEFAULT '', \"Category\" text NOT NULL DEFAULT 'SoftwareUpdate', \"Model\" text NULL, \"Severity\" text NOT NULL DEFAULT 'Medium', \"ReleaseDate\" timestamp NOT NULL DEFAULT now(), \"ExpiryDate\" timestamp NULL, \"Description\" text NULL, \"Remedy\" text NULL, \"AttachmentFileName\" text NULL, \"AttachmentUrl\" text NULL, \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"CompletedVehicleCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"PublishedBy\" text NULL, \"PublishedAt\" timestamp NULL, \"ArchivedBy\" text NULL, \"ArchivedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"TechnicalBulletinLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TechnicalBulletinId\" bigint NOT NULL, \"BulletinNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"DealerCode\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"InspectedAt\" timestamp NULL, \"CompletedAt\" timestamp NULL, \"Technician\" text NULL, \"OdoKm\" integer NULL, \"RoNo\" text NULL, \"ResultNotes\" text NULL, \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"TechnicalBulletinLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TechnicalBulletinId\" bigint NOT NULL, \"BulletinNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"DealerCode\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"InspectedAt\" timestamp NULL, \"CompletedAt\" timestamp NULL, \"Technician\" text NULL, \"OdoKm\" integer NULL, \"RoNo\" text NULL, \"ResultNotes\" text NULL, \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastDisbursementNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastDisbursementDate\" timestamp NULL",
+            "CREATE TABLE IF NOT EXISTS public.\"BankDisbursements\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RQ_BankingTransNo\" text NOT NULL DEFAULT '', \"RQ_BankingTransNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"BankCode\" text NOT NULL DEFAULT 'VIETINBANK', \"BankName\" text NULL, \"BizResNumber\" text NULL, \"BeneficiaryAccountNo\" text NULL, \"BeneficiaryAccountName\" text NULL, \"BeneficiaryBankCode\" text NULL, \"DisbursementType\" text NOT NULL DEFAULT 'AutoLoan', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalCollateralValue\" numeric NOT NULL DEFAULT 0, \"DisbursementRate\" numeric NOT NULL DEFAULT 80, \"TotalDisbursementAmount\" numeric NOT NULL DEFAULT 0, \"DisbursedAmount\" numeric NOT NULL DEFAULT 0, \"BkTransStatus\" text NOT NULL DEFAULT 'Draft', \"BkTransBankStatus\" text NOT NULL DEFAULT 'Pending', \"RefBankCode\" text NULL, \"DisbursementDate\" timestamp NULL, \"BankRemark\" text NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"PushedBy\" text NULL, \"PushedAt\" timestamp NULL, \"DisbursedBy\" text NULL, \"DisbursedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"BankDisbursementLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"BankDisbursementId\" bigint NOT NULL, \"RQ_BankingTransNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"InvoiceNo\" text NULL, \"InvoiceDate\" timestamp NULL, \"GuaranteeNo\" text NULL, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"CollateralValue\" numeric NOT NULL DEFAULT 0, \"DisbursementPercent\" numeric NOT NULL DEFAULT 80, \"DisbursementAmount\" numeric NOT NULL DEFAULT 0, \"DisbursedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

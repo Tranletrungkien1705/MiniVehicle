@@ -138,6 +138,13 @@
 <li><code>POST /api/technical-bulletins/{bulletinNo}/lines/{vin}/update</code> — cập nhật thông tin dòng xe VIN trong bản tin kỹ thuật</li>
 <li><code>POST /api/technical-bulletins/{bulletinNo}/lines</code> &amp; <code>DELETE /api/technical-bulletins/{bulletinNo}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong phạm vi áp dụng bản tin kỹ thuật</li>
 <li><code>GET /api/vehicles/{vin}/bulletins</code> &amp; <code>/api/vehicles/{vin}/bulletin-history</code> — tra cứu toàn bộ lịch sử các bản tin kỹ thuật TSB áp dụng và kết quả thực hiện của số khung VIN</li>
+<li><code>POST /api/bank-disbursements</code> &amp; <code>/api/bank-disbursements/{transNo}/{action}</code> — tạo, nộp, phê duyệt, đẩy Core Banking &amp; hoàn tất giải ngân Đề nghị &amp; Lệnh giao dịch giải ngân ngân hàng mua xe ô tô cho Đại lý (BizHTC.VietinBank &amp; BizHTC.MBBank / RQ_BankingTransactions / BankDisbursement: submit, approve, push-to-bank, disburse, reject, cancel)</li>
+<li><code>GET /api/bank-disbursements?status=&amp;bank=&amp;dealer=&amp;transNo=&amp;vin=</code> — tra cứu danh sách đề nghị giải ngân ngân hàng (VietinBank, MBBank, Vietcombank, Techcombank, VPBank, BIDV...)</li>
+<li><code>GET /api/bank-disbursements/summary</code> — báo cáo tổng hợp hồ sơ giải ngân ngân hàng theo trạng thái, ngân hàng tài trợ và dòng sản phẩm</li>
+<li><code>PUT /api/bank-disbursements/{transNo}</code> — điều chỉnh thông tin ngân hàng, tỷ lệ giải ngân, hợp đồng tín dụng và tài khoản thụ hưởng OEM</li>
+<li><code>POST /api/bank-disbursements/{transNo}/lines/{vin}/update</code> — điều chỉnh đơn giá xe, định giá thế chấp, tỷ lệ và số tiền giải ngân theo từng xe VIN</li>
+<li><code>POST /api/bank-disbursements/{transNo}/lines</code> &amp; <code>DELETE /api/bank-disbursements/{transNo}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong hồ sơ đề nghị giải ngân</li>
+<li><code>GET /api/vehicles/{vin}/disbursement-info</code> &amp; <code>/api/vehicles/{vin}/disbursement-history</code> — tra cứu toàn bộ hồ sơ và lịch sử giải ngân ngân hàng của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

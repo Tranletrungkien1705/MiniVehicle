@@ -1069,6 +1069,74 @@ public record CompleteBulletinLineDto(
     string? Remark = null
 );
 
+public record BankDisbursementItemInputDto(
+    string Vin,
+    string? InvoiceNo = null,
+    DateTime? InvoiceDate = null,
+    string? GuaranteeNo = null,
+    decimal? UnitPrice = null,
+    decimal? CollateralValue = null,
+    decimal? DisbursementPercent = null,
+    decimal? DisbursementAmount = null,
+    string? Remark = null
+);
+
+public record CreateBankDisbursementDto(
+    string DealerCode,
+    string BankCode,
+    List<BankDisbursementItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? RQ_BankingTransNo = null,
+    string? RQ_BankingTransNoUser = null,
+    string? BankName = null,
+    string? BizResNumber = null,
+    string? BeneficiaryAccountNo = null,
+    string? BeneficiaryAccountName = null,
+    string? BeneficiaryBankCode = null,
+    string? DisbursementType = "AutoLoan",
+    decimal? DisbursementRate = 80,
+    string? FilePath = null,
+    string? Remark = null,
+    string? CreatedBy = null
+);
+
+public record UpdateBankDisbursementHeaderDto(
+    string? RQ_BankingTransNoUser = null,
+    string? BankName = null,
+    string? BizResNumber = null,
+    string? BeneficiaryAccountNo = null,
+    string? BeneficiaryAccountName = null,
+    string? BeneficiaryBankCode = null,
+    string? DisbursementType = null,
+    decimal? DisbursementRate = null,
+    string? FilePath = null,
+    string? Remark = null
+);
+
+public record BankDisbursementTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? RefBankCode = null,
+    decimal? DisbursedAmount = null,
+    DateTime? DisbursementDate = null,
+    string? BankRemark = null,
+    string? RejectReason = null,
+    string? CancelReason = null
+);
+
+public record UpdateBankDisbursementLineDto(
+    string? InvoiceNo = null,
+    DateTime? InvoiceDate = null,
+    string? GuaranteeNo = null,
+    decimal? UnitPrice = null,
+    decimal? CollateralValue = null,
+    decimal? DisbursementPercent = null,
+    decimal? DisbursementAmount = null,
+    decimal? DisbursedAmount = null,
+    string? Status = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -1322,6 +1390,17 @@ public interface IVehicleService
     Task<object?> RemoveTechnicalBulletinLineAsync(string bulletinNo, string vin);
     Task<object?> GetVehicleBulletinHistoryAsync(string vin);
     Task<object> GetTechnicalBulletinSummaryAsync();
+    Task<object> CreateBankDisbursementAsync(CreateBankDisbursementDto dto);
+    Task<object> ListBankDisbursementsAsync(string? status, string? bank, string? dealer, string? transNo, string? vin);
+    Task<object?> GetBankDisbursementAsync(string transNo);
+    Task<object?> UpdateBankDisbursementHeaderAsync(string transNo, UpdateBankDisbursementHeaderDto dto);
+    Task<object?> BankDisbursementTransitionAsync(string transNo, string action, BankDisbursementTransitionDto? dto);
+    Task<object?> UpdateBankDisbursementLineAsync(string transNo, string vin, UpdateBankDisbursementLineDto dto);
+    Task<object?> AddBankDisbursementLinesAsync(string transNo, List<BankDisbursementItemInputDto> items);
+    Task<object?> RemoveBankDisbursementLineAsync(string transNo, string vin);
+    Task<object?> GetVehicleDisbursementInfoAsync(string vin);
+    Task<object?> GetVehicleDisbursementHistoryAsync(string vin);
+    Task<object> GetBankDisbursementSummaryAsync();
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -17739,6 +17818,717 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             overallCompletionPercent,
             byCategory,
             bySeverity
+        };
+    }
+
+    // ===== Đề nghị & Lệnh giao dịch giải ngân ngân hàng mua xe ô tô cho Đại lý (BizHTC.VietinBank & BizHTC.MBBank / RQ_BankingTransactions / BankDisbursement) =====
+    public async Task<object> CreateBankDisbursementAsync(CreateBankDisbursementDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.BankCode))
+            throw new InvalidOperationException("Cần mã đại lý (DealerCode) và mã ngân hàng (BankCode) để lập hồ sơ đề nghị giải ngân.");
+
+        var inputItems = new List<BankDisbursementItemInputDto>();
+        if (dto.Items is { Count: > 0 })
+        {
+            inputItems.AddRange(dto.Items);
+        }
+        else if (dto.Vins is { Count: > 0 })
+        {
+            inputItems.AddRange(dto.Vins.Select(v => new BankDisbursementItemInputDto(v)));
+        }
+
+        if (inputItems.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng xe (Items hoặc Vins) trong hồ sơ đề nghị giải ngân.");
+
+        var distinctItems = inputItems
+            .Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+            .DistinctBy(i => i.Vin.Trim().ToUpperInvariant())
+            .ToList();
+
+        if (distinctItems.Count == 0)
+            throw new InvalidOperationException("Danh sách số khung VIN không hợp lệ.");
+
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        if (vehicles.Count != vins.Count)
+        {
+            var missing = vins.Except(vehicles.Keys).ToList();
+            throw new InvalidOperationException($"Không tìm thấy các số khung VIN sau trong hệ thống: {string.Join(", ", missing)}");
+        }
+
+        var transNo = string.IsNullOrWhiteSpace(dto.RQ_BankingTransNo)
+            ? "BDIS" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.RQ_BankingTransNo.Trim().ToUpperInvariant();
+
+        if (await db.BankDisbursements.AnyAsync(b => b.OrgId == Org && b.RQ_BankingTransNo == transNo))
+            throw new InvalidOperationException($"Mã đề nghị giải ngân {transNo} đã tồn tại.");
+
+        var bankCode = dto.BankCode.Trim().ToUpperInvariant();
+        var bankName = !string.IsNullOrWhiteSpace(dto.BankName) ? dto.BankName.Trim() : bankCode switch
+        {
+            "VIETINBANK" or "CTG" => "Ngân hàng TMCP Công thương Việt Nam (VietinBank)",
+            "MBBANK" or "MB" => "Ngân hàng TMCP Quân đội (MB Bank)",
+            "VCB" => "Ngân hàng TMCP Ngoại thương Việt Nam (Vietcombank)",
+            "VPB" => "Ngân hàng TMCP Việt Nam Thịnh Vượng (VPBank)",
+            "TCB" => "Ngân hàng TMCP Kỹ thương Việt Nam (Techcombank)",
+            "BIDV" => "Ngân hàng TMCP Đầu tư và Phát triển Việt Nam (BIDV)",
+            _ => $"Ngân hàng {bankCode}"
+        };
+
+        var disRate = dto.DisbursementRate.HasValue && dto.DisbursementRate.Value > 0 ? dto.DisbursementRate.Value : 80;
+        var disType = string.IsNullOrWhiteSpace(dto.DisbursementType) ? "AutoLoan" : dto.DisbursementType.Trim();
+
+        var disbursement = new BankDisbursement
+        {
+            OrgId = Org,
+            RQ_BankingTransNo = transNo,
+            RQ_BankingTransNoUser = dto.RQ_BankingTransNoUser?.Trim(),
+            DealerCode = dto.DealerCode.Trim().ToUpperInvariant(),
+            BankCode = bankCode,
+            BankName = bankName,
+            BizResNumber = dto.BizResNumber?.Trim(),
+            BeneficiaryAccountNo = dto.BeneficiaryAccountNo?.Trim() ?? "110002899999 - VietinBank SGD 1",
+            BeneficiaryAccountName = dto.BeneficiaryAccountName?.Trim() ?? "Công ty Cổ phần Liên doanh Ô tô Hyundai Thành Công Việt Nam",
+            BeneficiaryBankCode = dto.BeneficiaryBankCode?.Trim() ?? "VIETINBANK",
+            DisbursementType = disType,
+            DisbursementRate = disRate,
+            FilePath = dto.FilePath?.Trim(),
+            BkTransStatus = "Draft",
+            BkTransBankStatus = "Pending",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.BankDisbursements.Add(disbursement);
+        await db.SaveChangesAsync();
+
+        decimal totalCollateral = 0;
+        decimal totalDisbursement = 0;
+
+        foreach (var item in distinctItems)
+        {
+            var lineVin = item.Vin.Trim().ToUpperInvariant();
+            var v = vehicles[lineVin];
+
+            var unitPrice = item.UnitPrice.HasValue && item.UnitPrice.Value > 0
+                ? item.UnitPrice.Value
+                : GetDefaultCarPrice(v.Model);
+
+            var collateralVal = item.CollateralValue.HasValue && item.CollateralValue.Value > 0
+                ? item.CollateralValue.Value
+                : unitPrice;
+
+            var percent = item.DisbursementPercent.HasValue && item.DisbursementPercent.Value > 0
+                ? item.DisbursementPercent.Value
+                : disRate;
+
+            var disAmt = item.DisbursementAmount.HasValue && item.DisbursementAmount.Value > 0
+                ? item.DisbursementAmount.Value
+                : Math.Round(collateralVal * percent / 100, 0);
+
+            totalCollateral += collateralVal;
+            totalDisbursement += disAmt;
+
+            var line = new BankDisbursementLine
+            {
+                OrgId = Org,
+                BankDisbursementId = disbursement.Id,
+                RQ_BankingTransNo = transNo,
+                Vin = lineVin,
+                Model = v.Model,
+                EngineNo = v.EngineNo,
+                Color = v.Color,
+                InvoiceNo = item.InvoiceNo?.Trim() ?? v.InvoiceNo,
+                InvoiceDate = item.InvoiceDate ?? v.InvoiceDate,
+                GuaranteeNo = item.GuaranteeNo?.Trim(),
+                UnitPrice = unitPrice,
+                CollateralValue = collateralVal,
+                DisbursementPercent = percent,
+                DisbursementAmount = disAmt,
+                DisbursedAmount = 0,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            };
+
+            db.BankDisbursementLines.Add(line);
+
+            Log(lineVin, "BankDisbursementDraftCreated",
+                $"{transNo} Lập hồ sơ đề nghị giải ngân NH {bankCode} cho đại lý {disbursement.DealerCode}. Định giá xe: {collateralVal:N0} VNĐ, Số tiền xin giải ngân ({percent}%): {disAmt:N0} VNĐ");
+        }
+
+        disbursement.TotalVehicleCount = distinctItems.Count;
+        disbursement.TotalCollateralValue = totalCollateral;
+        disbursement.TotalDisbursementAmount = totalDisbursement;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            disbursement.RQ_BankingTransNo,
+            disbursement.RQ_BankingTransNoUser,
+            disbursement.DealerCode,
+            disbursement.BankCode,
+            disbursement.BankName,
+            disbursement.DisbursementType,
+            disbursement.TotalVehicleCount,
+            disbursement.TotalCollateralValue,
+            disbursement.TotalDisbursementAmount,
+            disbursement.BkTransStatus,
+            disbursement.BkTransBankStatus,
+            disbursement.CreatedAt,
+            vins = distinctItems.Select(i => i.Vin)
+        };
+    }
+
+    public async Task<object> ListBankDisbursementsAsync(string? status, string? bank, string? dealer, string? transNo, string? vin)
+    {
+        var q = db.BankDisbursements.Where(b => b.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(b => b.BkTransStatus == status);
+        if (!string.IsNullOrWhiteSpace(bank)) { var bCode = bank.Trim().ToUpperInvariant(); q = q.Where(b => b.BankCode == bCode); }
+        if (!string.IsNullOrWhiteSpace(dealer)) { var dCode = dealer.Trim().ToUpperInvariant(); q = q.Where(b => b.DealerCode.Contains(dCode)); }
+        if (!string.IsNullOrWhiteSpace(transNo)) { var tCode = transNo.Trim().ToUpperInvariant(); q = q.Where(b => b.RQ_BankingTransNo.Contains(tCode)); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.BankDisbursementLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.RQ_BankingTransNo).Distinct().ToListAsync();
+            q = q.Where(b => matchedNos.Contains(b.RQ_BankingTransNo));
+        }
+
+        var items = await q.OrderByDescending(b => b.Id).Take(500).Select(b => new
+        {
+            b.Id,
+            b.RQ_BankingTransNo,
+            b.RQ_BankingTransNoUser,
+            b.DealerCode,
+            b.BankCode,
+            b.BankName,
+            b.BizResNumber,
+            b.BeneficiaryAccountNo,
+            b.BeneficiaryAccountName,
+            b.BeneficiaryBankCode,
+            b.DisbursementType,
+            b.TotalVehicleCount,
+            b.TotalCollateralValue,
+            b.DisbursementRate,
+            b.TotalDisbursementAmount,
+            b.DisbursedAmount,
+            b.BkTransStatus,
+            b.BkTransBankStatus,
+            b.RefBankCode,
+            b.DisbursementDate,
+            b.BankRemark,
+            b.FilePath,
+            b.Remark,
+            b.CreatedBy,
+            b.CreatedAt,
+            b.ApprovedBy,
+            b.ApprovedAt,
+            b.PushedBy,
+            b.PushedAt,
+            b.DisbursedBy,
+            b.DisbursedAt,
+            b.RejectedBy,
+            b.RejectedAt,
+            b.RejectReason,
+            b.CancelledBy,
+            b.CancelledAt,
+            b.CancelReason,
+            lineCount = db.BankDisbursementLines.Count(l => l.OrgId == Org && l.BankDisbursementId == b.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetBankDisbursementAsync(string transNo)
+    {
+        transNo = transNo.Trim().ToUpperInvariant();
+        var b = await db.BankDisbursements.FirstOrDefaultAsync(x => x.OrgId == Org && x.RQ_BankingTransNo == transNo);
+        if (b is null) return null;
+
+        var lines = await db.BankDisbursementLines.Where(l => l.OrgId == Org && l.BankDisbursementId == b.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.BankDisbursementId,
+            l.RQ_BankingTransNo,
+            l.Vin,
+            l.Model,
+            l.EngineNo,
+            l.Color,
+            l.InvoiceNo,
+            l.InvoiceDate,
+            l.GuaranteeNo,
+            l.UnitPrice,
+            l.CollateralValue,
+            l.DisbursementPercent,
+            l.DisbursementAmount,
+            l.DisbursedAmount,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), v.StorageCode, v.DealerCode, v.IsPaid, v.PaidAmount, v.PaidAt } : null
+        }).ToList();
+
+        return new
+        {
+            b.Id,
+            b.RQ_BankingTransNo,
+            b.RQ_BankingTransNoUser,
+            b.DealerCode,
+            b.BankCode,
+            b.BankName,
+            b.BizResNumber,
+            b.BeneficiaryAccountNo,
+            b.BeneficiaryAccountName,
+            b.BeneficiaryBankCode,
+            b.DisbursementType,
+            b.TotalVehicleCount,
+            b.TotalCollateralValue,
+            b.DisbursementRate,
+            b.TotalDisbursementAmount,
+            b.DisbursedAmount,
+            b.BkTransStatus,
+            b.BkTransBankStatus,
+            b.RefBankCode,
+            b.DisbursementDate,
+            b.BankRemark,
+            b.FilePath,
+            b.Remark,
+            b.CreatedBy,
+            b.CreatedAt,
+            b.ApprovedBy,
+            b.ApprovedAt,
+            b.PushedBy,
+            b.PushedAt,
+            b.DisbursedBy,
+            b.DisbursedAt,
+            b.RejectedBy,
+            b.RejectedAt,
+            b.RejectReason,
+            b.CancelledBy,
+            b.CancelledAt,
+            b.CancelReason,
+            lines = details
+        };
+    }
+
+    public async Task<object?> UpdateBankDisbursementHeaderAsync(string transNo, UpdateBankDisbursementHeaderDto dto)
+    {
+        transNo = transNo.Trim().ToUpperInvariant();
+        var b = await db.BankDisbursements.FirstOrDefaultAsync(x => x.OrgId == Org && x.RQ_BankingTransNo == transNo);
+        if (b is null) return null;
+
+        if (b.BkTransStatus is "Disbursed" or "Cancelled")
+            throw new InvalidOperationException($"Hồ sơ đề nghị giải ngân {transNo} đang ở trạng thái {b.BkTransStatus}, không thể sửa đổi.");
+
+        if (dto.RQ_BankingTransNoUser != null) b.RQ_BankingTransNoUser = dto.RQ_BankingTransNoUser.Trim();
+        if (dto.BankName != null) b.BankName = dto.BankName.Trim();
+        if (dto.BizResNumber != null) b.BizResNumber = dto.BizResNumber.Trim();
+        if (dto.BeneficiaryAccountNo != null) b.BeneficiaryAccountNo = dto.BeneficiaryAccountNo.Trim();
+        if (dto.BeneficiaryAccountName != null) b.BeneficiaryAccountName = dto.BeneficiaryAccountName.Trim();
+        if (dto.BeneficiaryBankCode != null) b.BeneficiaryBankCode = dto.BeneficiaryBankCode.Trim();
+        if (dto.DisbursementType != null) b.DisbursementType = dto.DisbursementType.Trim();
+        if (dto.DisbursementRate.HasValue && dto.DisbursementRate.Value > 0) b.DisbursementRate = dto.DisbursementRate.Value;
+        if (dto.FilePath != null) b.FilePath = dto.FilePath.Trim();
+        if (dto.Remark != null) b.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return await GetBankDisbursementAsync(transNo);
+    }
+
+    public async Task<object?> BankDisbursementTransitionAsync(string transNo, string action, BankDisbursementTransitionDto? dto)
+    {
+        transNo = transNo.Trim().ToUpperInvariant();
+        var b = await db.BankDisbursements.FirstOrDefaultAsync(x => x.OrgId == Org && x.RQ_BankingTransNo == transNo);
+        if (b is null) return null;
+
+        var lines = await db.BankDisbursementLines.Where(l => l.OrgId == Org && l.BankDisbursementId == b.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var now = DateTime.Now;
+        var act = action.Trim().ToLowerInvariant();
+
+        switch (act)
+        {
+            case "submit" or "request":
+                if (b.BkTransStatus != "Draft") return null;
+                b.BkTransStatus = "Submitted";
+                b.BkTransBankStatus = "Pending";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) b.Remark = (b.Remark + " | " + dto.Note).Trim(' ', '|');
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Submitted";
+                foreach (var v in vehicles.Values) Log(v.Vin, "BankDisbursementSubmitted", $"{transNo} Đã nộp hồ sơ đề nghị giải ngân sang OEM thẩm định");
+                break;
+
+            case "approve":
+                if (b.BkTransStatus is not ("Draft" or "Submitted")) return null;
+                b.BkTransStatus = "Approved";
+                b.ApprovedBy = dto?.User ?? "FinanceDirector";
+                b.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) b.Remark = (b.Remark + " | " + dto.Note).Trim(' ', '|');
+                foreach (var l in lines) if (l.Status is "Pending" or "Submitted") l.Status = "Approved";
+                foreach (var v in vehicles.Values) Log(v.Vin, "BankDisbursementApproved", $"{transNo} OEM đã phê duyệt đề nghị giải ngân tín dụng");
+                break;
+
+            case "push-to-bank" or "pushtobank" or "pushbank":
+                if (b.BkTransStatus is not ("Approved" or "Submitted")) return null;
+                b.BkTransStatus = "PushedToBank";
+                b.BkTransBankStatus = "BankProcessing";
+                b.PushedBy = dto?.User ?? "CreditOfficer";
+                b.PushedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) b.Remark = (b.Remark + " | " + dto.Note).Trim(' ', '|');
+                foreach (var l in lines) if (l.Status is "Pending" or "Submitted" or "Approved") l.Status = "BankProcessing";
+                foreach (var v in vehicles.Values) Log(v.Vin, "BankDisbursementPushedToBank", $"{transNo} Đã đẩy lệnh giao dịch sang Core Banking ngân hàng {b.BankCode}");
+                break;
+
+            case "disburse" or "complete" or "finish" or "settle":
+                if (b.BkTransStatus is not ("PushedToBank" or "Approved" or "Submitted")) return null;
+                var disDate = dto?.DisbursementDate ?? now;
+                var refCode = !string.IsNullOrWhiteSpace(dto?.RefBankCode) ? dto.RefBankCode.Trim() : ("REF-" + b.BankCode + "-" + now.ToString("yyyyMMddHHmmss"));
+
+                b.BkTransStatus = "Disbursed";
+                b.BkTransBankStatus = "Disbursed";
+                b.RefBankCode = refCode;
+                b.DisbursementDate = disDate;
+                b.DisbursedBy = dto?.User ?? "ChiefAccountant";
+                b.DisbursedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.BankRemark)) b.BankRemark = dto.BankRemark.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) b.Remark = (b.Remark + " | " + dto.Note).Trim(' ', '|');
+
+                decimal actualTotalDisbursed = 0;
+                foreach (var l in lines)
+                {
+                    l.Status = "Disbursed";
+                    if (l.DisbursedAmount <= 0) l.DisbursedAmount = l.DisbursementAmount;
+                    actualTotalDisbursed += l.DisbursedAmount;
+
+                    if (vehicles.TryGetValue(l.Vin, out var v))
+                    {
+                        v.IsPaid = true;
+                        v.PaidAmount += l.DisbursedAmount;
+                        v.PaidAt = disDate;
+                        v.LastDisbursementNo = b.RQ_BankingTransNo;
+                        v.LastDisbursementDate = disDate;
+
+                        Log(v.Vin, "BankDisbursementCompleted",
+                            $"{transNo} Ngân hàng {b.BankCode} đã giải ngân số tiền {l.DisbursedAmount:N0} VNĐ vào TK OEM. Bút toán Core Banking: {refCode}");
+                    }
+                }
+
+                b.DisbursedAmount = dto?.DisbursedAmount.HasValue == true && dto.DisbursedAmount.Value > 0
+                    ? dto.DisbursedAmount.Value
+                    : actualTotalDisbursed;
+                break;
+
+            case "reject":
+                if (b.BkTransStatus is "Disbursed" or "Cancelled") return null;
+                b.BkTransStatus = "Rejected";
+                b.BkTransBankStatus = "BankRejected";
+                b.RejectedBy = dto?.User ?? "BankOfficer";
+                b.RejectedAt = now;
+                b.RejectReason = dto?.RejectReason ?? dto?.Note ?? "Hồ sơ không đáp ứng điều kiện giải ngân";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles.Values) Log(v.Vin, "BankDisbursementRejected", $"{transNo} Từ chối giải ngân: {b.RejectReason}");
+                break;
+
+            case "cancel":
+                if (b.BkTransStatus is "Disbursed") return null;
+                b.BkTransStatus = "Cancelled";
+                b.CancelledBy = dto?.User ?? "Dealer";
+                b.CancelledAt = now;
+                b.CancelReason = dto?.CancelReason ?? dto?.Note ?? "Đại lý/OEM hủy đề nghị giải ngân";
+                foreach (var l in lines) l.Status = "Cancelled";
+                foreach (var v in vehicles.Values) Log(v.Vin, "BankDisbursementCancelled", $"{transNo} Đã hủy đề nghị giải ngân: {b.CancelReason}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return await GetBankDisbursementAsync(transNo);
+    }
+
+    public async Task<object?> UpdateBankDisbursementLineAsync(string transNo, string vin, UpdateBankDisbursementLineDto dto)
+    {
+        transNo = transNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var b = await db.BankDisbursements.FirstOrDefaultAsync(x => x.OrgId == Org && x.RQ_BankingTransNo == transNo);
+        if (b is null) return null;
+
+        if (b.BkTransStatus is "Disbursed" or "Cancelled")
+            throw new InvalidOperationException($"Hồ sơ đề nghị giải ngân {transNo} đang ở trạng thái {b.BkTransStatus}, không thể sửa dòng xe.");
+
+        var line = await db.BankDisbursementLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.BankDisbursementId == b.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.InvoiceNo != null) line.InvoiceNo = dto.InvoiceNo.Trim();
+        if (dto.InvoiceDate.HasValue) line.InvoiceDate = dto.InvoiceDate;
+        if (dto.GuaranteeNo != null) line.GuaranteeNo = dto.GuaranteeNo.Trim();
+        if (dto.UnitPrice.HasValue && dto.UnitPrice.Value >= 0) line.UnitPrice = dto.UnitPrice.Value;
+        if (dto.CollateralValue.HasValue && dto.CollateralValue.Value >= 0) line.CollateralValue = dto.CollateralValue.Value;
+        if (dto.DisbursementPercent.HasValue && dto.DisbursementPercent.Value > 0) line.DisbursementPercent = dto.DisbursementPercent.Value;
+
+        if (dto.DisbursementAmount.HasValue && dto.DisbursementAmount.Value >= 0)
+            line.DisbursementAmount = dto.DisbursementAmount.Value;
+        else if (dto.CollateralValue.HasValue || dto.DisbursementPercent.HasValue)
+            line.DisbursementAmount = Math.Round(line.CollateralValue * line.DisbursementPercent / 100, 0);
+
+        if (dto.DisbursedAmount.HasValue && dto.DisbursedAmount.Value >= 0) line.DisbursedAmount = dto.DisbursedAmount.Value;
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.BankDisbursementLines.Where(l => l.OrgId == Org && l.BankDisbursementId == b.Id).ToListAsync();
+        b.TotalVehicleCount = allLines.Count;
+        b.TotalCollateralValue = allLines.Sum(l => l.CollateralValue);
+        b.TotalDisbursementAmount = allLines.Sum(l => l.DisbursementAmount);
+        b.DisbursedAmount = allLines.Sum(l => l.DisbursedAmount);
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> AddBankDisbursementLinesAsync(string transNo, List<BankDisbursementItemInputDto> items)
+    {
+        transNo = transNo.Trim().ToUpperInvariant();
+        var b = await db.BankDisbursements.FirstOrDefaultAsync(x => x.OrgId == Org && x.RQ_BankingTransNo == transNo);
+        if (b is null) return null;
+
+        if (b.BkTransStatus is "Disbursed" or "Cancelled")
+            throw new InvalidOperationException($"Hồ sơ đề nghị giải ngân {transNo} đang ở trạng thái {b.BkTransStatus}, không thể bổ sung xe.");
+
+        var existingVins = await db.BankDisbursementLines
+            .Where(l => l.OrgId == Org && l.BankDisbursementId == b.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var newVins = items
+            .Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+            .Select(i => i.Vin.Trim().ToUpperInvariant())
+            .Except(existingVins)
+            .Distinct()
+            .ToList();
+
+        if (newVins.Count == 0) return await GetBankDisbursementAsync(transNo);
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+        var newLines = new List<BankDisbursementLine>();
+
+        foreach (var item in items)
+        {
+            var lineVin = item.Vin.Trim().ToUpperInvariant();
+            if (!vehicles.TryGetValue(lineVin, out var v) || existingVins.Contains(lineVin)) continue;
+
+            var unitPrice = item.UnitPrice.HasValue && item.UnitPrice.Value > 0
+                ? item.UnitPrice.Value
+                : GetDefaultCarPrice(v.Model);
+
+            var collateralVal = item.CollateralValue.HasValue && item.CollateralValue.Value > 0
+                ? item.CollateralValue.Value
+                : unitPrice;
+
+            var percent = item.DisbursementPercent.HasValue && item.DisbursementPercent.Value > 0
+                ? item.DisbursementPercent.Value
+                : b.DisbursementRate;
+
+            var disAmt = item.DisbursementAmount.HasValue && item.DisbursementAmount.Value > 0
+                ? item.DisbursementAmount.Value
+                : Math.Round(collateralVal * percent / 100, 0);
+
+            var line = new BankDisbursementLine
+            {
+                OrgId = Org,
+                BankDisbursementId = b.Id,
+                RQ_BankingTransNo = b.RQ_BankingTransNo,
+                Vin = lineVin,
+                Model = v.Model,
+                EngineNo = v.EngineNo,
+                Color = v.Color,
+                InvoiceNo = item.InvoiceNo?.Trim() ?? v.InvoiceNo,
+                InvoiceDate = item.InvoiceDate ?? v.InvoiceDate,
+                GuaranteeNo = item.GuaranteeNo?.Trim(),
+                UnitPrice = unitPrice,
+                CollateralValue = collateralVal,
+                DisbursementPercent = percent,
+                DisbursementAmount = disAmt,
+                DisbursedAmount = 0,
+                Status = b.BkTransStatus == "PushedToBank" ? "BankProcessing" : (b.BkTransStatus == "Approved" ? "Approved" : "Pending"),
+                Remark = item.Remark?.Trim()
+            };
+            newLines.Add(line);
+
+            Log(lineVin, "BankDisbursementLineAdded",
+                $"{transNo} Bổ sung xe vào đề nghị giải ngân NH {b.BankCode}. Định giá xe: {collateralVal:N0} VNĐ, Số tiền xin giải ngân: {disAmt:N0} VNĐ");
+        }
+
+        db.BankDisbursementLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.BankDisbursementLines.Where(l => l.OrgId == Org && l.BankDisbursementId == b.Id).ToListAsync();
+        b.TotalVehicleCount = allLines.Count;
+        b.TotalCollateralValue = allLines.Sum(l => l.CollateralValue);
+        b.TotalDisbursementAmount = allLines.Sum(l => l.DisbursementAmount);
+        b.DisbursedAmount = allLines.Sum(l => l.DisbursedAmount);
+
+        await db.SaveChangesAsync();
+        return await GetBankDisbursementAsync(transNo);
+    }
+
+    public async Task<object?> RemoveBankDisbursementLineAsync(string transNo, string vin)
+    {
+        transNo = transNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var b = await db.BankDisbursements.FirstOrDefaultAsync(x => x.OrgId == Org && x.RQ_BankingTransNo == transNo);
+        if (b is null) return null;
+
+        if (b.BkTransStatus is "Disbursed")
+            throw new InvalidOperationException($"Hồ sơ đề nghị giải ngân {transNo} đã giải ngân thành công, không thể xóa xe.");
+
+        var line = await db.BankDisbursementLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.BankDisbursementId == b.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.BankDisbursementLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.BankDisbursementLines.Where(l => l.OrgId == Org && l.BankDisbursementId == b.Id).ToListAsync();
+        b.TotalVehicleCount = allLines.Count;
+        b.TotalCollateralValue = allLines.Sum(l => l.CollateralValue);
+        b.TotalDisbursementAmount = allLines.Sum(l => l.DisbursementAmount);
+        b.DisbursedAmount = allLines.Sum(l => l.DisbursedAmount);
+
+        Log(vin, "BankDisbursementLineRemoved", $"{transNo} Đã rút xe khỏi đề nghị giải ngân ngân hàng {b.BankCode}");
+        await db.SaveChangesAsync();
+
+        return await GetBankDisbursementAsync(transNo);
+    }
+
+    public async Task<object?> GetVehicleDisbursementInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var lines = await db.BankDisbursementLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var disIds = lines.Select(l => l.BankDisbursementId).Distinct().ToList();
+        var disbursements = await db.BankDisbursements
+            .Where(b => b.OrgId == Org && disIds.Contains(b.Id))
+            .ToDictionaryAsync(b => b.Id);
+
+        return new
+        {
+            vin = v.Vin,
+            model = v.Model,
+            engineNo = v.EngineNo,
+            color = v.Color,
+            status = v.Status.ToString(),
+            dealerCode = v.DealerCode,
+            storageCode = v.StorageCode,
+            isPaid = v.IsPaid,
+            paidAmount = v.PaidAmount,
+            paidAt = v.PaidAt,
+            lastDisbursementNo = v.LastDisbursementNo,
+            lastDisbursementDate = v.LastDisbursementDate,
+            totalDisbursementsCount = lines.Count,
+            disbursedCount = lines.Count(l => l.Status == "Disbursed"),
+            history = lines.Select(l =>
+            {
+                disbursements.TryGetValue(l.BankDisbursementId, out var b);
+                return new
+                {
+                    l.Id,
+                    l.BankDisbursementId,
+                    transNo = l.RQ_BankingTransNo,
+                    bankCode = b?.BankCode,
+                    bankName = b?.BankName,
+                    dealerCode = b?.DealerCode,
+                    disbursementType = b?.DisbursementType,
+                    unitPrice = l.UnitPrice,
+                    collateralValue = l.CollateralValue,
+                    disbursementPercent = l.DisbursementPercent,
+                    disbursementAmount = l.DisbursementAmount,
+                    disbursedAmount = l.DisbursedAmount,
+                    invoiceNo = l.InvoiceNo,
+                    invoiceDate = l.InvoiceDate,
+                    guaranteeNo = l.GuaranteeNo,
+                    lineStatus = l.Status,
+                    transStatus = b?.BkTransStatus,
+                    transBankStatus = b?.BkTransBankStatus,
+                    refBankCode = b?.RefBankCode,
+                    disbursementDate = b?.DisbursementDate,
+                    createdAt = b?.CreatedAt,
+                    remark = l.Remark
+                };
+            })
+        };
+    }
+
+    public async Task<object?> GetVehicleDisbursementHistoryAsync(string vin)
+        => await GetVehicleDisbursementInfoAsync(vin);
+
+    public async Task<object> GetBankDisbursementSummaryAsync()
+    {
+        var disbursements = await db.BankDisbursements.Where(b => b.OrgId == Org).ToListAsync();
+        var allLines = await db.BankDisbursementLines.Where(l => l.OrgId == Org).ToListAsync();
+
+        var totalDisbursements = disbursements.Count;
+        var draftCount = disbursements.Count(b => b.BkTransStatus == "Draft");
+        var submittedCount = disbursements.Count(b => b.BkTransStatus == "Submitted");
+        var approvedCount = disbursements.Count(b => b.BkTransStatus == "Approved");
+        var pushedToBankCount = disbursements.Count(b => b.BkTransStatus == "PushedToBank");
+        var disbursedCount = disbursements.Count(b => b.BkTransStatus == "Disbursed");
+        var rejectedCount = disbursements.Count(b => b.BkTransStatus == "Rejected");
+        var cancelledCount = disbursements.Count(b => b.BkTransStatus == "Cancelled");
+
+        var totalRequestedAmount = disbursements.Sum(b => b.TotalDisbursementAmount);
+        var totalDisbursedAmount = disbursements.Sum(b => b.DisbursedAmount);
+        var totalCollateralValue = disbursements.Sum(b => b.TotalCollateralValue);
+        var totalVehicles = allLines.Count;
+        var disbursedVehicles = allLines.Count(l => l.Status == "Disbursed");
+
+        var byBank = disbursements.GroupBy(b => b.BankCode).Select(g => new
+        {
+            bankCode = g.Key,
+            bankName = g.FirstOrDefault()?.BankName ?? g.Key,
+            count = g.Count(),
+            disbursedCount = g.Count(x => x.BkTransStatus == "Disbursed"),
+            totalRequestedAmount = g.Sum(x => x.TotalDisbursementAmount),
+            totalDisbursedAmount = g.Sum(x => x.DisbursedAmount)
+        }).ToList();
+
+        var byDisbursementType = disbursements.GroupBy(b => b.DisbursementType).Select(g => new
+        {
+            disbursementType = g.Key,
+            count = g.Count(),
+            totalAmount = g.Sum(x => x.TotalDisbursementAmount)
+        }).ToList();
+
+        return new
+        {
+            totalDisbursements,
+            draftCount,
+            submittedCount,
+            approvedCount,
+            pushedToBankCount,
+            disbursedCount,
+            rejectedCount,
+            cancelledCount,
+            totalCollateralValue,
+            totalRequestedAmount,
+            totalDisbursedAmount,
+            totalVehicles,
+            disbursedVehicles,
+            byBank,
+            byDisbursementType
         };
     }
 }

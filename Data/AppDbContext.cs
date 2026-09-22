@@ -78,6 +78,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<ServiceAppointmentPartLine> ServiceAppointmentPartLines => Set<ServiceAppointmentPartLine>();
     public DbSet<TechnicalBulletin> TechnicalBulletins => Set<TechnicalBulletin>();
     public DbSet<TechnicalBulletinLine> TechnicalBulletinLines => Set<TechnicalBulletinLine>();
+    public DbSet<BankDisbursement> BankDisbursements => Set<BankDisbursement>();
+    public DbSet<BankDisbursementLine> BankDisbursementLines => Set<BankDisbursementLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -116,5 +118,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<RepairOrder>().HasIndex(x => new { x.OrgId, x.RoNo }).IsUnique();
         b.Entity<ServiceAppointment>().HasIndex(x => new { x.OrgId, x.AppNo }).IsUnique();
         b.Entity<TechnicalBulletin>().HasIndex(x => new { x.OrgId, x.BulletinNo }).IsUnique();
+        b.Entity<BankDisbursement>().HasIndex(x => new { x.OrgId, x.RQ_BankingTransNo }).IsUnique();
     }
 }

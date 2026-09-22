@@ -59,6 +59,8 @@ public sealed class Vehicle
     public DateTime? LastAppointmentDate { get; set; } // Ngày hẹn làm dịch vụ gần nhất
     public string? LastBulletinNo { get; set; }     // Mã bản tin kỹ thuật TSB gần nhất áp dụng (Blt_Bulletin / TechnicalBulletin)
     public DateTime? LastBulletinDate { get; set; } // Ngày thực hiện hoàn tất bản tin kỹ thuật gần nhất
+    public string? LastDisbursementNo { get; set; } // Mã giao dịch giải ngân ngân hàng gần nhất (RQ_BankingTransactions / BankDisbursement)
+    public DateTime? LastDisbursementDate { get; set; } // Ngày ngân hàng giải ngân gần nhất
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -1711,6 +1713,72 @@ public sealed class TechnicalBulletinLine
     public int? OdoKm { get; set; }                         // Số km ODO lúc xử lý
     public string? RoNo { get; set; }                       // Số Repair Order / Lệnh sửa chữa dịch vụ nếu xử lý qua RO xưởng
     public string? ResultNotes { get; set; }                // Ghi chú kết quả xử lý
+    public string? Remark { get; set; }
+}
+
+/// <summary>Đề nghị & Lệnh giao dịch giải ngân ngân hàng mua xe ô tô cho Đại lý (BizHTC.VietinBank &amp; BizHTC.MBBank / RQ_BankingTransactions / BankDisbursement): quản lý hồ sơ và giao dịch giải ngân tín dụng trực tuyến từ các ngân hàng thương mại (VietinBank, MBBank, VCB, BIDV, VPBank, Techcombank...) thanh toán mua xe cho hệ thống đại lý phân phối OEM.</summary>
+public sealed class BankDisbursement
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string RQ_BankingTransNo { get; set; } = "";     // Mã lệnh/giao dịch giải ngân (BDIS...)
+    public string? RQ_BankingTransNoUser { get; set; }     // Số tham chiếu nội bộ / hồ sơ tín dụng đại lý
+    public string DealerCode { get; set; } = "";           // Mã đại lý vay vốn giải ngân mua xe
+    public string BankCode { get; set; } = "VIETINBANK";   // Mã ngân hàng tài trợ giải ngân (VIETINBANK, MBBANK, VCB, BIDV, VPB, TCB...)
+    public string? BankName { get; set; }                  // Tên ngân hàng / Chi nhánh tài trợ
+    public string? BizResNumber { get; set; }              // Số hợp đồng tín dụng hạn mức / Giấy ĐKKD đại lý
+    public string? BeneficiaryAccountNo { get; set; }      // Số tài khoản thụ hưởng của Hãng OEM (VietinBank SGD, VCB...)
+    public string? BeneficiaryAccountName { get; set; }    // Tên đơn vị thụ hưởng OEM (Công ty Cổ phần Liên doanh Ô tô Hyundai Thành Công Việt Nam)
+    public string? BeneficiaryBankCode { get; set; }       // Ngân hàng tài khoản thụ hưởng OEM
+    public string DisbursementType { get; set; } = "AutoLoan"; // AutoLoan (Tài trợ lô xe đại lý), FloorPlan (Vay hạn mức lưu kho), WorkingCapital (Bổ sung vốn lưu động)
+    public int TotalVehicleCount { get; set; } = 0;        // Tổng số lượng xe trong hồ sơ giải ngân
+    public decimal TotalCollateralValue { get; set; } = 0; // Tổng giá trị định giá các xe thế chấp / bảo lãnh (VNĐ)
+    public decimal DisbursementRate { get; set; } = 80;    // Tỷ lệ giải ngân bình quân (%) (VD: 80% = 80)
+    public decimal TotalDisbursementAmount { get; set; } = 0; // Tổng số tiền đề nghị giải ngân (VNĐ)
+    public decimal DisbursedAmount { get; set; } = 0;      // Tổng số tiền ngân hàng đã giải ngân thực tế (VNĐ)
+    public string BkTransStatus { get; set; } = "Draft";   // Draft → Submitted → Approved → PushedToBank → Disbursed (hoặc Rejected / Cancelled)
+    public string BkTransBankStatus { get; set; } = "Pending"; // Pending → BankProcessing → BankApproved → Disbursed (hoặc BankRejected)
+    public string? RefBankCode { get; set; }               // Mã giao dịch Core Banking / Số bút toán giải ngân của ngân hàng
+    public DateTime? DisbursementDate { get; set; }        // Ngày ngân hàng hạch toán giải ngân tiền về tài khoản OEM
+    public string? BankRemark { get; set; }                // Phản hồi / ghi chú từ hệ thống Ngân hàng
+    public string? FilePath { get; set; }                  // Đường dẫn tệp đính kèm ủy nhiệm chi / khế ước nhận nợ
+    public string? Remark { get; set; }                    // Diễn giải / ghi chú đề nghị giải ngân
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                // Lãnh đạo tài chính OEM duyệt hồ sơ
+    public DateTime? ApprovedAt { get; set; }
+    public string? PushedBy { get; set; }                  // Cán bộ IT / Tài chính thực hiện đẩy lệnh sang Core Banking
+    public DateTime? PushedAt { get; set; }
+    public string? DisbursedBy { get; set; }               // Kế toán OEM xác nhận tiền về & giải phóng công nợ xe
+    public DateTime? DisbursedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe trong hồ sơ giải ngân ngân hàng (BizHTC.VietinBank &amp; BizHTC.MBBank / RQ_BankingTransactionsDetail / BankDisbursementLine): thông tin xe VIN, hóa đơn GTGT, bảo lãnh ngân hàng, đơn giá xe, định giá thế chấp, tỷ lệ và số tiền giải ngân từng xe.</summary>
+public sealed class BankDisbursementLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long BankDisbursementId { get; set; }
+    public string RQ_BankingTransNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? EngineNo { get; set; }
+    public string? Color { get; set; }
+    public string? InvoiceNo { get; set; }                 // Số hóa đơn GTGT bán xe cho đại lý (nếu có)
+    public DateTime? InvoiceDate { get; set; }             // Ngày hóa đơn GTGT
+    public string? GuaranteeNo { get; set; }               // Mã chứng thư bảo lãnh ngân hàng liên quan (Pmt_Guarantee)
+    public decimal UnitPrice { get; set; } = 0;            // Đơn giá xe xuất buôn (VNĐ)
+    public decimal CollateralValue { get; set; } = 0;      // Trị giá xe định giá thế chấp / giải ngân (VNĐ)
+    public decimal DisbursementPercent { get; set; } = 80; // Tỷ lệ giải ngân cho xe này (%)
+    public decimal DisbursementAmount { get; set; } = 0;   // Số tiền đề nghị giải ngân xe này (VNĐ) = CollateralValue * DisbursementPercent / 100
+    public decimal DisbursedAmount { get; set; } = 0;      // Số tiền ngân hàng đã giải ngân thực tế cho xe này (VNĐ)
+    public string Status { get; set; } = "Pending";        // Pending → Approved → Disbursed (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
 }
 

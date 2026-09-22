@@ -1997,6 +1997,105 @@ app.MapGet("/api/vehicles/{vin}/bulletin-history", async (string vin, IVehicleSe
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Đề nghị & Lệnh giao dịch giải ngân ngân hàng mua xe ô tô cho Đại lý (BizHTC.VietinBank & BizHTC.MBBank / RQ_BankingTransactions / BankDisbursement) ----
+app.MapPost("/api/bank-disbursements", async (CreateBankDisbursementDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.BankCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode và mã ngân hàng BankCode." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong đề nghị giải ngân." });
+    try { return Results.Ok(await svc.CreateBankDisbursementAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/bank-disbursements", async (IVehicleService svc, string? status, string? bank, string? dealer, string? transNo, string? vin) =>
+    Results.Ok(await svc.ListBankDisbursementsAsync(status, bank, dealer, transNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/bank-disbursements/summary", async (IVehicleService svc) =>
+    Results.Ok(await svc.GetBankDisbursementSummaryAsync())).RequireAuthorization();
+
+app.MapGet("/api/bank-disbursements/{transNo}", async (string transNo, IVehicleService svc) =>
+{
+    var r = await svc.GetBankDisbursementAsync(transNo);
+    return r is null ? Results.NotFound(new { transNo, error = "Không tìm thấy hồ sơ đề nghị giải ngân." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/bank-disbursements/{transNo}", async (string transNo, UpdateBankDisbursementHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateBankDisbursementHeaderAsync(transNo, dto);
+        return r is null ? Results.NotFound(new { transNo, error = "Không tìm thấy hồ sơ đề nghị giải ngân hoặc hồ sơ đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/bank-disbursements/{transNo}/{action}", async (string transNo, string action, BankDisbursementTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "request" or "approve" or "push-to-bank" or "pushtobank" or "pushbank" or "disburse" or "complete" or "finish" or "settle" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|push-to-bank|disburse|reject|cancel" });
+    try
+    {
+        var r = await svc.BankDisbursementTransitionAsync(transNo, action, dto);
+        return r is null ? Results.NotFound(new { transNo, error = "Không thấy đề nghị giải ngân hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/bank-disbursements/{transNo}/lines/{vin}/update", async (string transNo, string vin, UpdateBankDisbursementLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateBankDisbursementLineAsync(transNo, vin, dto);
+        return r is null ? Results.NotFound(new { transNo, vin, error = "Không tìm thấy dòng xe trong đề nghị giải ngân hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/bank-disbursements/{transNo}/lines/{vin}", async (string transNo, string vin, UpdateBankDisbursementLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateBankDisbursementLineAsync(transNo, vin, dto);
+        return r is null ? Results.NotFound(new { transNo, vin, error = "Không tìm thấy dòng xe trong đề nghị giải ngân hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/bank-disbursements/{transNo}/lines", async (string transNo, List<BankDisbursementItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào đề nghị giải ngân." });
+    try
+    {
+        var r = await svc.AddBankDisbursementLinesAsync(transNo, items);
+        return r is null ? Results.NotFound(new { transNo, error = "Không tìm thấy đề nghị giải ngân hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/bank-disbursements/{transNo}/lines/{vin}", async (string transNo, string vin, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveBankDisbursementLineAsync(transNo, vin);
+        return r is null ? Results.NotFound(new { transNo, vin, error = "Không tìm thấy dòng xe trong đề nghị giải ngân hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/disbursement-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleDisbursementInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/disbursement-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleDisbursementHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
