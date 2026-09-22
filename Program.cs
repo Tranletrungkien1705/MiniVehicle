@@ -645,6 +645,40 @@ app.MapPost("/api/contracts/{contractNo}/lines/{vin}/update", async (string cont
     return r is null ? Results.NotFound(new { contractNo, vin, error = "Không tìm thấy dòng xe trong hợp đồng hoặc hợp đồng đã chốt/hủy." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Yêu cầu & Quyết toán Chiết khấu thanh toán mua xe ô tô cho Đại lý (BizHTC.PaymentDiscount / Req_PaymentDiscount) ----
+app.MapPost("/api/payment-discounts", async (CreatePaymentDiscountDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode." });
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách xe Items yêu cầu chiết khấu thanh toán." });
+    try { return Results.Ok(await svc.CreatePaymentDiscountAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/payment-discounts", async (IVehicleService svc, string? status, string? dealer, string? paymentDiscountNo, string? vin) =>
+    Results.Ok(await svc.ListPaymentDiscountsAsync(status, dealer, paymentDiscountNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/payment-discounts/{paymentDiscountNo}", async (string paymentDiscountNo, IVehicleService svc) =>
+{
+    var r = await svc.GetPaymentDiscountAsync(paymentDiscountNo);
+    return r is null ? Results.NotFound(new { paymentDiscountNo, error = "Không tìm thấy đề nghị chiết khấu thanh toán." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/payment-discounts/{paymentDiscountNo}/{action}", async (string paymentDiscountNo, string action, PaymentDiscountTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "dlr-sign" or "dlrsign" or "sign-dlr" or "htc-sign" or "htcsign" or "sign-htc" or "settle" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|dlr-sign|htc-sign|reject|cancel" });
+    var r = await svc.PaymentDiscountTransitionAsync(paymentDiscountNo, action, dto);
+    return r is null ? Results.NotFound(new { paymentDiscountNo, error = "Không thấy đề nghị chiết khấu hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/payment-discounts/{paymentDiscountNo}/lines/{vin}/update", async (string paymentDiscountNo, string vin, UpdatePaymentDiscountLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdatePaymentDiscountLineAsync(paymentDiscountNo, vin, dto);
+    return r is null ? Results.NotFound(new { paymentDiscountNo, vin, error = "Không tìm thấy dòng xe trong đề nghị chiết khấu hoặc phiếu đã ký/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

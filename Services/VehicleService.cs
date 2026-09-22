@@ -81,6 +81,12 @@ public record CreateDealerContractDto(string DealerCode, List<DealerContractItem
 public record DealerContractTransitionDto(string? Note = null, string? ApprovedBy = null, DateTime? DeliveryDeadline = null);
 public record UpdateDealerContractLineDto(decimal? UnitPrice = null, decimal? Discount = null, string? Remark = null);
 
+public record PaymentDiscountPhaseInputDto(DateTime? PaymentEndDate = null, decimal Amount = 0, int DiscountDateNumber = 0, decimal DiscountPercent = 0, decimal? DiscountPrice = null);
+public record PaymentDiscountItemInputDto(string Vin, decimal? UnitPrice = null, string? GuaranteeNo = null, DateTime? PG_DateEnd = null, PaymentDiscountPhaseInputDto? Phase1 = null, PaymentDiscountPhaseInputDto? Phase2 = null, PaymentDiscountPhaseInputDto? Phase3 = null, decimal? TotalAmount = null, decimal? TotalDiscountPrice = null, string? Remark = null);
+public record CreatePaymentDiscountDto(string DealerCode, List<PaymentDiscountItemInputDto> Items, DateTime? DateEndFrom = null, DateTime? DateEndTo = null, decimal DiscountPercent = 0, decimal PenaltyPercent = 0, string? FilePath = null, string? Remark = null, string? PaymentDiscountNo = null, string? CreatedBy = null);
+public record PaymentDiscountTransitionDto(string? Note = null, string? User = null, string? FilePath = null);
+public record UpdatePaymentDiscountLineDto(PaymentDiscountPhaseInputDto? Phase1 = null, PaymentDiscountPhaseInputDto? Phase2 = null, PaymentDiscountPhaseInputDto? Phase3 = null, string? GuaranteeNo = null, DateTime? PG_DateEnd = null, string? Remark = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -166,6 +172,11 @@ public interface IVehicleService
     Task<object?> GetDealerContractAsync(string contractNo);
     Task<object?> DealerContractTransitionAsync(string contractNo, string action, DealerContractTransitionDto? dto);
     Task<object?> UpdateDealerContractLineAsync(string contractNo, string vin, UpdateDealerContractLineDto dto);
+    Task<object> CreatePaymentDiscountAsync(CreatePaymentDiscountDto dto);
+    Task<object> ListPaymentDiscountsAsync(string? status, string? dealer, string? paymentDiscountNo, string? vin);
+    Task<object?> GetPaymentDiscountAsync(string paymentDiscountNo);
+    Task<object?> PaymentDiscountTransitionAsync(string paymentDiscountNo, string action, PaymentDiscountTransitionDto? dto);
+    Task<object?> UpdatePaymentDiscountLineAsync(string paymentDiscountNo, string vin, UpdatePaymentDiscountLineDto dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -4086,6 +4097,443 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             contractTotalAmount = ctr.TotalAmount,
             contractDiscountAmount = ctr.DiscountAmount,
             contractFinalAmount = ctr.FinalAmount
+        };
+    }
+
+    // ===== Yêu cầu & Quyết toán Chiết khấu thanh toán mua xe ô tô cho Đại lý (BizHTC.PaymentDiscount / Req_PaymentDiscount) =====
+    public async Task<object> CreatePaymentDiscountAsync(CreatePaymentDiscountDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode.");
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng chi tiết xe yêu cầu chiết khấu thanh toán.");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+        var distinctItems = dto.Items.DistinctBy(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var vMap = vehicles.ToDictionary(v => v.Vin);
+
+        var today = DateTime.Today;
+        var discountNo = string.IsNullOrWhiteSpace(dto.PaymentDiscountNo)
+            ? $"{today:yyyyMMdd}-{(await db.PaymentDiscounts.CountAsync(d => d.OrgId == Org && d.CreatedAt.Date == today) + 1):000}/DNCK/{dealer}"
+            : dto.PaymentDiscountNo!.Trim().ToUpperInvariant();
+
+        if (await db.PaymentDiscounts.AnyAsync(d => d.OrgId == Org && d.PaymentDiscountNo == discountNo))
+            throw new InvalidOperationException($"Mã đề nghị chiết khấu {discountNo} đã tồn tại.");
+
+        decimal totalPayment = 0;
+        decimal totalDiscount = 0;
+
+        var lineList = new List<PaymentDiscountLine>();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            var v = vMap[vin];
+            var unitPrice = item.UnitPrice ?? 0;
+
+            // Phase 1
+            var p1Amount = item.Phase1?.Amount ?? 0;
+            var p1Days = item.Phase1?.DiscountDateNumber ?? 0;
+            var p1Pct = item.Phase1?.DiscountPercent ?? (dto.DiscountPercent > 0 ? dto.DiscountPercent : 0);
+            var p1Price = item.Phase1?.DiscountPrice ?? (p1Amount > 0 && p1Pct > 0 ? Math.Round(p1Amount * (p1Pct / 100m), 0) : 0);
+
+            // Phase 2
+            var p2Amount = item.Phase2?.Amount ?? 0;
+            var p2Days = item.Phase2?.DiscountDateNumber ?? 0;
+            var p2Pct = item.Phase2?.DiscountPercent ?? 0;
+            var p2Price = item.Phase2?.DiscountPrice ?? (p2Amount > 0 && p2Pct > 0 ? Math.Round(p2Amount * (p2Pct / 100m), 0) : 0);
+
+            // Phase 3
+            var p3Amount = item.Phase3?.Amount ?? 0;
+            var p3Days = item.Phase3?.DiscountDateNumber ?? 0;
+            var p3Pct = item.Phase3?.DiscountPercent ?? 0;
+            var p3Price = item.Phase3?.DiscountPrice ?? (p3Amount > 0 && p3Pct > 0 ? Math.Round(p3Amount * (p3Pct / 100m), 0) : 0);
+
+            var lineTotalAmount = item.TotalAmount ?? (p1Amount + p2Amount + p3Amount);
+            if (lineTotalAmount == 0 && unitPrice > 0) lineTotalAmount = unitPrice;
+
+            var lineTotalDiscount = item.TotalDiscountPrice ?? (p1Price + p2Price + p3Price);
+
+            totalPayment += lineTotalAmount;
+            totalDiscount += lineTotalDiscount;
+
+            lineList.Add(new PaymentDiscountLine
+            {
+                OrgId = Org,
+                PaymentDiscountNo = discountNo,
+                Vin = vin,
+                Model = v.Model,
+                GuaranteeNo = item.GuaranteeNo?.Trim().ToUpperInvariant(),
+                UnitPrice = unitPrice,
+                PaymentEndDatePhase1 = item.Phase1?.PaymentEndDate,
+                AmountPhase1 = p1Amount,
+                DiscountDateNumberPhase1 = p1Days,
+                DiscountPercentPhase1 = p1Pct,
+                DiscountPricePhase1 = p1Price,
+                PaymentEndDatePhase2 = item.Phase2?.PaymentEndDate,
+                AmountPhase2 = p2Amount,
+                DiscountDateNumberPhase2 = p2Days,
+                DiscountPercentPhase2 = p2Pct,
+                DiscountPricePhase2 = p2Price,
+                PaymentEndDatePhase3 = item.Phase3?.PaymentEndDate,
+                AmountPhase3 = p3Amount,
+                DiscountDateNumberPhase3 = p3Days,
+                DiscountPercentPhase3 = p3Pct,
+                DiscountPricePhase3 = p3Price,
+                TotalAmount = lineTotalAmount,
+                TotalDiscountPrice = lineTotalDiscount,
+                PG_DateEnd = item.PG_DateEnd,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        var pd = new PaymentDiscount
+        {
+            OrgId = Org,
+            PaymentDiscountNo = discountNo,
+            DealerCode = dealer,
+            DateEndFrom = dto.DateEndFrom,
+            DateEndTo = dto.DateEndTo,
+            TotalVehicleCount = distinctItems.Count,
+            TotalPaymentAmount = totalPayment,
+            TotalDiscountAmount = totalDiscount,
+            DiscountPercent = dto.DiscountPercent,
+            PenaltyPercent = dto.PenaltyPercent,
+            FilePath = dto.FilePath?.Trim(),
+            PmtDctStatus = "Draft",
+            DlrSignStatus = "Pending",
+            HTCSignStatus = "Pending",
+            CreatedBy = dto.CreatedBy?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.PaymentDiscounts.Add(pd);
+        await db.SaveChangesAsync();
+
+        foreach (var line in lineList)
+        {
+            line.PaymentDiscountId = pd.Id;
+            db.PaymentDiscountLines.Add(line);
+            Log(line.Vin, "PaymentDiscountCreated", $"{discountNo} Lập đề nghị chiết khấu thanh toán ĐL {dealer}. Tiền TT: {line.TotalAmount:N0} VNĐ, Tiền CK: {line.TotalDiscountPrice:N0} VNĐ");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pd.PaymentDiscountNo,
+            pd.DealerCode,
+            pd.DateEndFrom,
+            pd.DateEndTo,
+            pd.TotalVehicleCount,
+            pd.TotalPaymentAmount,
+            pd.TotalDiscountAmount,
+            pd.DiscountPercent,
+            pd.PmtDctStatus,
+            pd.DlrSignStatus,
+            pd.HTCSignStatus,
+            linesCount = lineList.Count
+        };
+    }
+
+    public async Task<object> ListPaymentDiscountsAsync(string? status, string? dealer, string? paymentDiscountNo, string? vin)
+    {
+        var q = db.PaymentDiscounts.Where(d => d.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(d => d.PmtDctStatus == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var dl = dealer.Trim().ToUpperInvariant(); q = q.Where(d => d.DealerCode == dl); }
+        if (!string.IsNullOrWhiteSpace(paymentDiscountNo)) { var no = paymentDiscountNo.Trim().ToUpperInvariant(); q = q.Where(d => d.PaymentDiscountNo.Contains(no)); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.PaymentDiscountLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.PaymentDiscountNo).Distinct().ToListAsync();
+            q = q.Where(d => matchedNos.Contains(d.PaymentDiscountNo));
+        }
+
+        var items = await q.OrderByDescending(d => d.Id).Take(500).Select(d => new
+        {
+            d.PaymentDiscountNo,
+            d.DealerCode,
+            d.DateEndFrom,
+            d.DateEndTo,
+            d.TotalVehicleCount,
+            d.TotalPaymentAmount,
+            d.TotalDiscountAmount,
+            d.DiscountPercent,
+            d.PenaltyPercent,
+            d.FilePath,
+            d.PmtDctStatus,
+            d.DlrSignStatus,
+            d.HTCSignStatus,
+            d.CreatedBy,
+            d.CreatedAt,
+            d.HTCApprBy,
+            d.HTCApprAt,
+            d.DlrSignBy,
+            d.DlrSignAt,
+            d.HTCSignBy,
+            d.HTCSignAt,
+            d.RejectBy,
+            d.RejectAt,
+            d.CancelBy,
+            d.CancelAt,
+            lineCount = db.PaymentDiscountLines.Count(l => l.OrgId == Org && l.PaymentDiscountId == d.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetPaymentDiscountAsync(string paymentDiscountNo)
+    {
+        paymentDiscountNo = paymentDiscountNo.Trim().ToUpperInvariant();
+        var pd = await db.PaymentDiscounts.FirstOrDefaultAsync(d => d.OrgId == Org && d.PaymentDiscountNo == paymentDiscountNo);
+        if (pd is null) return null;
+
+        var lines = await db.PaymentDiscountLines.Where(l => l.OrgId == Org && l.PaymentDiscountId == pd.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.GuaranteeNo,
+            l.UnitPrice,
+            phase1 = new
+            {
+                paymentEndDate = l.PaymentEndDatePhase1,
+                amount = l.AmountPhase1,
+                discountDateNumber = l.DiscountDateNumberPhase1,
+                discountPercent = l.DiscountPercentPhase1,
+                discountPrice = l.DiscountPricePhase1
+            },
+            phase2 = new
+            {
+                paymentEndDate = l.PaymentEndDatePhase2,
+                amount = l.AmountPhase2,
+                discountDateNumber = l.DiscountDateNumberPhase2,
+                discountPercent = l.DiscountPercentPhase2,
+                discountPrice = l.DiscountPricePhase2
+            },
+            phase3 = new
+            {
+                paymentEndDate = l.PaymentEndDatePhase3,
+                amount = l.AmountPhase3,
+                discountDateNumber = l.DiscountDateNumberPhase3,
+                discountPercent = l.DiscountPercentPhase3,
+                discountPrice = l.DiscountPricePhase3
+            },
+            l.TotalAmount,
+            l.TotalDiscountPrice,
+            l.PG_DateEnd,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.EngineNo,
+                v.Color,
+                v.ModelYear,
+                v.StorageCode,
+                v.DealerCode,
+                status = v.Status.ToString(),
+                v.IsMortgaged,
+                v.MortgageBankCode
+            } : null
+        }).ToList();
+
+        return new
+        {
+            pd.PaymentDiscountNo,
+            pd.DealerCode,
+            pd.DateEndFrom,
+            pd.DateEndTo,
+            pd.TotalVehicleCount,
+            pd.TotalPaymentAmount,
+            pd.TotalDiscountAmount,
+            pd.DiscountPercent,
+            pd.PenaltyPercent,
+            pd.FilePath,
+            pd.PmtDctStatus,
+            pd.DlrSignStatus,
+            pd.HTCSignStatus,
+            pd.CreatedBy,
+            pd.CreatedAt,
+            pd.HTCApprBy,
+            pd.HTCApprAt,
+            pd.DlrSignBy,
+            pd.DlrSignAt,
+            pd.HTCSignBy,
+            pd.HTCSignAt,
+            pd.RejectBy,
+            pd.RejectAt,
+            pd.CancelBy,
+            pd.CancelAt,
+            pd.Remark,
+            lines = details
+        };
+    }
+
+    public async Task<object?> PaymentDiscountTransitionAsync(string paymentDiscountNo, string action, PaymentDiscountTransitionDto? dto)
+    {
+        paymentDiscountNo = paymentDiscountNo.Trim().ToUpperInvariant();
+        var pd = await db.PaymentDiscounts.FirstOrDefaultAsync(d => d.OrgId == Org && d.PaymentDiscountNo == paymentDiscountNo);
+        if (pd is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.PaymentDiscountLines.Where(l => l.OrgId == Org && l.PaymentDiscountId == pd.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (pd.PmtDctStatus is not ("Draft" or "Pending" or "NotSign")) return null;
+                pd.PmtDctStatus = "Approved";
+                pd.HTCSignStatus = "Approved";
+                pd.HTCApprBy = dto?.User?.Trim() ?? "HTCSalesManager";
+                pd.HTCApprAt = now;
+                foreach (var l in lines) l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "PaymentDiscountApproved", $"{paymentDiscountNo} Hãng OEM sơ duyệt chiết khấu thanh toán ĐL {pd.DealerCode}. Người duyệt: {pd.HTCApprBy}");
+                break;
+
+            case "dlr-sign":
+            case "dlrsign":
+            case "sign-dlr":
+                if (pd.PmtDctStatus is "Rejected" or "Cancelled" or "Signed" or "Sign") return null;
+                pd.DlrSignStatus = "Signed";
+                pd.DlrSignBy = dto?.User?.Trim() ?? "DealerDirector";
+                pd.DlrSignAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) pd.FilePath = dto.FilePath.Trim();
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "PaymentDiscountDlrSigned", $"{paymentDiscountNo} Đại lý {pd.DealerCode} ký số xác nhận chiết khấu thanh toán. Người ký: {pd.DlrSignBy}");
+                break;
+
+            case "htc-sign":
+            case "htcsign":
+            case "sign-htc":
+            case "settle":
+                if (pd.DlrSignStatus != "Signed" || pd.PmtDctStatus is "Rejected" or "Cancelled") return null;
+                pd.HTCSignStatus = "Signed";
+                pd.PmtDctStatus = "Signed";
+                pd.HTCSignBy = dto?.User?.Trim() ?? "HTCFinanceDirector";
+                pd.HTCSignAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) pd.FilePath = dto.FilePath.Trim();
+                foreach (var l in lines) l.Status = "Signed";
+                foreach (var v in vehicles) Log(v.Vin, "PaymentDiscountHTCSigned", $"{paymentDiscountNo} Hãng OEM ký số phê duyệt quyết toán chiết khấu thanh toán ĐL {pd.DealerCode}. Tổng chiết khấu: {pd.TotalDiscountAmount:N0} VNĐ. Người ký: {pd.HTCSignBy}");
+                break;
+
+            case "reject":
+                if (pd.PmtDctStatus is "Signed" or "Sign") return null;
+                pd.PmtDctStatus = "Rejected";
+                pd.RejectBy = dto?.User?.Trim() ?? "HTCOfficer";
+                pd.RejectAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    pd.Remark = string.IsNullOrWhiteSpace(pd.Remark) ? dto.Note : $"{pd.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "PaymentDiscountRejected", $"{paymentDiscountNo} Từ chối chiết khấu thanh toán: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (pd.PmtDctStatus is "Signed" or "Sign") return null;
+                pd.PmtDctStatus = "Cancelled";
+                pd.CancelBy = dto?.User?.Trim() ?? "Operator";
+                pd.CancelAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    pd.Remark = string.IsNullOrWhiteSpace(pd.Remark) ? dto.Note : $"{pd.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "PaymentDiscountCancelled", $"{paymentDiscountNo} Hủy đề nghị chiết khấu thanh toán: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            pd.PaymentDiscountNo,
+            pd.DealerCode,
+            status = pd.PmtDctStatus,
+            dlrSignStatus = pd.DlrSignStatus,
+            htcSignStatus = pd.HTCSignStatus,
+            pd.HTCApprAt,
+            pd.DlrSignAt,
+            pd.HTCSignAt,
+            pd.RejectAt,
+            pd.CancelAt
+        };
+    }
+
+    public async Task<object?> UpdatePaymentDiscountLineAsync(string paymentDiscountNo, string vin, UpdatePaymentDiscountLineDto dto)
+    {
+        paymentDiscountNo = paymentDiscountNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var pd = await db.PaymentDiscounts.FirstOrDefaultAsync(d => d.OrgId == Org && d.PaymentDiscountNo == paymentDiscountNo);
+        if (pd is null || pd.PmtDctStatus is "Signed" or "Sign" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.PaymentDiscountLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.PaymentDiscountId == pd.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.Phase1 != null)
+        {
+            if (dto.Phase1.PaymentEndDate.HasValue) line.PaymentEndDatePhase1 = dto.Phase1.PaymentEndDate;
+            if (dto.Phase1.Amount >= 0) line.AmountPhase1 = dto.Phase1.Amount;
+            if (dto.Phase1.DiscountDateNumber >= 0) line.DiscountDateNumberPhase1 = dto.Phase1.DiscountDateNumber;
+            if (dto.Phase1.DiscountPercent >= 0) line.DiscountPercentPhase1 = dto.Phase1.DiscountPercent;
+            line.DiscountPricePhase1 = dto.Phase1.DiscountPrice ?? (line.AmountPhase1 > 0 && line.DiscountPercentPhase1 > 0 ? Math.Round(line.AmountPhase1 * (line.DiscountPercentPhase1 / 100m), 0) : 0);
+        }
+
+        if (dto.Phase2 != null)
+        {
+            if (dto.Phase2.PaymentEndDate.HasValue) line.PaymentEndDatePhase2 = dto.Phase2.PaymentEndDate;
+            if (dto.Phase2.Amount >= 0) line.AmountPhase2 = dto.Phase2.Amount;
+            if (dto.Phase2.DiscountDateNumber >= 0) line.DiscountDateNumberPhase2 = dto.Phase2.DiscountDateNumber;
+            if (dto.Phase2.DiscountPercent >= 0) line.DiscountPercentPhase2 = dto.Phase2.DiscountPercent;
+            line.DiscountPricePhase2 = dto.Phase2.DiscountPrice ?? (line.AmountPhase2 > 0 && line.DiscountPercentPhase2 > 0 ? Math.Round(line.AmountPhase2 * (line.DiscountPercentPhase2 / 100m), 0) : 0);
+        }
+
+        if (dto.Phase3 != null)
+        {
+            if (dto.Phase3.PaymentEndDate.HasValue) line.PaymentEndDatePhase3 = dto.Phase3.PaymentEndDate;
+            if (dto.Phase3.Amount >= 0) line.AmountPhase3 = dto.Phase3.Amount;
+            if (dto.Phase3.DiscountDateNumber >= 0) line.DiscountDateNumberPhase3 = dto.Phase3.DiscountDateNumber;
+            if (dto.Phase3.DiscountPercent >= 0) line.DiscountPercentPhase3 = dto.Phase3.DiscountPercent;
+            line.DiscountPricePhase3 = dto.Phase3.DiscountPrice ?? (line.AmountPhase3 > 0 && line.DiscountPercentPhase3 > 0 ? Math.Round(line.AmountPhase3 * (line.DiscountPercentPhase3 / 100m), 0) : 0);
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.GuaranteeNo)) line.GuaranteeNo = dto.GuaranteeNo.Trim().ToUpperInvariant();
+        if (dto.PG_DateEnd.HasValue) line.PG_DateEnd = dto.PG_DateEnd.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        line.TotalAmount = line.AmountPhase1 + line.AmountPhase2 + line.AmountPhase3;
+        if (line.TotalAmount == 0 && line.UnitPrice > 0) line.TotalAmount = line.UnitPrice;
+        line.TotalDiscountPrice = line.DiscountPricePhase1 + line.DiscountPricePhase2 + line.DiscountPricePhase3;
+
+        var allLines = await db.PaymentDiscountLines.Where(l => l.OrgId == Org && l.PaymentDiscountId == pd.Id).ToListAsync();
+        pd.TotalPaymentAmount = allLines.Sum(l => l.TotalAmount);
+        pd.TotalDiscountAmount = allLines.Sum(l => l.TotalDiscountPrice);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pd.PaymentDiscountNo,
+            line.Vin,
+            line.TotalAmount,
+            line.TotalDiscountPrice,
+            line.Remark,
+            discountTotalPaymentAmount = pd.TotalPaymentAmount,
+            discountTotalDiscountAmount = pd.TotalDiscountAmount
         };
     }
 }

@@ -38,6 +38,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<PaymentGuaranteeLine> GuaranteeLines => Set<PaymentGuaranteeLine>();
     public DbSet<DealerContract> DealerContracts => Set<DealerContract>();
     public DbSet<DealerContractLine> DealerContractLines => Set<DealerContractLine>();
+    public DbSet<PaymentDiscount> PaymentDiscounts => Set<PaymentDiscount>();
+    public DbSet<PaymentDiscountLine> PaymentDiscountLines => Set<PaymentDiscountLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -57,5 +59,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<DealerDeal>().HasIndex(x => new { x.OrgId, x.DealNo }).IsUnique();
         b.Entity<PaymentGuarantee>().HasIndex(x => new { x.OrgId, x.GuaranteeNo }).IsUnique();
         b.Entity<DealerContract>().HasIndex(x => new { x.OrgId, x.ContractNo }).IsUnique();
+        b.Entity<PaymentDiscount>().HasIndex(x => new { x.OrgId, x.PaymentDiscountNo }).IsUnique();
     }
 }
