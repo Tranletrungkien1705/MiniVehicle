@@ -23,6 +23,7 @@ public sealed class Vehicle
     public string? Color { get; set; }
     public int? ModelYear { get; set; }
     public VehicleStatus Status { get; set; } = VehicleStatus.InStock;
+    public string? StorageCode { get; set; }        // vị trí ô đỗ / kho bãi nội bộ OEM (StorageCodeCurrent)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
     public string? OwnerPhone { get; set; }
@@ -229,6 +230,36 @@ public sealed class TransportRequestLine
     public string? StorageCode { get; set; }              // Kho xuất phát của xe
     public string Status { get; set; } = "Pending";       // Pending → Approved → InTransit → Delivered
     public string? Remark { get; set; }
+}
+
+/// <summary>Lệnh tái sắp xếp / đảo chuyển vị trí bãi đỗ ô tô nội bộ OEM (BizHTC.Storage.StorageRearrange / Sto_StorageRearrange): quản lý di dời xe giữa các bãi/ô đỗ trong kho trung tâm OEM.</summary>
+public sealed class StorageRearrange
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string StorageRearrangeNo { get; set; } = "";      // Mã lệnh tái sắp xếp (SRR...)
+    public string? Reason { get; set; }                       // Lý do sắp xếp / quy hoạch lại kho bãi
+    public string? Remark { get; set; }                       // Ghi chú điều hành
+    public string Status { get; set; } = "Requested";         // Requested → Approved → InProgress → Completed (hoặc Rejected / Cancelled)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong lệnh tái sắp xếp kho bãi (Sto_StorageRearrangeDetail): danh sách VIN, vị trí cũ và vị trí mới.</summary>
+public sealed class StorageRearrangeLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long StorageRearrangeId { get; set; }
+    public string StorageRearrangeNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? StorageCodeFrom { get; set; }              // Vị trí/bãi đỗ cũ của xe
+    public string StorageCodeTo { get; set; } = "";           // Vị trí/bãi đỗ mới chuyển đến
+    public DateTime? RearrangeStartDate { get; set; }         // Thời điểm bắt đầu di dời xe
+    public DateTime? RearrangeEndDate { get; set; }           // Thời điểm hoàn tất di dời vào vị trí mới
+    public string Status { get; set; } = "Pending";           // Pending → Approved → Moving → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                       // Ghi chú tình trạng vị trí ô đỗ
 }
 
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>

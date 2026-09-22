@@ -4,7 +4,7 @@ using MiniVehicle.Models;
 
 namespace MiniVehicle.Services;
 
-public record RegisterVehicleDto(string Vin, string Model, string? EngineNo, string? Color, int? ModelYear, int? WarrantyMonths);
+public record RegisterVehicleDto(string Vin, string Model, string? EngineNo, string? Color, int? ModelYear, int? WarrantyMonths, string? StorageCode = null);
 public record CreateDoDto(string DealerCode, List<string> Vins, string? DoNo);
 public record DeliverDto(string? OwnerName, string? OwnerPhone, string? PlateNo);
 public record CreateRecallDto(string Code, string Title, string? Model, string? Reason, string? Remedy, List<string>? Vins);
@@ -24,6 +24,10 @@ public record CreateCarRetrieveDto(string DealerCode, List<string> Vins, string?
 public record CarRetrieveTransitionDto(string? Note);
 public record CreateTransportRequestDto(string DealerCode, List<string> Vins, string? TransporterCode, string? TransportContractNo, string? TruckPlateNo, string? DriverName, string? DriverPhone, string? FromStorage, string? ToStorage, string? DeliveryOrderNo, DateTime? EstimatedDeparture, DateTime? EstimatedArrival, string? Remark, string? TransportReqNo);
 public record TransportRequestTransitionDto(string? Note, string? TruckPlateNo, string? DriverName, string? DriverPhone);
+public record StorageRearrangeItemInputDto(string Vin, string StorageCodeTo, string? StorageCodeFrom = null, string? Remark = null);
+public record CreateStorageRearrangeDto(List<StorageRearrangeItemInputDto> Items, string? Reason = null, string? Remark = null, string? StorageRearrangeNo = null);
+public record StorageRearrangeTransitionDto(string? Note);
+public record CompleteStorageRearrangeLineDto(string? RearrangeEndDate = null, string? Remark = null);
 
 public interface IVehicleService
 {
@@ -65,6 +69,11 @@ public interface IVehicleService
     Task<object> ListTransportRequestsAsync(string? status, string? dealer, string? transporter, string? vin);
     Task<object?> GetTransportRequestAsync(string transportReqNo);
     Task<object?> TransportRequestTransitionAsync(string transportReqNo, string action, TransportRequestTransitionDto? dto);
+    Task<object> CreateStorageRearrangeAsync(CreateStorageRearrangeDto dto);
+    Task<object> ListStorageRearrangesAsync(string? status, string? vin, string? storageCodeTo);
+    Task<object?> GetStorageRearrangeAsync(string storageRearrangeNo);
+    Task<object?> StorageRearrangeTransitionAsync(string storageRearrangeNo, string action, StorageRearrangeTransitionDto? dto);
+    Task<object?> CompleteStorageRearrangeLineAsync(string storageRearrangeNo, string vin, CompleteStorageRearrangeLineDto? dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -83,6 +92,7 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         {
             OrgId = Org, Vin = vin, Model = dto.Model.Trim(), EngineNo = dto.EngineNo, Color = dto.Color,
             ModelYear = dto.ModelYear, WarrantyMonths = dto.WarrantyMonths is > 0 ? dto.WarrantyMonths!.Value : 36,
+            StorageCode = dto.StorageCode?.Trim(),
             Status = VehicleStatus.InStock
         };
         db.Vehicles.Add(v);
@@ -101,7 +111,7 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         var items = await q.OrderByDescending(v => v.Id).Take(500).Select(v => new
         {
             v.Vin, v.Model, v.Color, v.ModelYear, status = v.Status.ToString(),
-            v.DealerCode, v.OwnerName, v.PlateNo, v.DeliveredAt, v.WarrantyEnd
+            v.StorageCode, v.DealerCode, v.OwnerName, v.PlateNo, v.DeliveredAt, v.WarrantyEnd
         }).ToListAsync();
         return new { count = items.Count, items };
     }
@@ -1008,5 +1018,290 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
 
         await db.SaveChangesAsync();
         return new { tr.TransportReqNo, tr.DealerCode, status = tr.Status, tr.ApprovedAt, tr.DispatchedAt, tr.CompletedAt };
+    }
+
+    // ===== Lệnh tái sắp xếp / Đảo chuyển kho bãi nội bộ OEM (BizHTC.Storage.StorageRearrange / Sto_StorageRearrange) =====
+    public async Task<object> CreateStorageRearrangeAsync(CreateStorageRearrangeDto dto)
+    {
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe (VIN và vị trí đích StorageCodeTo) để tạo lệnh tái sắp xếp kho.");
+
+        var distinctItems = dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin) && !string.IsNullOrWhiteSpace(i.StorageCodeTo))
+            .GroupBy(i => i.Vin.Trim().ToUpperInvariant())
+            .Select(g => g.First())
+            .ToList();
+
+        if (distinctItems.Count == 0)
+            throw new InvalidOperationException("Danh sách xe không hợp lệ (cần VIN và StorageCodeTo).");
+
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        // Kiểm tra xe không được ở trạng thái đã giao cho khách lẻ (Delivered)
+        var invalidDelivered = vehicles.Where(v => v.Status == VehicleStatus.Delivered).Select(v => v.Vin).ToList();
+        if (invalidDelivered.Count > 0)
+            throw new InvalidOperationException("Xe đã giao cho khách (Delivered) không thể tái sắp xếp trong kho bãi: " + string.Join(", ", invalidDelivered));
+
+        var reqNo = string.IsNullOrWhiteSpace(dto.StorageRearrangeNo)
+            ? "SRR" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.StorageRearrangeNo.Trim().ToUpperInvariant();
+
+        if (await db.StorageRearranges.AnyAsync(r => r.OrgId == Org && r.StorageRearrangeNo == reqNo))
+            throw new InvalidOperationException($"Mã lệnh tái sắp xếp kho {reqNo} đã tồn tại.");
+
+        var vMap = vehicles.ToDictionary(v => v.Vin);
+        var srr = new StorageRearrange
+        {
+            OrgId = Org,
+            StorageRearrangeNo = reqNo,
+            Reason = dto.Reason?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            Status = "Requested",
+            CreatedAt = DateTime.Now
+        };
+        db.StorageRearranges.Add(srr);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            var targetStorage = item.StorageCodeTo.Trim().ToUpperInvariant();
+            var currentStorage = item.StorageCodeFrom?.Trim() ?? (vMap.TryGetValue(vin, out var v) ? v.StorageCode : null) ?? "YARD-DEFAULT";
+
+            db.StorageRearrangeLines.Add(new StorageRearrangeLine
+            {
+                OrgId = Org,
+                StorageRearrangeId = srr.Id,
+                StorageRearrangeNo = reqNo,
+                Vin = vin,
+                StorageCodeFrom = currentStorage,
+                StorageCodeTo = targetStorage,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(vin, "StorageRearrangeRequested", $"{reqNo} Chuyển bãi: {currentStorage} -> {targetStorage}");
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            srr.StorageRearrangeNo,
+            srr.Reason,
+            srr.Remark,
+            srr.Status,
+            totalVins = distinctItems.Count,
+            items = distinctItems.Select(i => new { i.Vin, i.StorageCodeTo })
+        };
+    }
+
+    public async Task<object> ListStorageRearrangesAsync(string? status, string? vin, string? storageCodeTo)
+    {
+        var q = db.StorageRearranges.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.StorageRearrangeLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.StorageRearrangeNo).Distinct().ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.StorageRearrangeNo));
+        }
+        if (!string.IsNullOrWhiteSpace(storageCodeTo))
+        {
+            var st = storageCodeTo.Trim().ToUpperInvariant();
+            var matchedNos = await db.StorageRearrangeLines.Where(l => l.OrgId == Org && l.StorageCodeTo == st).Select(l => l.StorageRearrangeNo).Distinct().ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.StorageRearrangeNo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.StorageRearrangeNo,
+            r.Reason,
+            r.Remark,
+            r.Status,
+            r.CreatedAt,
+            r.ApprovedAt,
+            r.CompletedAt,
+            vinCount = db.StorageRearrangeLines.Count(l => l.OrgId == Org && l.StorageRearrangeId == r.Id),
+            completedCount = db.StorageRearrangeLines.Count(l => l.OrgId == Org && l.StorageRearrangeId == r.Id && l.Status == "Completed")
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetStorageRearrangeAsync(string storageRearrangeNo)
+    {
+        storageRearrangeNo = storageRearrangeNo.Trim().ToUpperInvariant();
+        var srr = await db.StorageRearranges.FirstOrDefaultAsync(r => r.OrgId == Org && r.StorageRearrangeNo == storageRearrangeNo);
+        if (srr is null) return null;
+
+        var lines = await db.StorageRearrangeLines.Where(l => l.OrgId == Org && l.StorageRearrangeId == srr.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.StorageCodeFrom,
+            l.StorageCodeTo,
+            l.RearrangeStartDate,
+            l.RearrangeEndDate,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), currentStorage = v.StorageCode, v.DealerCode } : null
+        }).ToList();
+
+        return new
+        {
+            srr.StorageRearrangeNo,
+            srr.Reason,
+            srr.Remark,
+            srr.Status,
+            srr.CreatedAt,
+            srr.ApprovedAt,
+            srr.CompletedAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> StorageRearrangeTransitionAsync(string storageRearrangeNo, string action, StorageRearrangeTransitionDto? dto)
+    {
+        storageRearrangeNo = storageRearrangeNo.Trim().ToUpperInvariant();
+        var srr = await db.StorageRearranges.FirstOrDefaultAsync(r => r.OrgId == Org && r.StorageRearrangeNo == storageRearrangeNo);
+        if (srr is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.StorageRearrangeLines.Where(l => l.OrgId == Org && l.StorageRearrangeId == srr.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+        var vMap = vehicles.ToDictionary(v => v.Vin);
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (srr.Status != "Requested") return null;
+                srr.Status = "Approved";
+                srr.ApprovedAt = now;
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "StorageRearrangeApproved", storageRearrangeNo);
+                break;
+
+            case "start":
+            case "move":
+                if (srr.Status is not ("Approved" or "Requested")) return null;
+                srr.Status = "InProgress";
+                srr.ApprovedAt ??= now;
+                foreach (var l in lines)
+                {
+                    if (l.Status is "Pending" or "Approved")
+                    {
+                        l.Status = "Moving";
+                        l.RearrangeStartDate ??= now;
+                    }
+                }
+                foreach (var v in vehicles) Log(v.Vin, "StorageRearrangeMoving", storageRearrangeNo);
+                break;
+
+            case "complete":
+                if (srr.Status is not ("Approved" or "InProgress")) return null;
+                srr.Status = "Completed";
+                srr.CompletedAt = now;
+                foreach (var l in lines)
+                {
+                    if (l.Status != "Completed")
+                    {
+                        l.Status = "Completed";
+                        l.RearrangeStartDate ??= now;
+                        l.RearrangeEndDate = now;
+                        if (vMap.TryGetValue(l.Vin, out var v))
+                        {
+                            v.StorageCode = l.StorageCodeTo;
+                            Log(v.Vin, "StorageRearrangeCompleted", $"{storageRearrangeNo} Đã chuyển đến ô/bãi: {l.StorageCodeTo}");
+                        }
+                    }
+                }
+                break;
+
+            case "reject":
+                if (srr.Status != "Requested") return null;
+                srr.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    srr.Remark = string.IsNullOrWhiteSpace(srr.Remark) ? dto.Note : $"{srr.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "StorageRearrangeRejected", $"{storageRearrangeNo} Lý do: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (srr.Status is not ("Requested" or "Approved" or "InProgress")) return null;
+                srr.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    srr.Remark = string.IsNullOrWhiteSpace(srr.Remark) ? dto.Note : $"{srr.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) if (l.Status != "Completed") l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "StorageRearrangeCancelled", $"{storageRearrangeNo} Lý do: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { srr.StorageRearrangeNo, status = srr.Status, srr.ApprovedAt, srr.CompletedAt };
+    }
+
+    public async Task<object?> CompleteStorageRearrangeLineAsync(string storageRearrangeNo, string vin, CompleteStorageRearrangeLineDto? dto)
+    {
+        storageRearrangeNo = storageRearrangeNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var srr = await db.StorageRearranges.FirstOrDefaultAsync(r => r.OrgId == Org && r.StorageRearrangeNo == storageRearrangeNo);
+        if (srr is null || srr.Status is "Cancelled" or "Rejected") return null;
+
+        var line = await db.StorageRearrangeLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.StorageRearrangeId == srr.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        var now = DateTime.Now;
+        DateTime endDate = now;
+        if (!string.IsNullOrWhiteSpace(dto?.RearrangeEndDate) && DateTime.TryParse(dto.RearrangeEndDate, out var parsedDate))
+            endDate = parsedDate;
+
+        line.Status = "Completed";
+        line.RearrangeStartDate ??= now;
+        line.RearrangeEndDate = endDate;
+        if (!string.IsNullOrWhiteSpace(dto?.Remark))
+            line.Remark = string.IsNullOrWhiteSpace(line.Remark) ? dto.Remark : $"{line.Remark} | {dto.Remark}";
+
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle != null)
+        {
+            vehicle.StorageCode = line.StorageCodeTo;
+            Log(vin, "StorageRearrangeLineCompleted", $"{storageRearrangeNo} Đã di dời thành công vào bãi/slot: {line.StorageCodeTo}");
+        }
+
+        // Cập nhật trạng thái tổng thể của lệnh
+        var allLines = await db.StorageRearrangeLines.Where(l => l.OrgId == Org && l.StorageRearrangeId == srr.Id).ToListAsync();
+        if (allLines.All(l => l.Status == "Completed"))
+        {
+            srr.Status = "Completed";
+            srr.CompletedAt = now;
+        }
+        else if (srr.Status == "Approved" || srr.Status == "Requested")
+        {
+            srr.Status = "InProgress";
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            srr.StorageRearrangeNo,
+            line.Vin,
+            line.StorageCodeFrom,
+            line.StorageCodeTo,
+            line.Status,
+            line.RearrangeEndDate,
+            headerStatus = srr.Status
+        };
     }
 }

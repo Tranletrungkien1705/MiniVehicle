@@ -104,7 +104,7 @@ app.MapPost("/api/import/vehicles", async (List<ImportVehicleRowDto> rows, AppDb
         db.Vehicles.Add(new Vehicle
         {
             OrgId = tenant.OrgId, Vin = vin, Model = r.ModelCode.Trim(), EngineNo = r.EngineNo, Color = r.ColorCode,
-            ModelYear = r.ProductionYearActual, Status = VehicleStatus.InStock
+            ModelYear = r.ProductionYearActual, StorageCode = r.StorageCodeCurrent, Status = VehicleStatus.InStock
         });
         added++;
     }
@@ -339,6 +339,38 @@ app.MapPost("/api/transport-requests/{transportReqNo}/{action}", async (string t
         return Results.BadRequest(new { error = "action = approve|dispatch|ship|complete|receive|deliver|reject|cancel" });
     var r = await svc.TransportRequestTransitionAsync(transportReqNo, action, dto);
     return r is null ? Results.NotFound(new { transportReqNo, error = "Không thấy yêu cầu vận chuyển hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+// ---- Lệnh tái sắp xếp kho bãi nội bộ OEM (BizHTC.Storage.StorageRearrange / Sto_StorageRearrange) ----
+app.MapPost("/api/rearranges", async (CreateStorageRearrangeDto dto, IVehicleService svc) =>
+{
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách Items (VIN và StorageCodeTo)." });
+    try { return Results.Ok(await svc.CreateStorageRearrangeAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/rearranges", async (IVehicleService svc, string? status, string? vin, string? storageCodeTo) =>
+    Results.Ok(await svc.ListStorageRearrangesAsync(status, vin, storageCodeTo))).RequireAuthorization();
+
+app.MapGet("/api/rearranges/{storageRearrangeNo}", async (string storageRearrangeNo, IVehicleService svc) =>
+{
+    var r = await svc.GetStorageRearrangeAsync(storageRearrangeNo);
+    return r is null ? Results.NotFound(new { storageRearrangeNo, error = "Không tìm thấy lệnh tái sắp xếp kho." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/rearranges/{storageRearrangeNo}/{action}", async (string storageRearrangeNo, string action, StorageRearrangeTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "start" or "move" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|start|move|complete|reject|cancel" });
+    var r = await svc.StorageRearrangeTransitionAsync(storageRearrangeNo, action, dto);
+    return r is null ? Results.NotFound(new { storageRearrangeNo, error = "Không thấy lệnh tái sắp xếp hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/rearranges/{storageRearrangeNo}/lines/{vin}/complete", async (string storageRearrangeNo, string vin, CompleteStorageRearrangeLineDto? dto, IVehicleService svc) =>
+{
+    var r = await svc.CompleteStorageRearrangeLineAsync(storageRearrangeNo, vin, dto);
+    return r is null ? Results.NotFound(new { storageRearrangeNo, vin, error = "Không tìm thấy dòng chi tiết hoặc sai trạng thái." }) : Results.Ok(r);
 }).RequireAuthorization();
 
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
