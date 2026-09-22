@@ -679,6 +679,54 @@ app.MapPost("/api/payment-discounts/{paymentDiscountNo}/lines/{vin}/update", asy
     return r is null ? Results.NotFound(new { paymentDiscountNo, vin, error = "Không tìm thấy dòng xe trong đề nghị chiết khấu hoặc phiếu đã ký/hủy." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Yêu cầu & Quản lý Bảo hiểm lô xe vận chuyển & lưu kho (BizHTC.WH.Ins_InsuranceReq / Ins_InsuranceReq) ----
+app.MapPost("/api/insurance-requests", async (CreateInsuranceRequestDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.InsCompanyCode))
+        return Results.BadRequest(new { error = "Cần mã hãng bảo hiểm InsCompanyCode." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong yêu cầu bảo hiểm." });
+    try { return Results.Ok(await svc.CreateInsuranceRequestAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/insurance-requests", async (IVehicleService svc, string? status, string? insCompanyCode, string? insTypeCode, string? vin) =>
+    Results.Ok(await svc.ListInsuranceRequestsAsync(status, insCompanyCode, insTypeCode, vin))).RequireAuthorization();
+
+app.MapGet("/api/insurance-requests/{insReqNo}", async (string insReqNo, IVehicleService svc) =>
+{
+    var r = await svc.GetInsuranceRequestAsync(insReqNo);
+    return r is null ? Results.NotFound(new { insReqNo, error = "Không tìm thấy yêu cầu bảo hiểm." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/insurance-requests/{insReqNo}/{action}", async (string insReqNo, string action, InsuranceRequestTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|complete|reject|cancel" });
+    var r = await svc.InsuranceRequestTransitionAsync(insReqNo, action, dto);
+    return r is null ? Results.NotFound(new { insReqNo, error = "Không thấy yêu cầu bảo hiểm hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/insurance-requests/{insReqNo}/lines/{vin}/update", async (string insReqNo, string vin, UpdateInsuranceRequestLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateInsuranceRequestLineAsync(insReqNo, vin, dto);
+    return r is null ? Results.NotFound(new { insReqNo, vin, error = "Không tìm thấy dòng xe trong yêu cầu bảo hiểm hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/insurance-requests/{insReqNo}/lines", async (string insReqNo, List<InsuranceItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào yêu cầu bảo hiểm." });
+    var r = await svc.AddInsuranceRequestLinesAsync(insReqNo, items);
+    return r is null ? Results.NotFound(new { insReqNo, error = "Không tìm thấy yêu cầu bảo hiểm hoặc hồ sơ đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapDelete("/api/insurance-requests/{insReqNo}/lines/{vin}", async (string insReqNo, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveInsuranceRequestLineAsync(insReqNo, vin);
+    return r is null ? Results.NotFound(new { insReqNo, vin, error = "Không tìm thấy dòng xe trong yêu cầu bảo hiểm hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

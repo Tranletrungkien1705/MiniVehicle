@@ -87,6 +87,11 @@ public record CreatePaymentDiscountDto(string DealerCode, List<PaymentDiscountIt
 public record PaymentDiscountTransitionDto(string? Note = null, string? User = null, string? FilePath = null);
 public record UpdatePaymentDiscountLineDto(PaymentDiscountPhaseInputDto? Phase1 = null, PaymentDiscountPhaseInputDto? Phase2 = null, PaymentDiscountPhaseInputDto? Phase3 = null, string? GuaranteeNo = null, DateTime? PG_DateEnd = null, string? Remark = null);
 
+public record InsuranceItemInputDto(string Vin, decimal? InsuredValue = null, decimal? PremiumRate = null, decimal? PremiumAmount = null, int InsuranceDays = 30, string? FromStorage = null, string? ToStorage = null, string? CertificateNo = null, string? Remark = null);
+public record CreateInsuranceRequestDto(string InsCompanyCode, List<InsuranceItemInputDto>? Items = null, List<string>? Vins = null, string? InsCompanyName = null, string? InsTypeCode = "CARGO", string? PolicyNo = null, DateTime? EffectiveDate = null, DateTime? ExpireDate = null, decimal? PremiumRate = null, string? Remark = null, string? InsReqNo = null, string? CreatedBy = null);
+public record InsuranceRequestTransitionDto(string? Note = null, string? ApprovedBy = null, string? PolicyNo = null);
+public record UpdateInsuranceRequestLineDto(decimal? InsuredValue = null, decimal? PremiumRate = null, decimal? PremiumAmount = null, int? InsuranceDays = null, string? FromStorage = null, string? ToStorage = null, string? CertificateNo = null, string? Remark = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -177,6 +182,13 @@ public interface IVehicleService
     Task<object?> GetPaymentDiscountAsync(string paymentDiscountNo);
     Task<object?> PaymentDiscountTransitionAsync(string paymentDiscountNo, string action, PaymentDiscountTransitionDto? dto);
     Task<object?> UpdatePaymentDiscountLineAsync(string paymentDiscountNo, string vin, UpdatePaymentDiscountLineDto dto);
+    Task<object> CreateInsuranceRequestAsync(CreateInsuranceRequestDto dto);
+    Task<object> ListInsuranceRequestsAsync(string? status, string? insCompanyCode, string? insTypeCode, string? vin);
+    Task<object?> GetInsuranceRequestAsync(string insReqNo);
+    Task<object?> InsuranceRequestTransitionAsync(string insReqNo, string action, InsuranceRequestTransitionDto? dto);
+    Task<object?> UpdateInsuranceRequestLineAsync(string insReqNo, string vin, UpdateInsuranceRequestLineDto dto);
+    Task<object?> AddInsuranceRequestLinesAsync(string insReqNo, List<InsuranceItemInputDto> items);
+    Task<object?> RemoveInsuranceRequestLineAsync(string insReqNo, string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -4534,6 +4546,483 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             line.Remark,
             discountTotalPaymentAmount = pd.TotalPaymentAmount,
             discountTotalDiscountAmount = pd.TotalDiscountAmount
+        };
+    }
+
+    // ===== Yêu cầu & Quản lý Bảo hiểm lô xe vận chuyển & lưu kho (BizHTC.WH.Ins_InsuranceReq / Ins_InsuranceReq) =====
+    public async Task<object> CreateInsuranceRequestAsync(CreateInsuranceRequestDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.InsCompanyCode))
+            throw new InvalidOperationException("Cần mã hãng bảo hiểm InsCompanyCode.");
+
+        var items = new List<InsuranceItemInputDto>();
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            items.AddRange(dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)));
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            items.AddRange(dto.Vins.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => new InsuranceItemInputDto(v)));
+        }
+
+        if (items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe (VIN) trong yêu cầu bảo hiểm.");
+
+        var distinctItems = items.DistinctBy(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var vMap = vehicles.ToDictionary(v => v.Vin);
+
+        var companyCode = dto.InsCompanyCode.Trim().ToUpperInvariant();
+        var companyName = !string.IsNullOrWhiteSpace(dto.InsCompanyName)
+            ? dto.InsCompanyName.Trim()
+            : companyCode switch
+            {
+                "PVI" => "Tổng công ty Bảo hiểm PVI",
+                "BAOVIET" or "BV" => "Tổng công ty Bảo hiểm Bảo Việt",
+                "PJICO" => "Tổng công ty Cổ phần Bảo hiểm Petrolimex (PJICO)",
+                "PTI" => "Tổng công ty Cổ phần Bảo hiểm Bưu điện (PTI)",
+                "BMI" or "BAOMINH" => "Tổng công ty Cổ phần Bảo Minh",
+                "BIC" => "Tổng công ty Bảo hiểm BIDV (BIC)",
+                "MIC" => "Tổng công ty Cổ phần Bảo hiểm Quân đội (MIC)",
+                _ => companyCode
+            };
+
+        var reqNo = string.IsNullOrWhiteSpace(dto.InsReqNo)
+            ? "INS" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.InsReqNo.Trim().ToUpperInvariant();
+
+        if (await db.InsuranceRequests.AnyAsync(r => r.OrgId == Org && r.InsReqNo == reqNo))
+            throw new InvalidOperationException($"Mã yêu cầu bảo hiểm {reqNo} đã tồn tại.");
+
+        var defaultRate = dto.PremiumRate is > 0 ? dto.PremiumRate.Value : 0.15m;
+        var effectiveDate = dto.EffectiveDate ?? DateTime.Now;
+
+        decimal totalInsuredValue = 0;
+        decimal totalPremiumAmount = 0;
+
+        var lineList = new List<InsuranceRequestLine>();
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            var v = vMap[vin];
+
+            var lineInsuredValue = item.InsuredValue.HasValue && item.InsuredValue.Value > 0
+                ? item.InsuredValue.Value
+                : 500000000m; // Định giá chuẩn nếu không chỉ định
+
+            var lineRate = item.PremiumRate is > 0 ? item.PremiumRate.Value : defaultRate;
+            var linePremium = item.PremiumAmount.HasValue && item.PremiumAmount.Value >= 0
+                ? item.PremiumAmount.Value
+                : Math.Round(lineInsuredValue * (lineRate / 100m), 0);
+
+            var days = item.InsuranceDays > 0 ? item.InsuranceDays : 30;
+            var fromStorage = item.FromStorage?.Trim() ?? v.StorageCode ?? "YARD-DEFAULT";
+            var toStorage = item.ToStorage?.Trim() ?? v.DealerCode ?? "DLR-DEST";
+
+            totalInsuredValue += lineInsuredValue;
+            totalPremiumAmount += linePremium;
+
+            lineList.Add(new InsuranceRequestLine
+            {
+                OrgId = Org,
+                InsReqNo = reqNo,
+                Vin = vin,
+                Model = v.Model,
+                EngineNo = v.EngineNo,
+                Color = v.Color,
+                InsuredValue = lineInsuredValue,
+                PremiumRate = lineRate,
+                PremiumAmount = linePremium,
+                InsuranceDays = days,
+                FromStorage = fromStorage,
+                ToStorage = toStorage,
+                CertificateNo = item.CertificateNo?.Trim().ToUpperInvariant(),
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        var ins = new InsuranceRequest
+        {
+            OrgId = Org,
+            InsReqNo = reqNo,
+            InsCompanyCode = companyCode,
+            InsCompanyName = companyName,
+            InsTypeCode = string.IsNullOrWhiteSpace(dto.InsTypeCode) ? "CARGO" : dto.InsTypeCode.Trim().ToUpperInvariant(),
+            PolicyNo = dto.PolicyNo?.Trim().ToUpperInvariant(),
+            EffectiveDate = effectiveDate,
+            ExpireDate = dto.ExpireDate ?? effectiveDate.AddDays(30),
+            TotalVehicleCount = distinctItems.Count,
+            TotalInsuredValue = totalInsuredValue,
+            PremiumRate = defaultRate,
+            TotalPremiumAmount = totalPremiumAmount,
+            Status = "Draft",
+            CreatedBy = dto.CreatedBy?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.InsuranceRequests.Add(ins);
+        await db.SaveChangesAsync();
+
+        foreach (var l in lineList)
+        {
+            l.InsuranceRequestId = ins.Id;
+            db.InsuranceRequestLines.Add(l);
+            Log(l.Vin, "InsuranceReqCreated", $"{reqNo} Hãng BH: {ins.InsCompanyCode} ({ins.InsTypeCode}). Giá trị định giá: {l.InsuredValue:N0} VNĐ, Phí: {l.PremiumAmount:N0} VNĐ");
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ins.InsReqNo,
+            ins.InsCompanyCode,
+            ins.InsCompanyName,
+            ins.InsTypeCode,
+            ins.EffectiveDate,
+            ins.ExpireDate,
+            ins.TotalVehicleCount,
+            ins.TotalInsuredValue,
+            ins.TotalPremiumAmount,
+            ins.Status,
+            linesCount = lineList.Count
+        };
+    }
+
+    public async Task<object> ListInsuranceRequestsAsync(string? status, string? insCompanyCode, string? insTypeCode, string? vin)
+    {
+        var q = db.InsuranceRequests.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(insCompanyCode)) q = q.Where(r => r.InsCompanyCode == insCompanyCode);
+        if (!string.IsNullOrWhiteSpace(insTypeCode)) q = q.Where(r => r.InsTypeCode == insTypeCode);
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.InsuranceRequestLines
+                .Where(l => l.OrgId == Org && l.Vin == vv)
+                .Select(l => l.InsReqNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.InsReqNo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.InsReqNo,
+            r.InsCompanyCode,
+            r.InsCompanyName,
+            r.InsTypeCode,
+            r.PolicyNo,
+            r.EffectiveDate,
+            r.ExpireDate,
+            r.TotalVehicleCount,
+            r.TotalInsuredValue,
+            r.PremiumRate,
+            r.TotalPremiumAmount,
+            r.Status,
+            r.CreatedBy,
+            r.ApprovedBy,
+            r.CreatedAt,
+            r.ApprovedAt,
+            r.CompletedAt,
+            r.CancelledAt,
+            linesCount = db.InsuranceRequestLines.Count(l => l.OrgId == Org && l.InsuranceRequestId == r.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetInsuranceRequestAsync(string insReqNo)
+    {
+        insReqNo = insReqNo.Trim().ToUpperInvariant();
+        var ins = await db.InsuranceRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.InsReqNo == insReqNo);
+        if (ins is null) return null;
+
+        var lines = await db.InsuranceRequestLines.Where(l => l.OrgId == Org && l.InsuranceRequestId == ins.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.EngineNo,
+            l.Color,
+            l.InsuredValue,
+            l.PremiumRate,
+            l.PremiumAmount,
+            l.InsuranceDays,
+            l.FromStorage,
+            l.ToStorage,
+            l.CertificateNo,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.ModelYear,
+                v.StorageCode,
+                v.DealerCode,
+                status = v.Status.ToString(),
+                v.OwnerName,
+                v.PlateNo
+            } : null
+        }).ToList();
+
+        return new
+        {
+            ins.InsReqNo,
+            ins.InsCompanyCode,
+            ins.InsCompanyName,
+            ins.InsTypeCode,
+            ins.PolicyNo,
+            ins.EffectiveDate,
+            ins.ExpireDate,
+            ins.TotalVehicleCount,
+            ins.TotalInsuredValue,
+            ins.PremiumRate,
+            ins.TotalPremiumAmount,
+            ins.Status,
+            ins.CreatedBy,
+            ins.CreatedAt,
+            ins.ApprovedBy,
+            ins.ApprovedAt,
+            ins.CompletedAt,
+            ins.CancelledAt,
+            ins.Remark,
+            lines = details
+        };
+    }
+
+    public async Task<object?> InsuranceRequestTransitionAsync(string insReqNo, string action, InsuranceRequestTransitionDto? dto)
+    {
+        insReqNo = insReqNo.Trim().ToUpperInvariant();
+        var ins = await db.InsuranceRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.InsReqNo == insReqNo);
+        if (ins is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.InsuranceRequestLines.Where(l => l.OrgId == Org && l.InsuranceRequestId == ins.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+                if (ins.Status != "Draft") return null;
+                ins.Status = "Submitted";
+                foreach (var l in lines) l.Status = "Submitted";
+                foreach (var v in vehicles) Log(v.Vin, "InsuranceReqSubmitted", $"{insReqNo} Trình duyệt bảo hiểm tới hãng {ins.InsCompanyCode}");
+                break;
+
+            case "approve":
+                if (ins.Status is not ("Draft" or "Submitted")) return null;
+                ins.Status = "Approved";
+                ins.ApprovedBy = dto?.ApprovedBy?.Trim() ?? "InsManager";
+                ins.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.PolicyNo)) ins.PolicyNo = dto.PolicyNo.Trim().ToUpperInvariant();
+                foreach (var l in lines) l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "InsuranceReqApproved", $"{insReqNo} Phê duyệt bảo hiểm {ins.InsCompanyCode} ({ins.InsTypeCode}). Số HĐ: {ins.PolicyNo ?? "N/A"}. Duyệt bởi: {ins.ApprovedBy}");
+                break;
+
+            case "complete":
+                if (ins.Status != "Approved") return null;
+                ins.Status = "Completed";
+                ins.CompletedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.PolicyNo)) ins.PolicyNo = dto.PolicyNo.Trim().ToUpperInvariant();
+                foreach (var l in lines)
+                {
+                    l.Status = "Completed";
+                    if (string.IsNullOrWhiteSpace(l.CertificateNo))
+                    {
+                        var shortVin = l.Vin.Length >= 6 ? l.Vin[^6..] : l.Vin;
+                        l.CertificateNo = $"GCN-{ins.InsCompanyCode}-{now:yyyyMMdd}-{shortVin}";
+                    }
+                }
+                foreach (var v in vehicles) Log(v.Vin, "InsuranceReqCompleted", $"{insReqNo} Hoàn tất & xuất GCN bảo hiểm điện tử {ins.InsCompanyCode} ({ins.InsTypeCode}). Số HĐ: {ins.PolicyNo ?? "N/A"}");
+                break;
+
+            case "reject":
+                if (ins.Status is "Completed" or "Cancelled") return null;
+                ins.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    ins.Remark = string.IsNullOrWhiteSpace(ins.Remark) ? dto.Note : $"{ins.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "InsuranceReqRejected", $"{insReqNo} Từ chối yêu cầu bảo hiểm: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (ins.Status is "Completed" or "Cancelled") return null;
+                ins.Status = "Cancelled";
+                ins.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    ins.Remark = string.IsNullOrWhiteSpace(ins.Remark) ? dto.Note : $"{ins.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "InsuranceReqCancelled", $"{insReqNo} Hủy yêu cầu bảo hiểm: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            ins.InsReqNo,
+            ins.InsCompanyCode,
+            ins.PolicyNo,
+            status = ins.Status,
+            ins.ApprovedAt,
+            ins.CompletedAt,
+            ins.CancelledAt
+        };
+    }
+
+    public async Task<object?> UpdateInsuranceRequestLineAsync(string insReqNo, string vin, UpdateInsuranceRequestLineDto dto)
+    {
+        insReqNo = insReqNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var ins = await db.InsuranceRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.InsReqNo == insReqNo);
+        if (ins is null || ins.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.InsuranceRequestLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.InsuranceRequestId == ins.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.InsuredValue.HasValue && dto.InsuredValue.Value > 0) line.InsuredValue = dto.InsuredValue.Value;
+        if (dto.PremiumRate.HasValue && dto.PremiumRate.Value > 0) line.PremiumRate = dto.PremiumRate.Value;
+        if (dto.PremiumAmount.HasValue && dto.PremiumAmount.Value >= 0) line.PremiumAmount = dto.PremiumAmount.Value;
+        else if (dto.InsuredValue.HasValue || dto.PremiumRate.HasValue)
+            line.PremiumAmount = Math.Round(line.InsuredValue * (line.PremiumRate / 100m), 0);
+
+        if (dto.InsuranceDays.HasValue && dto.InsuranceDays.Value > 0) line.InsuranceDays = dto.InsuranceDays.Value;
+        if (!string.IsNullOrWhiteSpace(dto.FromStorage)) line.FromStorage = dto.FromStorage.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.ToStorage)) line.ToStorage = dto.ToStorage.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CertificateNo)) line.CertificateNo = dto.CertificateNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.InsuranceRequestLines.Where(l => l.OrgId == Org && l.InsuranceRequestId == ins.Id).ToListAsync();
+        ins.TotalInsuredValue = allLines.Sum(l => l.InsuredValue);
+        ins.TotalPremiumAmount = allLines.Sum(l => l.PremiumAmount);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ins.InsReqNo,
+            line.Vin,
+            line.InsuredValue,
+            line.PremiumRate,
+            line.PremiumAmount,
+            line.CertificateNo,
+            line.Remark,
+            totalInsuredValue = ins.TotalInsuredValue,
+            totalPremiumAmount = ins.TotalPremiumAmount
+        };
+    }
+
+    public async Task<object?> AddInsuranceRequestLinesAsync(string insReqNo, List<InsuranceItemInputDto> items)
+    {
+        insReqNo = insReqNo.Trim().ToUpperInvariant();
+        var ins = await db.InsuranceRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.InsReqNo == insReqNo);
+        if (ins is null || ins.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var distinctItems = items.Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+            .DistinctBy(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.InsuranceRequestLines.Where(l => l.OrgId == Org && l.InsuranceRequestId == ins.Id)
+            .Select(l => l.Vin).ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin.Trim().ToUpperInvariant())).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        foreach (var item in newItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            if (!vehicles.TryGetValue(vin, out var v)) continue;
+
+            var lineVal = item.InsuredValue is > 0 ? item.InsuredValue.Value : 500000000m;
+            var lineRate = item.PremiumRate is > 0 ? item.PremiumRate.Value : ins.PremiumRate;
+            var linePremium = item.PremiumAmount is >= 0 ? item.PremiumAmount.Value : Math.Round(lineVal * (lineRate / 100m), 0);
+
+            db.InsuranceRequestLines.Add(new InsuranceRequestLine
+            {
+                OrgId = Org,
+                InsuranceRequestId = ins.Id,
+                InsReqNo = ins.InsReqNo,
+                Vin = vin,
+                Model = v.Model,
+                EngineNo = v.EngineNo,
+                Color = v.Color,
+                InsuredValue = lineVal,
+                PremiumRate = lineRate,
+                PremiumAmount = linePremium,
+                InsuranceDays = item.InsuranceDays > 0 ? item.InsuranceDays : 30,
+                FromStorage = item.FromStorage?.Trim() ?? v.StorageCode ?? "YARD-DEFAULT",
+                ToStorage = item.ToStorage?.Trim() ?? v.DealerCode ?? "DLR-DEST",
+                CertificateNo = item.CertificateNo?.Trim().ToUpperInvariant(),
+                Status = ins.Status == "Approved" ? "Approved" : "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(vin, "InsuranceReqLineAdded", $"{insReqNo} Bổ sung xe vào yêu cầu bảo hiểm {ins.InsCompanyCode}");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.InsuranceRequestLines.Where(l => l.OrgId == Org && l.InsuranceRequestId == ins.Id).ToListAsync();
+        ins.TotalVehicleCount = allLines.Count;
+        ins.TotalInsuredValue = allLines.Sum(l => l.InsuredValue);
+        ins.TotalPremiumAmount = allLines.Sum(l => l.PremiumAmount);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ins.InsReqNo,
+            addedCount = newItems.Count,
+            ins.TotalVehicleCount,
+            ins.TotalInsuredValue,
+            ins.TotalPremiumAmount
+        };
+    }
+
+    public async Task<object?> RemoveInsuranceRequestLineAsync(string insReqNo, string vin)
+    {
+        insReqNo = insReqNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var ins = await db.InsuranceRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.InsReqNo == insReqNo);
+        if (ins is null || ins.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.InsuranceRequestLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.InsuranceRequestId == ins.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.InsuranceRequestLines.Remove(line);
+        Log(vin, "InsuranceReqLineRemoved", $"{insReqNo} Rút xe khỏi yêu cầu bảo hiểm {ins.InsCompanyCode}");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.InsuranceRequestLines.Where(l => l.OrgId == Org && l.InsuranceRequestId == ins.Id).ToListAsync();
+        ins.TotalVehicleCount = allLines.Count;
+        ins.TotalInsuredValue = allLines.Sum(l => l.InsuredValue);
+        ins.TotalPremiumAmount = allLines.Sum(l => l.PremiumAmount);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ins.InsReqNo,
+            vin,
+            ins.TotalVehicleCount,
+            ins.TotalInsuredValue,
+            ins.TotalPremiumAmount
         };
     }
 }

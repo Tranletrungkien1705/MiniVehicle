@@ -49,6 +49,10 @@
 <li><code>POST /api/payment-discounts</code> &amp; <code>/api/payment-discounts/{no}/{action}</code> — tạo, sơ duyệt &amp; ký số quyết toán chiết khấu thanh toán mua xe ô tô cho đại lý qua ngân hàng (BizHTC.PaymentDiscount / Req_PaymentDiscount: approve, dlr-sign, htc-sign, reject, cancel)</li>
 <li><code>GET /api/payment-discounts?status=&dealer=&paymentDiscountNo=&vin=</code> — tra cứu danh sách đề nghị chiết khấu thanh toán (Phase 1/2/3, % chiết khấu, tiền chiết khấu)</li>
 <li><code>POST /api/payment-discounts/{no}/lines/{vin}/update</code> — cập nhật chi tiết các đợt thanh toán sớm và số tiền chiết khấu theo từng xe VIN</li>
+<li><code>POST /api/insurance-requests</code> &amp; <code>/api/insurance-requests/{no}/{action}</code> — yêu cầu &amp; phê duyệt bảo hiểm lô xe ô tô vận chuyển, lưu kho bãi OEM và cấp GCN bảo hiểm điện tử (BizHTC.WH.Ins_InsuranceReq / Ins_InsuranceReq: submit, approve, complete, reject, cancel)</li>
+<li><code>GET /api/insurance-requests?status=&insCompanyCode=&insTypeCode=&vin=</code> — tra cứu danh sách yêu cầu bảo hiểm lô xe (PVI, BAOVIET, PJICO, PTI...)</li>
+<li><code>POST /api/insurance-requests/{no}/lines/{vin}/update</code> — điều chỉnh giá trị định giá xe, phí bảo hiểm, kho xuất/nhận, số GCN bảo hiểm điện tử theo từng xe VIN</li>
+<li><code>POST /api/insurance-requests/{no}/lines</code> &amp; <code>DELETE /api/insurance-requests/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong yêu cầu bảo hiểm</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

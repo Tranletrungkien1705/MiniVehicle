@@ -668,6 +668,54 @@ public sealed class PaymentDiscountLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Yêu cầu & Hợp đồng Bảo hiểm lô xe vận chuyển & lưu kho (BizHTC.WH.Ins_InsuranceReq / Ins_InsuranceReq): quản lý mua/tham gia bảo hiểm vật chất, bảo hiểm xe lồng vận chuyển, lưu kho bãi OEM và cấp GCN bảo hiểm điện tử.</summary>
+public sealed class InsuranceRequest
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string InsReqNo { get; set; } = "";             // Mã yêu cầu bảo hiểm (INS...)
+    public string InsCompanyCode { get; set; } = "";       // Mã công ty bảo hiểm (PVI, BAOVIET, PJICO, PTI, BMI, BIC, MIC...)
+    public string? InsCompanyName { get; set; }            // Tên hãng bảo hiểm
+    public string InsTypeCode { get; set; } = "CARGO";     // Loại hình BH: CARGO (Vận chuyển xe lồng đường bộ), STORAGE (Lưu kho bãi OEM), COMPREHENSIVE (Vật chất thân vỏ toàn diện), TRANSIT (Nội bộ/PDI)
+    public string? PolicyNo { get; set; }                  // Số hợp đồng / Giấy chứng nhận bảo hiểm khung
+    public DateTime EffectiveDate { get; set; } = DateTime.Now; // Ngày bắt đầu hiệu lực bảo hiểm
+    public DateTime? ExpireDate { get; set; }              // Ngày hết hạn bảo hiểm
+    public int TotalVehicleCount { get; set; } = 0;        // Tổng số lượng xe tham gia bảo hiểm
+    public decimal TotalInsuredValue { get; set; } = 0;    // Tổng giá trị định giá các xe (VNĐ)
+    public decimal PremiumRate { get; set; } = 0.15m;      // Tỷ lệ phí bảo hiểm (%) (VD: 0.15% = 0.15)
+    public decimal TotalPremiumAmount { get; set; } = 0;   // Tổng phí bảo hiểm phải nộp (VNĐ)
+    public string Status { get; set; } = "Draft";          // Draft → Submitted → Approved → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Ghi chú hợp đồng bảo hiểm
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }             // Ngày xuất đủ GCNBH / tất toán phí bảo hiểm
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong yêu cầu bảo hiểm (BizHTC.WH.Ins_InsuranceReqDtl / Ins_InsuranceReqDtl): danh sách VIN, định giá xe, phí bảo hiểm, kho xuất phát/đích và số GCN bảo hiểm điện tử cấp cho xe.</summary>
+public sealed class InsuranceRequestLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long InsuranceRequestId { get; set; }
+    public string InsReqNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? EngineNo { get; set; }
+    public string? Color { get; set; }
+    public decimal InsuredValue { get; set; } = 0;         // Giá trị định giá bảo hiểm của xe (VNĐ)
+    public decimal PremiumRate { get; set; } = 0.15m;      // Tỷ lệ phí bảo hiểm (%)
+    public decimal PremiumAmount { get; set; } = 0;        // Phí bảo hiểm xe này (VNĐ)
+    public int InsuranceDays { get; set; } = 30;           // Thời hạn bảo hiểm (ngày)
+    public string? FromStorage { get; set; }               // Kho xuất phát (nếu bảo hiểm vận chuyển)
+    public string? ToStorage { get; set; }                 // Kho / Điểm đến
+    public string? CertificateNo { get; set; }             // Số GCN bảo hiểm xe điện tử (GCN-...)
+    public string Status { get; set; } = "Pending";        // Pending → Approved → Completed (hoặc Cancelled / Rejected)
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {
