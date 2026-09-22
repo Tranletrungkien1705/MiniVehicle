@@ -775,6 +775,117 @@ app.MapDelete("/api/transport-minutes/{transportMinutesNo}/lines/{vin}", async (
     return r is null ? Results.NotFound(new { transportMinutesNo, vin, error = "Không tìm thấy dòng xe trong biên bản vận chuyển hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Chứng từ / Phiếu thanh toán tiền mua xe ô tô cho Đại lý (BizHTC.Payment.Pmt_Payment / DealerPayment) ----
+app.MapPost("/api/payments", async (CreateDealerPaymentDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode nộp tiền mua xe." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong phiếu thanh toán." });
+    try { return Results.Ok(await svc.CreateDealerPaymentAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/payments", async (IVehicleService svc, string? status, string? dealer, string? paymentType, string? paymentNo, string? vin) =>
+    Results.Ok(await svc.ListDealerPaymentsAsync(status, dealer, paymentType, paymentNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/payments/{paymentNo}", async (string paymentNo, IVehicleService svc) =>
+{
+    var r = await svc.GetDealerPaymentAsync(paymentNo);
+    return r is null ? Results.NotFound(new { paymentNo, error = "Không tìm thấy phiếu thanh toán tiền xe." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/payments/{paymentNo}/{action}", async (string paymentNo, string action, DealerPaymentTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "confirm" or "complete" or "finish" or "settle" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|confirm|reject|cancel" });
+    var r = await svc.DealerPaymentTransitionAsync(paymentNo, action, dto);
+    return r is null ? Results.NotFound(new { paymentNo, error = "Không thấy phiếu thanh toán hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/payments/{paymentNo}/lines/{vin}/update", async (string paymentNo, string vin, UpdateDealerPaymentLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateDealerPaymentLineAsync(paymentNo, vin, dto);
+    return r is null ? Results.NotFound(new { paymentNo, vin, error = "Không tìm thấy dòng xe trong phiếu thanh toán hoặc chứng từ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/payments/{paymentNo}/lines", async (string paymentNo, List<DealerPaymentItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào phiếu thanh toán." });
+    var r = await svc.AddDealerPaymentLinesAsync(paymentNo, items);
+    return r is null ? Results.NotFound(new { paymentNo, error = "Không tìm thấy phiếu thanh toán hoặc chứng từ đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapDelete("/api/payments/{paymentNo}/lines/{vin}", async (string paymentNo, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveDealerPaymentLineAsync(paymentNo, vin);
+    return r is null ? Results.NotFound(new { paymentNo, vin, error = "Không tìm thấy dòng xe trong phiếu thanh toán hoặc chứng từ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+// ---- Bảo dưỡng định kỳ xe tồn kho OEM (BizHTC.StorageFG.VIN_MaintainPeriod & StoF_Maintain / StorageMaintenance) ----
+app.MapPost("/api/storage-maintenances", async (CreateStorageMaintenanceDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.StorageCode))
+        return Results.BadRequest(new { error = "Cần mã kho/bãi bốc xếp StorageCode." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong phiếu bảo dưỡng kho." });
+    try { return Results.Ok(await svc.CreateStorageMaintenanceAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/storage-maintenances", async (IVehicleService svc, string? status, string? storageCode, string? mtnType, string? mtnNo, string? vin) =>
+    Results.Ok(await svc.ListStorageMaintenancesAsync(status, storageCode, mtnType, mtnNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/storage-maintenances/due-vehicles", async (IVehicleService svc, string? storageCode, int? dueWithinDays) =>
+    Results.Ok(await svc.GetDueMaintenanceVehiclesAsync(storageCode, dueWithinDays ?? 7))).RequireAuthorization();
+
+app.MapGet("/api/storage-maintenances/{mtnNo}", async (string mtnNo, IVehicleService svc) =>
+{
+    var r = await svc.GetStorageMaintenanceAsync(mtnNo);
+    return r is null ? Results.NotFound(new { mtnNo, error = "Không tìm thấy phiếu bảo dưỡng kho." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/storage-maintenances/{mtnNo}/{action}", async (string mtnNo, string action, StorageMaintenanceTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "request" or "approve" or "start" or "in-progress" or "inprogress" or "complete" or "finish" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|start|complete|reject|cancel" });
+    var r = await svc.StorageMaintenanceTransitionAsync(mtnNo, action, dto);
+    return r is null ? Results.NotFound(new { mtnNo, error = "Không thấy phiếu bảo dưỡng hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/storage-maintenances/{mtnNo}/lines/{vin}/inspect", async (string mtnNo, string vin, InspectStorageMaintenanceLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.InspectStorageMaintenanceLineAsync(mtnNo, vin, dto);
+    return r is null ? Results.NotFound(new { mtnNo, vin, error = "Không tìm thấy dòng xe trong phiếu bảo dưỡng hoặc phiếu đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/storage-maintenances/{mtnNo}/lines/{vin}/update", async (string mtnNo, string vin, UpdateStorageMaintenanceLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateStorageMaintenanceLineAsync(mtnNo, vin, dto);
+    return r is null ? Results.NotFound(new { mtnNo, vin, error = "Không tìm thấy dòng xe trong phiếu bảo dưỡng hoặc phiếu đã hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/storage-maintenances/{mtnNo}/lines", async (string mtnNo, List<StorageMaintenanceItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào phiếu bảo dưỡng kho." });
+    var r = await svc.AddStorageMaintenanceLinesAsync(mtnNo, items);
+    return r is null ? Results.NotFound(new { mtnNo, error = "Không tìm thấy phiếu bảo dưỡng hoặc phiếu đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapDelete("/api/storage-maintenances/{mtnNo}/lines/{vin}", async (string mtnNo, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveStorageMaintenanceLineAsync(mtnNo, vin);
+    return r is null ? Results.NotFound(new { mtnNo, vin, error = "Không tìm thấy dòng xe trong phiếu bảo dưỡng hoặc phiếu đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/maintenance-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleMaintenanceHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

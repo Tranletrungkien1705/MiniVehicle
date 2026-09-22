@@ -97,6 +97,98 @@ public record CreateTransportMinutesDto(string DealerCode, string TransporterCod
 public record TransportMinutesTransitionDto(string? Note = null, string? User = null, string? FilePath = null);
 public record UpdateTransportMinutesLineDto(int? OdoDeparture = null, int? OdoArrival = null, decimal? FreightAmount = null, decimal? Surcharge = null, string? CargoCondition = null, bool? IsInspectionPassed = null, string? Remark = null);
 
+public record DealerPaymentItemInputDto(string Vin, decimal? Amount = null, string? GuaranteeNo = null, string? Remark = null);
+public record CreateDealerPaymentDto(
+    string DealerCode,
+    List<DealerPaymentItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    decimal? TotalAmount = null,
+    string? PaymentType = "Payment",
+    string? BankNameSend = null,
+    string? BankNameReceive = null,
+    string? BankPaymentNo = null,
+    string? Remark = null,
+    string? PaymentNo = null,
+    string? CreatedBy = null
+);
+public record DealerPaymentTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? AccountingRecordNo = null,
+    DateTime? PaymentEndDate = null
+);
+public record UpdateDealerPaymentLineDto(
+    decimal? Amount = null,
+    string? GuaranteeNo = null,
+    string? Remark = null
+);
+
+public record StorageMaintenanceItemInputDto(
+    string Vin,
+    string? StorageCode = null,
+    double? BatteryVoltage = 12.6,
+    bool? ChargeBatteryOk = true,
+    bool? EngineStartCheckOk = true,
+    bool? TirePressureCheckOk = true,
+    bool? TireRotationOk = true,
+    bool? FluidLevelsCheckOk = true,
+    bool? ElectricalSystemsOk = true,
+    bool? BodyCleanOk = true,
+    string? DefectNotes = null,
+    string? Remark = null
+);
+
+public record CreateStorageMaintenanceDto(
+    string StorageCode,
+    List<StorageMaintenanceItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? MtnType = "Periodic",
+    DateTime? PlanDate = null,
+    string? TechnicianCode = null,
+    string? TechnicianName = null,
+    string? SupervisorCode = null,
+    string? SupervisorName = null,
+    string? Remark = null,
+    string? MtnNo = null,
+    string? CreatedBy = null
+);
+
+public record StorageMaintenanceTransitionDto(
+    string? Note = null,
+    string? User = null,
+    string? TechnicianName = null,
+    string? SupervisorName = null
+);
+
+public record InspectStorageMaintenanceLineDto(
+    double? BatteryVoltage = 12.6,
+    bool? ChargeBatteryOk = true,
+    bool? EngineStartCheckOk = true,
+    bool? TirePressureCheckOk = true,
+    bool? TireRotationOk = true,
+    bool? FluidLevelsCheckOk = true,
+    bool? ElectricalSystemsOk = true,
+    bool? BodyCleanOk = true,
+    bool? Passed = true,
+    string? Technician = null,
+    string? DefectNotes = null,
+    string? Remark = null
+);
+
+public record UpdateStorageMaintenanceLineDto(
+    double? BatteryVoltage = null,
+    bool? ChargeBatteryOk = null,
+    bool? EngineStartCheckOk = null,
+    bool? TirePressureCheckOk = null,
+    bool? TireRotationOk = null,
+    bool? FluidLevelsCheckOk = null,
+    bool? ElectricalSystemsOk = null,
+    bool? BodyCleanOk = null,
+    string? Technician = null,
+    string? DefectNotes = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -201,6 +293,23 @@ public interface IVehicleService
     Task<object?> UpdateTransportMinutesLineAsync(string transportMinutesNo, string vin, UpdateTransportMinutesLineDto dto);
     Task<object?> AddTransportMinutesLinesAsync(string transportMinutesNo, List<TransportMinutesItemInputDto> items);
     Task<object?> RemoveTransportMinutesLineAsync(string transportMinutesNo, string vin);
+    Task<object> CreateDealerPaymentAsync(CreateDealerPaymentDto dto);
+    Task<object> ListDealerPaymentsAsync(string? status, string? dealer, string? paymentType, string? paymentNo, string? vin);
+    Task<object?> GetDealerPaymentAsync(string paymentNo);
+    Task<object?> DealerPaymentTransitionAsync(string paymentNo, string action, DealerPaymentTransitionDto? dto);
+    Task<object?> UpdateDealerPaymentLineAsync(string paymentNo, string vin, UpdateDealerPaymentLineDto dto);
+    Task<object?> AddDealerPaymentLinesAsync(string paymentNo, List<DealerPaymentItemInputDto> items);
+    Task<object?> RemoveDealerPaymentLineAsync(string paymentNo, string vin);
+    Task<object> CreateStorageMaintenanceAsync(CreateStorageMaintenanceDto dto);
+    Task<object> ListStorageMaintenancesAsync(string? status, string? storageCode, string? mtnType, string? mtnNo, string? vin);
+    Task<object?> GetStorageMaintenanceAsync(string mtnNo);
+    Task<object?> StorageMaintenanceTransitionAsync(string mtnNo, string action, StorageMaintenanceTransitionDto? dto);
+    Task<object?> InspectStorageMaintenanceLineAsync(string mtnNo, string vin, InspectStorageMaintenanceLineDto dto);
+    Task<object?> UpdateStorageMaintenanceLineAsync(string mtnNo, string vin, UpdateStorageMaintenanceLineDto dto);
+    Task<object?> AddStorageMaintenanceLinesAsync(string mtnNo, List<StorageMaintenanceItemInputDto> items);
+    Task<object?> RemoveStorageMaintenanceLineAsync(string mtnNo, string vin);
+    Task<object> GetDueMaintenanceVehiclesAsync(string? storageCode, int dueWithinDays = 7);
+    Task<object?> GetVehicleMaintenanceHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -239,6 +348,7 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         {
             v.Vin, v.Model, v.Color, v.ModelYear, status = v.Status.ToString(),
             v.IsTestCar, v.IsMortgaged, v.MortgageBankCode,
+            v.IsPaid, v.PaidAmount, v.PaidAt,
             v.StorageCode, v.DealerCode, v.OwnerName, v.PlateNo, v.DeliveredAt, v.WarrantyEnd
         }).ToListAsync();
         return new { count = items.Count, items };
@@ -5552,6 +5662,1167 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             tm.TotalFreightAmount,
             tm.TotalSurchargeAmount,
             tm.TotalAmount
+        };
+    }
+
+    // ===== Chứng từ / Phiếu thanh toán tiền mua xe ô tô của Đại lý (BizHTC.Payment.Pmt_Payment / DealerPayment) =====
+    public async Task<object> CreateDealerPaymentAsync(CreateDealerPaymentDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode nộp tiền mua xe.");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+
+        var inputItems = new List<DealerPaymentItemInputDto>();
+        if (dto.Items is { Count: > 0 })
+        {
+            inputItems.AddRange(dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)));
+        }
+        else if (dto.Vins is { Count: > 0 })
+        {
+            inputItems.AddRange(dto.Vins.Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(v => new DealerPaymentItemInputDto(v.Trim().ToUpperInvariant(), null, null, null)));
+        }
+
+        if (inputItems.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe VIN trong chứng từ thanh toán tiền xe.");
+
+        var distinctItems = inputItems.DistinctBy(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var today = DateTime.Today;
+        var pmtNo = string.IsNullOrWhiteSpace(dto.PaymentNo)
+            ? $"PMT{today:yyyyMMdd}-{(await db.Payments.CountAsync(p => p.OrgId == Org && p.CreatedAt.Date == today) + 1):000}"
+            : dto.PaymentNo!.Trim().ToUpperInvariant();
+
+        if (await db.Payments.AnyAsync(p => p.OrgId == Org && p.PaymentNo == pmtNo))
+            throw new InvalidOperationException($"Mã phiếu thanh toán {pmtNo} đã tồn tại.");
+
+        var vMap = vehicles.ToDictionary(v => v.Vin);
+        var pmtType = string.IsNullOrWhiteSpace(dto.PaymentType) ? "Payment" : dto.PaymentType.Trim();
+
+        decimal totalAmount = 0;
+        var lineList = new List<DealerPaymentLine>();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            var v = vMap[vin];
+
+            decimal amount = 0;
+            if (item.Amount.HasValue && item.Amount.Value > 0)
+            {
+                amount = item.Amount.Value;
+            }
+            else if (dto.TotalAmount.HasValue && dto.TotalAmount.Value > 0)
+            {
+                amount = Math.Round(dto.TotalAmount.Value / distinctItems.Count, 0);
+            }
+            else
+            {
+                // Mặc định định mức chuẩn xe ô tô
+                amount = v.Model.Contains("Accent", StringComparison.OrdinalIgnoreCase) ? 550000000m : 700000000m;
+            }
+
+            totalAmount += amount;
+            lineList.Add(new DealerPaymentLine
+            {
+                OrgId = Org,
+                PaymentNo = pmtNo,
+                Vin = vin,
+                Model = v.Model,
+                GuaranteeNo = item.GuaranteeNo?.Trim().ToUpperInvariant(),
+                Amount = amount,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        var pmt = new DealerPayment
+        {
+            OrgId = Org,
+            PaymentNo = pmtNo,
+            DealerCode = dealer,
+            PaymentType = pmtType,
+            BankNameSend = dto.BankNameSend?.Trim(),
+            BankNameReceive = dto.BankNameReceive?.Trim() ?? "Vietcombank Sở Giao Dịch Hà Nội",
+            BankPaymentNo = dto.BankPaymentNo?.Trim(),
+            AccountingRecordNo = null,
+            PaymentEndDate = null,
+            TotalAmount = totalAmount,
+            TotalVehicleCount = distinctItems.Count,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.Payments.Add(pmt);
+        await db.SaveChangesAsync();
+
+        foreach (var line in lineList)
+        {
+            line.DealerPaymentId = pmt.Id;
+            db.PaymentLines.Add(line);
+
+            Log(line.Vin, "PaymentCreated", $"{pmtNo} Lập phiếu thanh toán tiền xe ĐL {dealer}. Số tiền: {line.Amount:N0} VNĐ. Ngân hàng: {pmt.BankNameSend ?? "N/A"} - UNC: {pmt.BankPaymentNo ?? "N/A"}");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pmt.PaymentNo,
+            pmt.DealerCode,
+            pmt.PaymentType,
+            pmt.BankNameSend,
+            pmt.BankNameReceive,
+            pmt.BankPaymentNo,
+            pmt.TotalAmount,
+            pmt.TotalVehicleCount,
+            pmt.Status,
+            linesCount = lineList.Count
+        };
+    }
+
+    public async Task<object> ListDealerPaymentsAsync(string? status, string? dealer, string? paymentType, string? paymentNo, string? vin)
+    {
+        var q = db.Payments.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(p => p.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim().ToUpperInvariant(); q = q.Where(p => p.DealerCode == d); }
+        if (!string.IsNullOrWhiteSpace(paymentType)) q = q.Where(p => p.PaymentType == paymentType);
+        if (!string.IsNullOrWhiteSpace(paymentNo)) { var no = paymentNo.Trim().ToUpperInvariant(); q = q.Where(p => p.PaymentNo == no); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.PaymentLines
+                .Where(l => l.OrgId == Org && l.Vin == vv)
+                .Select(l => l.PaymentNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(p => matchedNos.Contains(p.PaymentNo));
+        }
+
+        var items = await q.OrderByDescending(p => p.Id).Take(500).Select(p => new
+        {
+            p.PaymentNo,
+            p.DealerCode,
+            p.PaymentType,
+            p.BankNameSend,
+            p.BankNameReceive,
+            p.BankPaymentNo,
+            p.AccountingRecordNo,
+            p.PaymentEndDate,
+            p.TotalAmount,
+            p.TotalVehicleCount,
+            p.Status,
+            p.CreatedBy,
+            p.CreatedAt,
+            p.ApprovedBy,
+            p.ApprovedAt,
+            p.ConfirmBy,
+            p.ConfirmedAt,
+            p.CancelledAt,
+            p.Remark,
+            linesCount = db.PaymentLines.Count(l => l.OrgId == Org && l.DealerPaymentId == p.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetDealerPaymentAsync(string paymentNo)
+    {
+        paymentNo = paymentNo.Trim().ToUpperInvariant();
+        var pmt = await db.Payments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentNo == paymentNo);
+        if (pmt is null) return null;
+
+        var lines = await db.PaymentLines.Where(l => l.OrgId == Org && l.DealerPaymentId == pmt.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.GuaranteeNo,
+            l.Amount,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.EngineNo,
+                v.Color,
+                v.ModelYear,
+                status = v.Status.ToString(),
+                v.StorageCode,
+                v.DealerCode,
+                v.IsPaid,
+                v.PaidAmount,
+                v.PaidAt
+            } : null
+        }).ToList();
+
+        return new
+        {
+            pmt.Id,
+            pmt.PaymentNo,
+            pmt.DealerCode,
+            pmt.PaymentType,
+            pmt.BankNameSend,
+            pmt.BankNameReceive,
+            pmt.BankPaymentNo,
+            pmt.AccountingRecordNo,
+            pmt.PaymentEndDate,
+            pmt.TotalAmount,
+            pmt.TotalVehicleCount,
+            pmt.Status,
+            pmt.CreatedBy,
+            pmt.CreatedAt,
+            pmt.ApprovedBy,
+            pmt.ApprovedAt,
+            pmt.ConfirmBy,
+            pmt.ConfirmedAt,
+            pmt.CancelledAt,
+            pmt.Remark,
+            lines = details
+        };
+    }
+
+    public async Task<object?> DealerPaymentTransitionAsync(string paymentNo, string action, DealerPaymentTransitionDto? dto)
+    {
+        paymentNo = paymentNo.Trim().ToUpperInvariant();
+        var pmt = await db.Payments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentNo == paymentNo);
+        if (pmt is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.PaymentLines.Where(l => l.OrgId == Org && l.DealerPaymentId == pmt.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+                if (pmt.Status != "Draft") return null;
+                pmt.Status = "Pending";
+                foreach (var l in lines) l.Status = "Pending";
+                foreach (var v in vehicles) Log(v.Vin, "PaymentSubmitted", $"{paymentNo} Gửi phiếu thanh toán tiền xe đại lý {pmt.DealerCode} sang Kế toán OEM.");
+                break;
+
+            case "approve":
+                if (pmt.Status is not ("Draft" or "Pending")) return null;
+                pmt.Status = "Approved";
+                pmt.ApprovedBy = dto?.User?.Trim() ?? "Accountant";
+                pmt.ApprovedAt = now;
+                foreach (var l in lines) l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "PaymentApproved", $"{paymentNo} Kế toán công nợ OEM sơ duyệt phiếu thanh toán tiền xe {pmt.DealerCode}. Người duyệt: {pmt.ApprovedBy}");
+                break;
+
+            case "confirm":
+            case "complete":
+            case "finish":
+            case "settle":
+                if (pmt.Status is not ("Pending" or "Approved")) return null;
+                pmt.Status = "Confirmed";
+                pmt.ConfirmBy = dto?.User?.Trim() ?? "ChiefAccountant";
+                pmt.ConfirmedAt = now;
+                pmt.PaymentEndDate = dto?.PaymentEndDate ?? now;
+                pmt.AccountingRecordNo = !string.IsNullOrWhiteSpace(dto?.AccountingRecordNo)
+                    ? dto.AccountingRecordNo.Trim().ToUpperInvariant()
+                    : (!string.IsNullOrWhiteSpace(pmt.AccountingRecordNo) ? pmt.AccountingRecordNo : $"PT-{now:yyyyMMdd}-{(pmt.Id):0000}");
+
+                if (string.IsNullOrWhiteSpace(pmt.ApprovedBy))
+                {
+                    pmt.ApprovedBy = pmt.ConfirmBy;
+                    pmt.ApprovedAt = now;
+                }
+
+                foreach (var l in lines) l.Status = "Confirmed";
+
+                var vMap = vehicles.ToDictionary(v => v.Vin);
+                foreach (var l in lines)
+                {
+                    if (vMap.TryGetValue(l.Vin, out var v))
+                    {
+                        v.IsPaid = true;
+                        v.PaidAmount += l.Amount;
+                        v.PaidAt = now;
+
+                        // Nếu xe có gắn mã bảo lãnh ngân hàng -> giải tỏa bảo lãnh
+                        if (!string.IsNullOrWhiteSpace(l.GuaranteeNo))
+                        {
+                            var grtLines = await db.GuaranteeLines.Where(gl => gl.OrgId == Org && gl.GuaranteeNo == l.GuaranteeNo && gl.Vin == l.Vin).ToListAsync();
+                            foreach (var gl in grtLines) gl.Status = "Settled";
+                        }
+
+                        Log(v.Vin, "PaymentConfirmed", $"{paymentNo} Kế toán OEM xác nhận khớp tiền thanh toán: {l.Amount:N0} VNĐ. UNC: {pmt.BankPaymentNo ?? "N/A"}. Hạch toán ERP: {pmt.AccountingRecordNo}. Người xác nhận: {pmt.ConfirmBy}");
+                    }
+                }
+                break;
+
+            case "reject":
+                if (pmt.Status is "Confirmed" or "Cancelled") return null;
+                pmt.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    pmt.Remark = string.IsNullOrWhiteSpace(pmt.Remark) ? dto.Note : $"{pmt.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "PaymentRejected", $"{paymentNo} Từ chối phiếu thanh toán: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (pmt.Status is "Confirmed" or "Cancelled") return null;
+                pmt.Status = "Cancelled";
+                pmt.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    pmt.Remark = string.IsNullOrWhiteSpace(pmt.Remark) ? dto.Note : $"{pmt.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "PaymentCancelled", $"{paymentNo} Hủy phiếu thanh toán: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            pmt.PaymentNo,
+            pmt.DealerCode,
+            pmt.Status,
+            pmt.AccountingRecordNo,
+            pmt.PaymentEndDate,
+            pmt.ApprovedAt,
+            pmt.ConfirmedAt,
+            pmt.CancelledAt
+        };
+    }
+
+    public async Task<object?> UpdateDealerPaymentLineAsync(string paymentNo, string vin, UpdateDealerPaymentLineDto dto)
+    {
+        paymentNo = paymentNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var pmt = await db.Payments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentNo == paymentNo);
+        if (pmt is null || pmt.Status is "Confirmed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.PaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.DealerPaymentId == pmt.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.Amount.HasValue && dto.Amount.Value > 0) line.Amount = dto.Amount.Value;
+        if (!string.IsNullOrWhiteSpace(dto.GuaranteeNo)) line.GuaranteeNo = dto.GuaranteeNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.PaymentLines.Where(l => l.OrgId == Org && l.DealerPaymentId == pmt.Id).ToListAsync();
+        pmt.TotalAmount = allLines.Sum(l => l.Amount);
+        pmt.TotalVehicleCount = allLines.Count;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pmt.PaymentNo,
+            line.Vin,
+            line.Amount,
+            line.GuaranteeNo,
+            line.Remark,
+            paymentTotalAmount = pmt.TotalAmount,
+            paymentTotalVehicleCount = pmt.TotalVehicleCount
+        };
+    }
+
+    public async Task<object?> AddDealerPaymentLinesAsync(string paymentNo, List<DealerPaymentItemInputDto> items)
+    {
+        paymentNo = paymentNo.Trim().ToUpperInvariant();
+        var pmt = await db.Payments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentNo == paymentNo);
+        if (pmt is null || pmt.Status is "Confirmed" or "Cancelled" or "Rejected") return null;
+
+        var distinctItems = items.Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+            .DistinctBy(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.PaymentLines.Where(l => l.OrgId == Org && l.DealerPaymentId == pmt.Id)
+            .Select(l => l.Vin).ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin.Trim().ToUpperInvariant())).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        foreach (var item in newItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            vehicles.TryGetValue(vin, out var v);
+
+            var amount = item.Amount.HasValue && item.Amount.Value > 0
+                ? item.Amount.Value
+                : (v?.Model.Contains("Accent", StringComparison.OrdinalIgnoreCase) == true ? 550000000m : 700000000m);
+
+            db.PaymentLines.Add(new DealerPaymentLine
+            {
+                OrgId = Org,
+                DealerPaymentId = pmt.Id,
+                PaymentNo = pmt.PaymentNo,
+                Vin = vin,
+                Model = v?.Model ?? "N/A",
+                GuaranteeNo = item.GuaranteeNo?.Trim().ToUpperInvariant(),
+                Amount = amount,
+                Status = pmt.Status == "Approved" ? "Approved" : "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(vin, "PaymentLineAdded", $"{paymentNo} Bổ sung xe vào phiếu thanh toán ĐL {pmt.DealerCode}. Số tiền: {amount:N0} VNĐ");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.PaymentLines.Where(l => l.OrgId == Org && l.DealerPaymentId == pmt.Id).ToListAsync();
+        pmt.TotalAmount = allLines.Sum(l => l.Amount);
+        pmt.TotalVehicleCount = allLines.Count;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pmt.PaymentNo,
+            addedCount = newItems.Count,
+            pmt.TotalVehicleCount,
+            pmt.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveDealerPaymentLineAsync(string paymentNo, string vin)
+    {
+        paymentNo = paymentNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var pmt = await db.Payments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentNo == paymentNo);
+        if (pmt is null || pmt.Status is "Confirmed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.PaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.DealerPaymentId == pmt.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.PaymentLines.Remove(line);
+        Log(vin, "PaymentLineRemoved", $"{paymentNo} Rút xe khỏi phiếu thanh toán ĐL {pmt.DealerCode}");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.PaymentLines.Where(l => l.OrgId == Org && l.DealerPaymentId == pmt.Id).ToListAsync();
+        pmt.TotalAmount = allLines.Sum(l => l.Amount);
+        pmt.TotalVehicleCount = allLines.Count;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pmt.PaymentNo,
+            vin,
+            pmt.TotalVehicleCount,
+            pmt.TotalAmount
+        };
+    }
+
+    public async Task<object> CreateStorageMaintenanceAsync(CreateStorageMaintenanceDto dto)
+    {
+        var mtnNo = string.IsNullOrWhiteSpace(dto.MtnNo)
+            ? "MTN-" + DateTime.Now.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()
+            : dto.MtnNo.Trim().ToUpperInvariant();
+
+        if (await db.StorageMaintenances.AnyAsync(m => m.OrgId == Org && m.MtnNo == mtnNo))
+            throw new InvalidOperationException($"Số phiếu bảo dưỡng {mtnNo} đã tồn tại.");
+
+        var distinctVins = new List<string>();
+        var itemMap = new Dictionary<string, StorageMaintenanceItemInputDto>(StringComparer.OrdinalIgnoreCase);
+
+        if (dto.Items is { Count: > 0 })
+        {
+            foreach (var it in dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+            {
+                var cleanVin = it.Vin.Trim().ToUpperInvariant();
+                if (!itemMap.ContainsKey(cleanVin))
+                {
+                    itemMap[cleanVin] = it;
+                    distinctVins.Add(cleanVin);
+                }
+            }
+        }
+        else if (dto.Vins is { Count: > 0 })
+        {
+            distinctVins = dto.Vins.Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v.Trim().ToUpperInvariant())
+                .Distinct().ToList();
+        }
+
+        if (distinctVins.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất một số khung VIN để lập phiếu bảo dưỡng kho.");
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && distinctVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var missingVins = distinctVins.Where(vin => !vehicles.ContainsKey(vin)).ToList();
+        if (missingVins.Count > 0)
+            throw new InvalidOperationException($"Các số khung VIN không tồn tại: {string.Join(", ", missingVins)}");
+
+        var storageCode = !string.IsNullOrWhiteSpace(dto.StorageCode) ? dto.StorageCode.Trim().ToUpperInvariant() : "YARD-A1";
+
+        var mtn = new StorageMaintenance
+        {
+            OrgId = Org,
+            MtnNo = mtnNo,
+            StorageCode = storageCode,
+            MtnType = string.IsNullOrWhiteSpace(dto.MtnType) ? "Periodic" : dto.MtnType.Trim(),
+            PlanDate = dto.PlanDate ?? DateTime.Now,
+            TotalVehicleCount = distinctVins.Count,
+            PassedVehicleCount = 0,
+            FailedVehicleCount = 0,
+            Status = "Draft",
+            TechnicianCode = dto.TechnicianCode?.Trim(),
+            TechnicianName = dto.TechnicianName?.Trim(),
+            SupervisorCode = dto.SupervisorCode?.Trim(),
+            SupervisorName = dto.SupervisorName?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.StorageMaintenances.Add(mtn);
+
+        foreach (var vin in distinctVins)
+        {
+            vehicles.TryGetValue(vin, out var v);
+            itemMap.TryGetValue(vin, out var item);
+
+            var line = new StorageMaintenanceLine
+            {
+                OrgId = Org,
+                StorageMaintenanceId = mtn.Id,
+                MtnNo = mtnNo,
+                Vin = vin,
+                Model = v?.Model,
+                StorageCode = item?.StorageCode?.Trim() ?? v?.StorageCode ?? storageCode,
+                MtnTimes = v?.StorageMtnTimes ?? 0,
+                BatteryVoltage = item?.BatteryVoltage ?? 12.6,
+                ChargeBatteryOk = item?.ChargeBatteryOk ?? true,
+                EngineStartCheckOk = item?.EngineStartCheckOk ?? true,
+                TirePressureCheckOk = item?.TirePressureCheckOk ?? true,
+                TireRotationOk = item?.TireRotationOk ?? true,
+                FluidLevelsCheckOk = item?.FluidLevelsCheckOk ?? true,
+                ElectricalSystemsOk = item?.ElectricalSystemsOk ?? true,
+                BodyCleanOk = item?.BodyCleanOk ?? true,
+                InspectionResult = "Pending",
+                Status = "Pending",
+                DefectNotes = item?.DefectNotes?.Trim(),
+                Remark = item?.Remark?.Trim()
+            };
+            db.StorageMaintenanceLines.Add(line);
+
+            Log(vin, "StorageMaintenancePlanned", $"{mtnNo} Lập kế hoạch bảo dưỡng định kỳ xe tồn kho ({mtn.MtnType}) tại bãi {storageCode}");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            mtn.Id,
+            mtn.MtnNo,
+            mtn.StorageCode,
+            mtn.MtnType,
+            mtn.PlanDate,
+            mtn.TotalVehicleCount,
+            mtn.Status,
+            mtn.TechnicianName,
+            mtn.SupervisorName,
+            mtn.CreatedAt,
+            vehicles = distinctVins
+        };
+    }
+
+    public async Task<object> ListStorageMaintenancesAsync(string? status, string? storageCode, string? mtnType, string? mtnNo, string? vin)
+    {
+        var q = db.StorageMaintenances.Where(m => m.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var s = status.Trim();
+            q = q.Where(m => m.Status.ToLower() == s.ToLower());
+        }
+
+        if (!string.IsNullOrWhiteSpace(storageCode))
+        {
+            var sc = storageCode.Trim().ToLower();
+            q = q.Where(m => m.StorageCode.ToLower().Contains(sc));
+        }
+
+        if (!string.IsNullOrWhiteSpace(mtnType))
+        {
+            var t = mtnType.Trim().ToLower();
+            q = q.Where(m => m.MtnType.ToLower() == t);
+        }
+
+        if (!string.IsNullOrWhiteSpace(mtnNo))
+        {
+            var no = mtnNo.Trim().ToLower();
+            q = q.Where(m => m.MtnNo.ToLower().Contains(no));
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vClean = vin.Trim().ToUpperInvariant();
+            var mtnNosWithVin = await db.StorageMaintenanceLines
+                .Where(l => l.OrgId == Org && l.Vin.Contains(vClean))
+                .Select(l => l.MtnNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(m => mtnNosWithVin.Contains(m.MtnNo));
+        }
+
+        var list = await q.OrderByDescending(m => m.CreatedAt).ToListAsync();
+        var mtnIds = list.Select(m => m.Id).ToList();
+
+        var lineSummaries = await db.StorageMaintenanceLines
+            .Where(l => l.OrgId == Org && mtnIds.Contains(l.StorageMaintenanceId))
+            .GroupBy(l => l.StorageMaintenanceId)
+            .Select(g => new
+            {
+                MtnId = g.Key,
+                Count = g.Count(),
+                PassedCount = g.Count(x => x.InspectionResult == "Passed"),
+                FailedCount = g.Count(x => x.InspectionResult == "Failed"),
+                PendingCount = g.Count(x => x.InspectionResult == "Pending"),
+                Vins = g.Select(x => x.Vin).Take(5).ToList()
+            })
+            .ToDictionaryAsync(g => g.MtnId);
+
+        return list.Select(m =>
+        {
+            lineSummaries.TryGetValue(m.Id, out var s);
+            return new
+            {
+                m.Id,
+                m.MtnNo,
+                m.StorageCode,
+                m.MtnType,
+                m.PlanDate,
+                TotalVehicleCount = s?.Count ?? m.TotalVehicleCount,
+                PassedVehicleCount = s?.PassedCount ?? m.PassedVehicleCount,
+                FailedVehicleCount = s?.FailedCount ?? m.FailedVehicleCount,
+                PendingVehicleCount = s?.PendingCount ?? 0,
+                m.Status,
+                m.TechnicianCode,
+                m.TechnicianName,
+                m.SupervisorCode,
+                m.SupervisorName,
+                m.Remark,
+                m.CreatedBy,
+                m.CreatedAt,
+                m.ApprovedBy,
+                m.ApprovedAt,
+                m.CompletedAt,
+                m.CancelledAt,
+                sampleVins = s?.Vins ?? new List<string>()
+            };
+        });
+    }
+
+    public async Task<object?> GetStorageMaintenanceAsync(string mtnNo)
+    {
+        mtnNo = mtnNo.Trim().ToUpperInvariant();
+        var mtn = await db.StorageMaintenances.FirstOrDefaultAsync(m => m.OrgId == Org && m.MtnNo == mtnNo);
+        if (mtn is null) return null;
+
+        var lines = await db.StorageMaintenanceLines
+            .Where(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id)
+            .OrderBy(l => l.Id)
+            .ToListAsync();
+
+        return new
+        {
+            mtn.Id,
+            mtn.MtnNo,
+            mtn.StorageCode,
+            mtn.MtnType,
+            mtn.PlanDate,
+            mtn.TotalVehicleCount,
+            mtn.PassedVehicleCount,
+            mtn.FailedVehicleCount,
+            mtn.Status,
+            mtn.TechnicianCode,
+            mtn.TechnicianName,
+            mtn.SupervisorCode,
+            mtn.SupervisorName,
+            mtn.Remark,
+            mtn.CreatedBy,
+            mtn.CreatedAt,
+            mtn.ApprovedBy,
+            mtn.ApprovedAt,
+            mtn.CompletedAt,
+            mtn.CancelledAt,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.Vin,
+                l.Model,
+                l.StorageCode,
+                l.MtnTimes,
+                l.BatteryVoltage,
+                l.ChargeBatteryOk,
+                l.EngineStartCheckOk,
+                l.TirePressureCheckOk,
+                l.TireRotationOk,
+                l.FluidLevelsCheckOk,
+                l.ElectricalSystemsOk,
+                l.BodyCleanOk,
+                l.InspectionResult,
+                l.MtnDate,
+                l.NextMtnDate,
+                l.Technician,
+                l.DefectNotes,
+                l.Status,
+                l.Remark
+            })
+        };
+    }
+
+    public async Task<object?> StorageMaintenanceTransitionAsync(string mtnNo, string action, StorageMaintenanceTransitionDto? dto)
+    {
+        mtnNo = mtnNo.Trim().ToUpperInvariant();
+        var act = action.Trim().ToLowerInvariant();
+
+        var mtn = await db.StorageMaintenances.FirstOrDefaultAsync(m => m.OrgId == Org && m.MtnNo == mtnNo);
+        if (mtn is null) return null;
+
+        var lines = await db.StorageMaintenanceLines
+            .Where(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id)
+            .ToListAsync();
+
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "submit" or "request":
+                if (mtn.Status != "Draft") return null;
+                mtn.Status = "Pending";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) mtn.Remark = (mtn.Remark + " | " + dto.Note).Trim(' ', '|');
+                break;
+
+            case "approve":
+                if (mtn.Status is not ("Draft" or "Pending")) return null;
+                mtn.Status = "InProgress";
+                mtn.ApprovedBy = dto?.User ?? dto?.SupervisorName ?? "Supervisor";
+                mtn.ApprovedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.SupervisorName)) mtn.SupervisorName = dto.SupervisorName.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.TechnicianName)) mtn.TechnicianName = dto.TechnicianName.Trim();
+                foreach (var line in lines)
+                {
+                    if (line.Status == "Pending") line.Status = "InProgress";
+                }
+                break;
+
+            case "start" or "in-progress" or "inprogress":
+                if (mtn.Status is not ("Draft" or "Pending" or "Approved")) return null;
+                mtn.Status = "InProgress";
+                if (!string.IsNullOrWhiteSpace(dto?.TechnicianName)) mtn.TechnicianName = dto.TechnicianName.Trim();
+                foreach (var line in lines)
+                {
+                    if (line.Status == "Pending") line.Status = "InProgress";
+                }
+                break;
+
+            case "complete" or "finish":
+                if (mtn.Status is not ("InProgress" or "Pending" or "Draft")) return null;
+
+                foreach (var line in lines)
+                {
+                    if (line.Status != "Completed")
+                    {
+                        line.Status = "Completed";
+                        if (line.InspectionResult == "Pending") line.InspectionResult = "Passed";
+                        line.MtnDate = now;
+                        line.NextMtnDate = now.AddDays(30);
+                        line.MtnTimes += 1;
+                        if (!string.IsNullOrWhiteSpace(dto?.TechnicianName) && string.IsNullOrWhiteSpace(line.Technician))
+                            line.Technician = dto.TechnicianName.Trim();
+                    }
+
+                    if (vehicles.TryGetValue(line.Vin, out var v))
+                    {
+                        v.LastStorageMtnDate = line.MtnDate ?? now;
+                        v.NextStorageMtnDate = line.NextMtnDate ?? now.AddDays(30);
+                        v.StorageMtnTimes = line.MtnTimes;
+                    }
+
+                    Log(line.Vin, "StorageMaintenanceCompleted",
+                        $"{mtnNo} Hoàn tất bảo dưỡng xe tồn kho (lần {line.MtnTimes}, kết quả: {line.InspectionResult}). Hạn tiếp theo: {line.NextMtnDate:yyyy-MM-dd}");
+                }
+
+                mtn.Status = "Completed";
+                mtn.CompletedAt = now;
+                mtn.PassedVehicleCount = lines.Count(l => l.InspectionResult == "Passed");
+                mtn.FailedVehicleCount = lines.Count(l => l.InspectionResult == "Failed");
+                break;
+
+            case "reject":
+                if (mtn.Status is "Completed" or "Cancelled") return null;
+                mtn.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) mtn.Remark = (mtn.Remark + " | Từ chối: " + dto.Note).Trim(' ', '|');
+                foreach (var line in lines) line.Status = "Rejected";
+                break;
+
+            case "cancel":
+                if (mtn.Status is "Completed" or "Cancelled") return null;
+                mtn.Status = "Cancelled";
+                mtn.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) mtn.Remark = (mtn.Remark + " | Hủy: " + dto.Note).Trim(' ', '|');
+                foreach (var line in lines) line.Status = "Cancelled";
+                break;
+
+            default:
+                return null;
+        }
+
+        mtn.TotalVehicleCount = lines.Count;
+        mtn.PassedVehicleCount = lines.Count(l => l.InspectionResult == "Passed");
+        mtn.FailedVehicleCount = lines.Count(l => l.InspectionResult == "Failed");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            mtn.MtnNo,
+            mtn.Status,
+            mtn.TotalVehicleCount,
+            mtn.PassedVehicleCount,
+            mtn.FailedVehicleCount,
+            mtn.ApprovedBy,
+            mtn.ApprovedAt,
+            mtn.CompletedAt,
+            mtn.CancelledAt,
+            action = act
+        };
+    }
+
+    public async Task<object?> InspectStorageMaintenanceLineAsync(string mtnNo, string vin, InspectStorageMaintenanceLineDto dto)
+    {
+        mtnNo = mtnNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var mtn = await db.StorageMaintenances.FirstOrDefaultAsync(m => m.OrgId == Org && m.MtnNo == mtnNo);
+        if (mtn is null || mtn.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.StorageMaintenanceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+
+        var now = DateTime.Now;
+        var passed = dto.Passed ?? true;
+
+        line.BatteryVoltage = dto.BatteryVoltage ?? line.BatteryVoltage;
+        line.ChargeBatteryOk = dto.ChargeBatteryOk ?? line.ChargeBatteryOk;
+        line.EngineStartCheckOk = dto.EngineStartCheckOk ?? line.EngineStartCheckOk;
+        line.TirePressureCheckOk = dto.TirePressureCheckOk ?? line.TirePressureCheckOk;
+        line.TireRotationOk = dto.TireRotationOk ?? line.TireRotationOk;
+        line.FluidLevelsCheckOk = dto.FluidLevelsCheckOk ?? line.FluidLevelsCheckOk;
+        line.ElectricalSystemsOk = dto.ElectricalSystemsOk ?? line.ElectricalSystemsOk;
+        line.BodyCleanOk = dto.BodyCleanOk ?? line.BodyCleanOk;
+        line.InspectionResult = passed ? "Passed" : "Failed";
+        line.Status = "Completed";
+        line.MtnDate = now;
+        line.NextMtnDate = now.AddDays(30);
+        if (!string.IsNullOrWhiteSpace(dto.Technician)) line.Technician = dto.Technician.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DefectNotes)) line.DefectNotes = dto.DefectNotes.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        // Increment MtnTimes
+        line.MtnTimes = (v?.StorageMtnTimes ?? line.MtnTimes) + 1;
+
+        if (v is not null)
+        {
+            v.LastStorageMtnDate = line.MtnDate;
+            v.NextStorageMtnDate = line.NextMtnDate;
+            v.StorageMtnTimes = line.MtnTimes;
+        }
+
+        if (mtn.Status is "Draft" or "Pending") mtn.Status = "InProgress";
+
+        var allLines = await db.StorageMaintenanceLines.Where(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id).ToListAsync();
+        mtn.PassedVehicleCount = allLines.Count(l => l.InspectionResult == "Passed");
+        mtn.FailedVehicleCount = allLines.Count(l => l.InspectionResult == "Failed");
+
+        Log(vin, "StorageMaintenanceInspected",
+            $"{mtnNo} Kiểm tra bảo dưỡng xe: {(passed ? "ĐẠT CHUẨN" : "KHÔNG ĐẠT - " + line.DefectNotes)} (Ắc quy: {line.BatteryVoltage}V, Lần: {line.MtnTimes})");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            mtn.MtnNo,
+            line.Vin,
+            line.Model,
+            line.StorageCode,
+            line.MtnTimes,
+            line.BatteryVoltage,
+            line.ChargeBatteryOk,
+            line.EngineStartCheckOk,
+            line.TirePressureCheckOk,
+            line.TireRotationOk,
+            line.FluidLevelsCheckOk,
+            line.ElectricalSystemsOk,
+            line.BodyCleanOk,
+            line.InspectionResult,
+            line.MtnDate,
+            line.NextMtnDate,
+            line.Technician,
+            line.DefectNotes,
+            mtnPassedCount = mtn.PassedVehicleCount,
+            mtnFailedCount = mtn.FailedVehicleCount
+        };
+    }
+
+    public async Task<object?> UpdateStorageMaintenanceLineAsync(string mtnNo, string vin, UpdateStorageMaintenanceLineDto dto)
+    {
+        mtnNo = mtnNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var mtn = await db.StorageMaintenances.FirstOrDefaultAsync(m => m.OrgId == Org && m.MtnNo == mtnNo);
+        if (mtn is null || mtn.Status is "Cancelled" or "Rejected") return null;
+
+        var line = await db.StorageMaintenanceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.BatteryVoltage.HasValue) line.BatteryVoltage = dto.BatteryVoltage.Value;
+        if (dto.ChargeBatteryOk.HasValue) line.ChargeBatteryOk = dto.ChargeBatteryOk.Value;
+        if (dto.EngineStartCheckOk.HasValue) line.EngineStartCheckOk = dto.EngineStartCheckOk.Value;
+        if (dto.TirePressureCheckOk.HasValue) line.TirePressureCheckOk = dto.TirePressureCheckOk.Value;
+        if (dto.TireRotationOk.HasValue) line.TireRotationOk = dto.TireRotationOk.Value;
+        if (dto.FluidLevelsCheckOk.HasValue) line.FluidLevelsCheckOk = dto.FluidLevelsCheckOk.Value;
+        if (dto.ElectricalSystemsOk.HasValue) line.ElectricalSystemsOk = dto.ElectricalSystemsOk.Value;
+        if (dto.BodyCleanOk.HasValue) line.BodyCleanOk = dto.BodyCleanOk.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Technician)) line.Technician = dto.Technician.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DefectNotes)) line.DefectNotes = dto.DefectNotes.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            mtn.MtnNo,
+            line.Vin,
+            line.BatteryVoltage,
+            line.ChargeBatteryOk,
+            line.EngineStartCheckOk,
+            line.TirePressureCheckOk,
+            line.TireRotationOk,
+            line.FluidLevelsCheckOk,
+            line.ElectricalSystemsOk,
+            line.BodyCleanOk,
+            line.InspectionResult,
+            line.Technician,
+            line.DefectNotes,
+            line.Remark
+        };
+    }
+
+    public async Task<object?> AddStorageMaintenanceLinesAsync(string mtnNo, List<StorageMaintenanceItemInputDto> items)
+    {
+        mtnNo = mtnNo.Trim().ToUpperInvariant();
+        var mtn = await db.StorageMaintenances.FirstOrDefaultAsync(m => m.OrgId == Org && m.MtnNo == mtnNo);
+        if (mtn is null || mtn.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var distinctItems = items.Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+            .DistinctBy(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.StorageMaintenanceLines.Where(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id)
+            .Select(l => l.Vin).ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin.Trim().ToUpperInvariant())).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        foreach (var item in newItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            vehicles.TryGetValue(vin, out var v);
+
+            db.StorageMaintenanceLines.Add(new StorageMaintenanceLine
+            {
+                OrgId = Org,
+                StorageMaintenanceId = mtn.Id,
+                MtnNo = mtn.MtnNo,
+                Vin = vin,
+                Model = v?.Model,
+                StorageCode = item.StorageCode?.Trim() ?? v?.StorageCode ?? mtn.StorageCode,
+                MtnTimes = v?.StorageMtnTimes ?? 0,
+                BatteryVoltage = item.BatteryVoltage ?? 12.6,
+                ChargeBatteryOk = item.ChargeBatteryOk ?? true,
+                EngineStartCheckOk = item.EngineStartCheckOk ?? true,
+                TirePressureCheckOk = item.TirePressureCheckOk ?? true,
+                TireRotationOk = item.TireRotationOk ?? true,
+                FluidLevelsCheckOk = item.FluidLevelsCheckOk ?? true,
+                ElectricalSystemsOk = item.ElectricalSystemsOk ?? true,
+                BodyCleanOk = item.BodyCleanOk ?? true,
+                InspectionResult = "Pending",
+                Status = mtn.Status == "InProgress" ? "InProgress" : "Pending",
+                DefectNotes = item.DefectNotes?.Trim(),
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(vin, "StorageMaintenanceLineAdded", $"{mtnNo} Bổ sung xe vào phiếu bảo dưỡng kho {mtn.StorageCode}");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.StorageMaintenanceLines.Where(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id).ToListAsync();
+        mtn.TotalVehicleCount = allLines.Count;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            mtn.MtnNo,
+            addedCount = newItems.Count,
+            mtn.TotalVehicleCount
+        };
+    }
+
+    public async Task<object?> RemoveStorageMaintenanceLineAsync(string mtnNo, string vin)
+    {
+        mtnNo = mtnNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var mtn = await db.StorageMaintenances.FirstOrDefaultAsync(m => m.OrgId == Org && m.MtnNo == mtnNo);
+        if (mtn is null || mtn.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.StorageMaintenanceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.StorageMaintenanceLines.Remove(line);
+        Log(vin, "StorageMaintenanceLineRemoved", $"{mtnNo} Rút xe khỏi phiếu bảo dưỡng kho {mtn.StorageCode}");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.StorageMaintenanceLines.Where(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id).ToListAsync();
+        mtn.TotalVehicleCount = allLines.Count;
+        mtn.PassedVehicleCount = allLines.Count(l => l.InspectionResult == "Passed");
+        mtn.FailedVehicleCount = allLines.Count(l => l.InspectionResult == "Failed");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            mtn.MtnNo,
+            vin,
+            mtn.TotalVehicleCount,
+            mtn.PassedVehicleCount,
+            mtn.FailedVehicleCount
+        };
+    }
+
+    public async Task<object> GetDueMaintenanceVehiclesAsync(string? storageCode, int dueWithinDays = 7)
+    {
+        var q = db.Vehicles.Where(v => v.OrgId == Org && v.Status == VehicleStatus.InStock);
+
+        if (!string.IsNullOrWhiteSpace(storageCode))
+        {
+            var sc = storageCode.Trim().ToLower();
+            q = q.Where(v => v.StorageCode != null && v.StorageCode.ToLower().Contains(sc));
+        }
+
+        var stockVehicles = await q.OrderBy(v => v.NextStorageMtnDate ?? DateTime.MinValue).ToListAsync();
+        var cutoff = DateTime.Now.AddDays(dueWithinDays);
+        var now = DateTime.Now;
+
+        var dueVehicles = stockVehicles.Where(v =>
+            !v.NextStorageMtnDate.HasValue || v.NextStorageMtnDate.Value <= cutoff
+        ).Select(v =>
+        {
+            string urgency;
+            if (!v.NextStorageMtnDate.HasValue)
+            {
+                urgency = (now - v.CreatedAt).TotalDays > 30 ? "OverdueInitial" : "FirstInspectionPending";
+            }
+            else if (v.NextStorageMtnDate.Value < now)
+            {
+                urgency = "Overdue";
+            }
+            else
+            {
+                urgency = "DueSoon";
+            }
+
+            var daysUntilDue = v.NextStorageMtnDate.HasValue ? (int)(v.NextStorageMtnDate.Value - now).TotalDays : 0;
+            var daysSinceLastMtn = v.LastStorageMtnDate.HasValue ? (int)(now - v.LastStorageMtnDate.Value).TotalDays : (int)(now - v.CreatedAt).TotalDays;
+
+            return new
+            {
+                v.Vin,
+                v.Model,
+                v.Color,
+                v.StorageCode,
+                v.StorageMtnTimes,
+                v.LastStorageMtnDate,
+                v.NextStorageMtnDate,
+                daysUntilDue,
+                daysSinceLastMtn,
+                urgency
+            };
+        }).ToList();
+
+        return new
+        {
+            totalDueCount = dueVehicles.Count,
+            dueWithinDays,
+            vehicles = dueVehicles
+        };
+    }
+
+    public async Task<object?> GetVehicleMaintenanceHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var historyLines = await db.StorageMaintenanceLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.MtnDate ?? (l.Status == "Completed" ? DateTime.MaxValue : DateTime.MinValue))
+            .ThenByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.Color,
+            v.EngineNo,
+            v.Status,
+            v.StorageCode,
+            v.StorageMtnTimes,
+            v.LastStorageMtnDate,
+            v.NextStorageMtnDate,
+            history = historyLines.Select(h => new
+            {
+                h.Id,
+                h.MtnNo,
+                h.StorageCode,
+                h.MtnTimes,
+                h.BatteryVoltage,
+                h.ChargeBatteryOk,
+                h.EngineStartCheckOk,
+                h.TirePressureCheckOk,
+                h.TireRotationOk,
+                h.FluidLevelsCheckOk,
+                h.ElectricalSystemsOk,
+                h.BodyCleanOk,
+                h.InspectionResult,
+                h.MtnDate,
+                h.NextMtnDate,
+                h.Technician,
+                h.DefectNotes,
+                h.Status,
+                h.Remark
+            })
         };
     }
 }

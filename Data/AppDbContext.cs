@@ -44,6 +44,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<InsuranceRequestLine> InsuranceRequestLines => Set<InsuranceRequestLine>();
     public DbSet<TransportMinutes> TransportMinutes => Set<TransportMinutes>();
     public DbSet<TransportMinutesLine> TransportMinutesLines => Set<TransportMinutesLine>();
+    public DbSet<DealerPayment> Payments => Set<DealerPayment>();
+    public DbSet<DealerPaymentLine> PaymentLines => Set<DealerPaymentLine>();
+    public DbSet<StorageMaintenance> StorageMaintenances => Set<StorageMaintenance>();
+    public DbSet<StorageMaintenanceLine> StorageMaintenanceLines => Set<StorageMaintenanceLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -66,5 +70,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<PaymentDiscount>().HasIndex(x => new { x.OrgId, x.PaymentDiscountNo }).IsUnique();
         b.Entity<InsuranceRequest>().HasIndex(x => new { x.OrgId, x.InsReqNo }).IsUnique();
         b.Entity<TransportMinutes>().HasIndex(x => new { x.OrgId, x.TransportMinutesNo }).IsUnique();
+        b.Entity<DealerPayment>().HasIndex(x => new { x.OrgId, x.PaymentNo }).IsUnique();
+        b.Entity<StorageMaintenance>().HasIndex(x => new { x.OrgId, x.MtnNo }).IsUnique();
     }
 }

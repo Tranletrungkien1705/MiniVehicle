@@ -28,7 +28,13 @@ public sealed class Vehicle
     public string? MortgageBankCode { get; set; }   // Mã ngân hàng nhận thế chấp (VCB, VPB, TCB, BIDV, CTG...)
     public DateTime? MortgageDate { get; set; }     // Ngày bắt đầu thế chấp ngân hàng
     public DateTime? RedeemDate { get; set; }       // Ngày giải chấp / rút thế chấp (RD_ReqRedeem)
+    public bool IsPaid { get; set; } = false;       // Đã hoàn tất thanh toán tiền xe cho OEM (Pmt_Payment / Finished)
+    public decimal PaidAmount { get; set; } = 0;    // Tổng số tiền đã thanh toán cho xe (VNĐ)
+    public DateTime? PaidAt { get; set; }           // Thời điểm hoàn tất thanh toán tiền xe
     public string? StorageCode { get; set; }        // vị trí ô đỗ / kho bãi nội bộ OEM (StorageCodeCurrent)
+    public DateTime? LastStorageMtnDate { get; set; } // Ngày bảo dưỡng lưu kho gần nhất (VIN_MaintainPeriod.MtnLastDate)
+    public DateTime? NextStorageMtnDate { get; set; } // Hạn bảo dưỡng lưu kho tiếp theo (VIN_MaintainPeriod.MtnNextDate)
+    public int StorageMtnTimes { get; set; } = 0;     // Số lần bảo dưỡng lưu kho đã thực hiện (VIN_MaintainPeriod.MtnTimes)
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -771,6 +777,101 @@ public sealed class TransportMinutesLine
     public string CargoCondition { get; set; } = "Good";   // Tình trạng xe: Good (Nguyên vẹn), Scratched (Trầy xước), Dented (Móp), Dirty (Bụi bẩn)
     public bool IsInspectionPassed { get; set; } = true;   // Kết quả nghiệm thu đạt yêu cầu
     public string Status { get; set; } = "Pending";        // Pending → DLAppr → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Chứng từ / Phiếu thanh toán tiền mua xe ô tô của Đại lý cho Hãng OEM (BizHTC.Payment.Pmt_Payment / DealerPayment): quản lý thanh toán tiền mua xe qua ủy nhiệm chi UNC ngân hàng, bù trừ công nợ, duyệt hạch toán kế toán ERP và giải phóng bảo lãnh.</summary>
+public sealed class DealerPayment
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PaymentNo { get; set; } = "";             // Mã phiếu thanh toán (PMT...)
+    public string DealerCode { get; set; } = "";           // Mã đại lý thanh toán tiền xe
+    public string PaymentType { get; set; } = "Payment";   // Loại: Payment (Thanh toán UNC ngân hàng), Clearing (Bù trừ công nợ/chiết khấu), Adjust (Điều chỉnh tiền xe)
+    public string? BankNameSend { get; set; }              // Ngân hàng chuyển tiền của đại lý (VCB, TCB, VPB, BIDV, MB...)
+    public string? BankNameReceive { get; set; }           // Ngân hàng thụ hưởng của Hãng OEM (VCB SGD, BIDV...)
+    public string? BankPaymentNo { get; set; }             // Số ủy nhiệm chi UNC / Số điện chuyển tiền ngân hàng
+    public string? AccountingRecordNo { get; set; }        // Số chứng từ hạch toán kế toán ERP / Phiếu thu (PT...)
+    public DateTime? PaymentEndDate { get; set; }          // Ngày thực tế tiền về tài khoản OEM / chốt kế toán
+    public decimal TotalAmount { get; set; } = 0;          // Tổng số tiền thanh toán (VNĐ)
+    public int TotalVehicleCount { get; set; } = 0;        // Tổng số lượng xe được phân bổ thanh toán
+    public string Status { get; set; } = "Draft";          // Draft → Pending → Approved → Confirmed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Diễn giải / ghi chú thanh toán
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                // Kế toán công nợ OEM kiểm tra sơ duyệt
+    public DateTime? ApprovedAt { get; set; }
+    public string? ConfirmBy { get; set; }                 // Kế toán trưởng / Thủ quỹ xác nhận tiền về & ghi sổ ERP
+    public DateTime? ConfirmedAt { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong chứng từ thanh toán (BizHTC.Payment.Pmt_PaymentDetail / DealerPaymentLine): danh sách VIN, số tiền thanh toán cho từng xe và liên kết chứng thư bảo lãnh ngân hàng (Pmt_Guarantee).</summary>
+public sealed class DealerPaymentLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long DealerPaymentId { get; set; }
+    public string PaymentNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? GuaranteeNo { get; set; }               // Mã chứng thư bảo lãnh ngân hàng liên quan (nếu xe này có bảo lãnh)
+    public decimal Amount { get; set; } = 0;               // Số tiền thanh toán phân bổ cho xe này (VNĐ)
+    public string Status { get; set; } = "Pending";        // Pending → Approved → Confirmed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Phiếu / Kế hoạch bảo dưỡng định kỳ xe tồn kho OEM (BizHTC.StorageFG.VIN_MaintainPeriod &amp; StoF_Maintain / StorageMaintenance): quản lý kiểm tra bảo dưỡng kỹ thuật định kỳ (ắc quy, lốp, động cơ, chất lỏng, vệ sinh) cho các xe đang lưu giữ tại bãi đỗ/kho trung tâm nhà máy.</summary>
+public sealed class StorageMaintenance
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string MtnNo { get; set; } = "";             // Mã phiếu bảo dưỡng kho (MTN...)
+    public string StorageCode { get; set; } = "";       // Bãi đỗ / Kho lưu xe thực hiện bảo dưỡng (YARD-A1, KHO_NBD...)
+    public string MtnType { get; set; } = "Periodic";   // Periodic (Định kỳ 30 ngày), Extended (Tăng cường), BatteryTire (Ắc quy & Lốp), PreDelivery (Tiền xuất bãi)
+    public DateTime PlanDate { get; set; } = DateTime.Now; // Ngày kế hoạch thực hiện bảo dưỡng
+    public int TotalVehicleCount { get; set; } = 0;     // Tổng số lượng xe trong đợt bảo dưỡng
+    public int PassedVehicleCount { get; set; } = 0;    // Số lượng xe kiểm tra đạt chuẩn
+    public int FailedVehicleCount { get; set; } = 0;    // Số lượng xe không đạt / có khiếm khuyết
+    public string Status { get; set; } = "Draft";       // Draft → Pending → InProgress → Completed (hoặc Rejected / Cancelled)
+    public string? TechnicianCode { get; set; }         // Mã KTV phụ trách
+    public string? TechnicianName { get; set; }         // Tên KTV phụ trách
+    public string? SupervisorCode { get; set; }         // Mã Quản đốc / Giám sát kho bãi
+    public string? SupervisorName { get; set; }         // Tên Quản đốc / Giám sát kho bãi
+    public string? Remark { get; set; }                 // Ghi chú đợt bảo dưỡng
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }             // Người phê duyệt kế hoạch
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }          // Thời điểm nghiệm thu hoàn tất toàn bộ đợt bảo dưỡng
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong phiếu bảo dưỡng kho OEM (BizHTC.StorageFG.VIN_MaintainPeriodHist &amp; StoF_MaintainMain / StorageMaintenanceLine): danh sách VIN, đo điện áp ắc quy, nổ máy kiểm tra động cơ, áp suất lốp, mức dầu nước, vệ sinh thân vỏ và hạn bảo dưỡng kế tiếp.</summary>
+public sealed class StorageMaintenanceLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long StorageMaintenanceId { get; set; }
+    public string MtnNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? StorageCode { get; set; }            // Vị trí bãi / ô đỗ của xe
+    public int MtnTimes { get; set; } = 0;              // Số lần bảo dưỡng lũy kế của xe này
+    public double? BatteryVoltage { get; set; } = 12.6; // Điện áp bình ắc quy đo được (V, chuẩn >= 12.4V)
+    public bool ChargeBatteryOk { get; set; } = true;   // Ắc quy đủ điện / Đã sạc bổ sung
+    public bool EngineStartCheckOk { get; set; } = true;// Nổ máy động cơ 15 phút, bơm dầu bôi trơn hoạt động tốt
+    public bool TirePressureCheckOk { get; set; } = true;// Áp suất lốp đạt tiêu chuẩn kỹ thuật (2.2 - 2.5 bar)
+    public bool TireRotationOk { get; set; } = true;    // Đã di chuyển dịch chuyển bánh xe chống méo lốp
+    public bool FluidLevelsCheckOk { get; set; } = true;// Mức dung dịch dầu máy, nước làm mát, dầu phanh đạt chuẩn
+    public bool ElectricalSystemsOk { get; set; } = true;// Hệ thống điện, đèn, còi, gạt mưa hoạt động tốt
+    public bool BodyCleanOk { get; set; } = true;       // Vệ sinh sạch sẽ bề mặt sơn và thân vỏ xe
+    public string InspectionResult { get; set; } = "Pending"; // Pending → Passed / Failed
+    public DateTime? MtnDate { get; set; }              // Thời điểm thực hiện kiểm tra xe này
+    public DateTime? NextMtnDate { get; set; }          // Hạn bảo dưỡng định kỳ kế tiếp (= MtnDate + 30 ngày)
+    public string? Technician { get; set; }             // KTV thực hiện kiểm tra xe này
+    public string? DefectNotes { get; set; }            // Ghi chú sự cố / khiếm khuyết kỹ thuật nếu Failed
+    public string Status { get; set; } = "Pending";     // Pending → InProgress → Completed (hoặc Cancelled)
     public string? Remark { get; set; }
 }
 

@@ -57,6 +57,17 @@
 <li><code>GET /api/transport-minutes?status=&dealer=&transporter=&vin=</code> — tra cứu danh sách biên bản nghiệm thu vận chuyển xe ô tô (NYK, Traco, Vinafco...)</li>
 <li><code>POST /api/transport-minutes/{no}/lines/{vin}/update</code> — kiểm tra thực địa ODO lúc giao/nhận, cước phí, phụ phí, tình trạng ngoại quan xe từng VIN</li>
 <li><code>POST /api/transport-minutes/{no}/lines</code> &amp; <code>DELETE /api/transport-minutes/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong biên bản vận chuyển</li>
+<li><code>POST /api/payments</code> &amp; <code>/api/payments/{no}/{action}</code> — phiếu thanh toán tiền mua xe ô tô của đại lý cho OEM (BizHTC.Payment / Pmt_Payment: submit, approve, confirm/complete, reject, cancel)</li>
+<li><code>GET /api/payments?status=&dealer=&paymentType=&paymentNo=&vin=</code> — tra cứu danh sách phiếu thanh toán tiền xe đại lý</li>
+<li><code>POST /api/payments/{no}/lines/{vin}/update</code> — cập nhật số tiền thanh toán phân bổ theo xe VIN</li>
+<li><code>POST /api/payments/{no}/lines</code> &amp; <code>DELETE /api/payments/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong phiếu thanh toán</li>
+<li><code>POST /api/storage-maintenances</code> &amp; <code>/api/storage-maintenances/{no}/{action}</code> — kế hoạch &amp; phiếu bảo dưỡng định kỳ xe tồn kho OEM (BizHTC.StorageFG.VIN_MaintainPeriod &amp; StoF_Maintain / StorageMaintenance: submit, approve, start, complete, reject, cancel)</li>
+<li><code>GET /api/storage-maintenances?status=&storageCode=&mtnType=&mtnNo=&vin=</code> — tra cứu danh sách phiếu bảo dưỡng xe lưu kho</li>
+<li><code>GET /api/storage-maintenances/due-vehicles?storageCode=&dueWithinDays=7</code> — danh sách xe lưu kho sắp đến hạn / quá hạn bảo dưỡng định kỳ 30 ngày</li>
+<li><code>POST /api/storage-maintenances/{no}/lines/{vin}/inspect</code> — kiểm tra kỹ thuật bảo dưỡng bãi xe theo từng VIN (điện áp ắc quy, nổ máy, áp suất lốp, mức dầu nước, vệ sinh thân vỏ)</li>
+<li><code>POST /api/storage-maintenances/{no}/lines/{vin}/update</code> — cập nhật thông số kiểm tra kỹ thuật dòng xe bảo dưỡng</li>
+<li><code>POST /api/storage-maintenances/{no}/lines</code> &amp; <code>DELETE /api/storage-maintenances/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong phiếu bảo dưỡng</li>
+<li><code>GET /api/vehicles/{vin}/maintenance-history</code> — xem toàn bộ lịch sử các đợt bảo dưỡng lưu kho của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>
