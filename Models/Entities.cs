@@ -716,6 +716,64 @@ public sealed class InsuranceRequestLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Biên bản giao nhận & nghiệm thu vận chuyển xe ô tô đường bộ (BizHTC.Car.Car_TransportMinutes / TransportMinutes): quản lý giao nhận và quyết toán cước vận tải xe lồng giữa Hãng OEM, Đại lý và Đơn vị vận chuyển.</summary>
+public sealed class TransportMinutes
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string TransportMinutesNo { get; set; } = "";     // Mã biên bản vận chuyển (TM...)
+    public string DealerCode { get; set; } = "";           // Đại lý nhận xe
+    public string TransporterCode { get; set; } = "";      // Đơn vị / Nhà xe vận chuyển (NYK, Traco, Vinafco...)
+    public string? TransporterName { get; set; }           // Tên đơn vị vận chuyển
+    public string? TruckPlateNo { get; set; }              // Biển số xe lồng chở ô tô
+    public string? DriverName { get; set; }                // Tên lái xe lồng
+    public string? DriverPhone { get; set; }               // SĐT lái xe
+    public string? TransportReqNo { get; set; }            // Mã kế hoạch vận chuyển (Car_TransportReq)
+    public string? DeliveryOrderNo { get; set; }           // Lệnh giao xe liên kết (nếu có)
+    public DateTime TransportMinutesDate { get; set; } = DateTime.Now; // Ngày lập biên bản bàn giao
+    public int TotalVehicleCount { get; set; } = 0;        // Tổng số lượng xe bàn giao
+    public decimal TotalFreightAmount { get; set; } = 0;   // Tổng cước phí vận chuyển (VNĐ)
+    public decimal TotalSurchargeAmount { get; set; } = 0; // Tổng phụ phí phát sinh (cầu đường/bến bãi) (VNĐ)
+    public decimal TotalAmount { get; set; } = 0;          // Tổng tiền quyết toán cước = TotalFreightAmount + TotalSurchargeAmount
+    public string? FilePath { get; set; }                  // Đường dẫn/link ảnh chụp/biên bản giấy ký nhận
+    public string Status { get; set; } = "Draft";          // Draft → Pending → DLAppr → HTCAppr1 → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Ghi chú điều hành
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? DLApprBy { get; set; }                  // Người đại diện đại lý ký nhận
+    public DateTime? DLApprAt { get; set; }
+    public string? DLApprNote { get; set; }                // Ghi chú nghiệm thu của đại lý
+    public string? HTCAppr1By { get; set; }                // Bộ phận Điều vận/Logistics OEM xác nhận
+    public DateTime? HTCAppr1At { get; set; }
+    public string? HTCAppr2By { get; set; }                // Lãnh đạo / Kế toán OEM duyệt quyết toán
+    public DateTime? HTCAppr2At { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong biên bản vận chuyển (BizHTC.Car.Car_TransportMinutesDetail / TransportMinutesLine): danh sách VIN, chỉ số ODO xuất phát/đích, cước phí, phụ phí và tình trạng xe khi hạ tải.</summary>
+public sealed class TransportMinutesLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long TransportMinutesId { get; set; }
+    public string TransportMinutesNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? DeliveryOrderNo { get; set; }
+    public string? TransportReqNo { get; set; }
+    public string? FromStorage { get; set; }               // Bãi bốc xe lên xe lồng
+    public string? ToStorage { get; set; }                 // Bãi/Showroom hạ xe
+    public int OdoDeparture { get; set; } = 0;             // ODO khi xếp xe lên lồng (km)
+    public int OdoArrival { get; set; } = 0;               // ODO khi bàn giao hạ xe tại đại lý (km)
+    public decimal FreightAmount { get; set; } = 0;        // Cước vận chuyển xe này (VNĐ)
+    public decimal Surcharge { get; set; } = 0;            // Phụ phí phát sinh xe này (VNĐ)
+    public decimal TotalAmount { get; set; } = 0;          // Tổng cước xe = FreightAmount + Surcharge
+    public string CargoCondition { get; set; } = "Good";   // Tình trạng xe: Good (Nguyên vẹn), Scratched (Trầy xước), Dented (Móp), Dirty (Bụi bẩn)
+    public bool IsInspectionPassed { get; set; } = true;   // Kết quả nghiệm thu đạt yêu cầu
+    public string Status { get; set; } = "Pending";        // Pending → DLAppr → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>
 public sealed class VehicleEvent
 {

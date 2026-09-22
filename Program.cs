@@ -727,6 +727,54 @@ app.MapDelete("/api/insurance-requests/{insReqNo}/lines/{vin}", async (string in
     return r is null ? Results.NotFound(new { insReqNo, vin, error = "Không tìm thấy dòng xe trong yêu cầu bảo hiểm hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Biên bản giao nhận & nghiệm thu vận chuyển xe ô tô (BizHTC.Car.Car_TransportMinutes / TransportMinutes) ----
+app.MapPost("/api/transport-minutes", async (CreateTransportMinutesDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.TransporterCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode và nhà xe TransporterCode." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong biên bản vận chuyển." });
+    try { return Results.Ok(await svc.CreateTransportMinutesAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/transport-minutes", async (IVehicleService svc, string? status, string? dealer, string? transporter, string? vin) =>
+    Results.Ok(await svc.ListTransportMinutesAsync(status, dealer, transporter, vin))).RequireAuthorization();
+
+app.MapGet("/api/transport-minutes/{transportMinutesNo}", async (string transportMinutesNo, IVehicleService svc) =>
+{
+    var r = await svc.GetTransportMinutesAsync(transportMinutesNo);
+    return r is null ? Results.NotFound(new { transportMinutesNo, error = "Không tìm thấy biên bản vận chuyển." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-minutes/{transportMinutesNo}/{action}", async (string transportMinutesNo, string action, TransportMinutesTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "dl-appr" or "dlappr" or "sign-dlr" or "htc-appr1" or "htcappr1" or "logistics-appr" or "htc-appr2" or "htcappr2" or "approve" or "complete" or "settle" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|dl-appr|htc-appr1|approve|reject|cancel" });
+    var r = await svc.TransportMinutesTransitionAsync(transportMinutesNo, action, dto);
+    return r is null ? Results.NotFound(new { transportMinutesNo, error = "Không thấy biên bản vận chuyển hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-minutes/{transportMinutesNo}/lines/{vin}/update", async (string transportMinutesNo, string vin, UpdateTransportMinutesLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateTransportMinutesLineAsync(transportMinutesNo, vin, dto);
+    return r is null ? Results.NotFound(new { transportMinutesNo, vin, error = "Không tìm thấy dòng xe trong biên bản vận chuyển hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-minutes/{transportMinutesNo}/lines", async (string transportMinutesNo, List<TransportMinutesItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào biên bản vận chuyển." });
+    var r = await svc.AddTransportMinutesLinesAsync(transportMinutesNo, items);
+    return r is null ? Results.NotFound(new { transportMinutesNo, error = "Không tìm thấy biên bản vận chuyển hoặc hồ sơ đã chốt/hủy/xe đã tồn tại." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapDelete("/api/transport-minutes/{transportMinutesNo}/lines/{vin}", async (string transportMinutesNo, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveTransportMinutesLineAsync(transportMinutesNo, vin);
+    return r is null ? Results.NotFound(new { transportMinutesNo, vin, error = "Không tìm thấy dòng xe trong biên bản vận chuyển hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

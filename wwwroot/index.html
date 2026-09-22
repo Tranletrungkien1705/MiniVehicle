@@ -53,6 +53,10 @@
 <li><code>GET /api/insurance-requests?status=&insCompanyCode=&insTypeCode=&vin=</code> — tra cứu danh sách yêu cầu bảo hiểm lô xe (PVI, BAOVIET, PJICO, PTI...)</li>
 <li><code>POST /api/insurance-requests/{no}/lines/{vin}/update</code> — điều chỉnh giá trị định giá xe, phí bảo hiểm, kho xuất/nhận, số GCN bảo hiểm điện tử theo từng xe VIN</li>
 <li><code>POST /api/insurance-requests/{no}/lines</code> &amp; <code>DELETE /api/insurance-requests/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong yêu cầu bảo hiểm</li>
+<li><code>POST /api/transport-minutes</code> &amp; <code>/api/transport-minutes/{no}/{action}</code> — biên bản giao nhận &amp; nghiệm thu quyết toán vận chuyển ô tô xe lồng giữa Hãng OEM, Đại lý và Nhà xe vận tải (BizHTC.Car.Car_TransportMinutes / TransportMinutes: submit, dl-appr, htc-appr1, approve/settle, reject, cancel)</li>
+<li><code>GET /api/transport-minutes?status=&dealer=&transporter=&vin=</code> — tra cứu danh sách biên bản nghiệm thu vận chuyển xe ô tô (NYK, Traco, Vinafco...)</li>
+<li><code>POST /api/transport-minutes/{no}/lines/{vin}/update</code> — kiểm tra thực địa ODO lúc giao/nhận, cước phí, phụ phí, tình trạng ngoại quan xe từng VIN</li>
+<li><code>POST /api/transport-minutes/{no}/lines</code> &amp; <code>DELETE /api/transport-minutes/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong biên bản vận chuyển</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>
