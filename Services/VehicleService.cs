@@ -1464,6 +1464,112 @@ public record UpdateQuotationPartLineDto(
     string? Remark = null
 );
 
+public record CreateCustomerCareDto(
+    string Vin,
+    string? DealerCode = null,
+    string? CareType = "FollowUp72h",
+    string? ContactMethod = "PhoneCall",
+    string? CareNo = null,
+    string? CareNoUser = null,
+    string? DealerName = null,
+    string? PlateNo = null,
+    string? Model = null,
+    string? EngineNo = null,
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    string? CustomerEmail = null,
+    string? CustomerAddress = null,
+    string? RoNo = null,
+    string? DoNo = null,
+    int? OdoKm = null,
+    DateTime? ServiceDate = null,
+    DateTime? ContactDate = null,
+    DateTime? NextCareDate = null,
+    int CallAttempts = 1,
+    string? CareStaff = null,
+    string? ServiceAdvisor = null,
+    decimal ScoreOverall = 5.0m,
+    decimal ScoreQuality = 5.0m,
+    decimal ScoreAdvisor = 5.0m,
+    decimal ScoreFacility = 5.0m,
+    bool IsProblemSolved = true,
+    int NpsScore = 10,
+    string? CustomerFeedback = null,
+    string? RemedyAction = null,
+    string? Remark = null,
+    string? CreatedBy = null
+);
+
+public record UpdateCustomerCareDto(
+    string? CareNoUser = null,
+    string? DealerCode = null,
+    string? DealerName = null,
+    string? PlateNo = null,
+    string? CustomerName = null,
+    string? CustomerPhone = null,
+    string? CustomerEmail = null,
+    string? CustomerAddress = null,
+    string? CareType = null,
+    string? ContactMethod = null,
+    string? RoNo = null,
+    string? DoNo = null,
+    int? OdoKm = null,
+    DateTime? ServiceDate = null,
+    DateTime? ContactDate = null,
+    DateTime? NextCareDate = null,
+    string? CareStaff = null,
+    string? ServiceAdvisor = null,
+    decimal? ScoreOverall = null,
+    decimal? ScoreQuality = null,
+    decimal? ScoreAdvisor = null,
+    decimal? ScoreFacility = null,
+    bool? IsProblemSolved = null,
+    int? NpsScore = null,
+    string? CustomerFeedback = null,
+    string? RemedyAction = null,
+    string? Remark = null
+);
+
+public record RecordContactAttemptDto(
+    string? ContactMethod = null,
+    string? CareStaff = null,
+    DateTime? ContactDate = null,
+    DateTime? NextCareDate = null,
+    bool IsReached = true,
+    string? Note = null
+);
+
+public record CompleteCustomerCareDto(
+    decimal ScoreOverall = 5.0m,
+    decimal ScoreQuality = 5.0m,
+    decimal ScoreAdvisor = 5.0m,
+    decimal ScoreFacility = 5.0m,
+    bool IsProblemSolved = true,
+    int NpsScore = 10,
+    string? CustomerFeedback = null,
+    string? RemedyAction = null,
+    bool IsResolved = true,
+    DateTime? ContactDate = null,
+    DateTime? NextCareDate = null,
+    string? CareStaff = null,
+    string? User = null,
+    string? Note = null
+);
+
+public record EscalateCustomerCareDto(
+    string? EscalatedTo = "ServiceManager",
+    string? RemedyAction = null,
+    string? CustomerFeedback = null,
+    string? User = null,
+    string? Note = null
+);
+
+public record CancelCustomerCareDto(
+    string? Reason = null,
+    string? User = null,
+    string? Note = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -1770,6 +1876,16 @@ public interface IVehicleService
     Task<object?> RemoveQuotationPartLineAsync(string quoteNo, long lineId);
     Task<object?> GetVehicleQuotationHistoryAsync(string vin);
     Task<object> GetQuotationSummaryAsync(string? dealerCode, DateTime? fromDate, DateTime? toDate);
+    Task<object> CreateCustomerCareAsync(CreateCustomerCareDto dto);
+    Task<object> ListCustomerCaresAsync(string? status, string? dealer, string? vin, string? careType, string? contactMethod, decimal? minScore, string? careNo);
+    Task<object?> GetCustomerCareAsync(string careNo);
+    Task<object?> UpdateCustomerCareAsync(string careNo, UpdateCustomerCareDto dto);
+    Task<object?> RecordContactAttemptAsync(string careNo, RecordContactAttemptDto dto);
+    Task<object?> CompleteCustomerCareAsync(string careNo, CompleteCustomerCareDto dto);
+    Task<object?> EscalateCustomerCareAsync(string careNo, EscalateCustomerCareDto dto);
+    Task<object?> CancelCustomerCareAsync(string careNo, CancelCustomerCareDto dto);
+    Task<object?> GetVehicleCareHistoryAsync(string vin);
+    Task<object> GetCustomerCareSummaryAsync(string? dealerCode, DateTime? fromDate, DateTime? toDate);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -21433,6 +21549,619 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             totalQuotationAmount,
             convertedAmount,
             byType,
+            byDealer
+        };
+    }
+
+    // ===== Chăm sóc khách hàng & Khảo sát CSI sau dịch vụ/bán xe (BizCarSv.Customer / Ser_CustomerCare) =====
+    public async Task<object> CreateCustomerCareAsync(CreateCustomerCareDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Vin))
+            throw new InvalidOperationException("Cần cung cấp số khung VIN để lập phiếu chăm sóc khách hàng.");
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle == null)
+            throw new InvalidOperationException($"Không tìm thấy xe với số khung {vin}.");
+
+        var careNo = string.IsNullOrWhiteSpace(dto.CareNo)
+            ? "CC" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.CareNo.Trim().ToUpperInvariant();
+
+        if (await db.CustomerCares.AnyAsync(x => x.OrgId == Org && x.CareNo == careNo))
+            throw new InvalidOperationException($"Mã phiếu CSKH {careNo} đã tồn tại.");
+
+        var dealerCode = !string.IsNullOrWhiteSpace(dto.DealerCode) ? dto.DealerCode.Trim().ToUpperInvariant() : (vehicle.DealerCode ?? "DLR-HN01");
+        var dealerName = dto.DealerName?.Trim() ?? (dealerCode == "DLR-HN01" ? "Hyundai Hà Nội 01" : dealerCode == "DLR-HP01" ? "Hyundai Hải Phòng" : "Đại lý Ủy quyền Hyundai");
+
+        var careType = !string.IsNullOrWhiteSpace(dto.CareType) ? dto.CareType.Trim() : "FollowUp72h";
+        var contactMethod = !string.IsNullOrWhiteSpace(dto.ContactMethod) ? dto.ContactMethod.Trim() : "PhoneCall";
+        var customerName = !string.IsNullOrWhiteSpace(dto.CustomerName) ? dto.CustomerName.Trim() : (vehicle.OwnerName ?? "Khách hàng");
+        var customerPhone = !string.IsNullOrWhiteSpace(dto.CustomerPhone) ? dto.CustomerPhone.Trim() : (vehicle.OwnerPhone ?? "");
+        var plateNo = !string.IsNullOrWhiteSpace(dto.PlateNo) ? dto.PlateNo.Trim() : (vehicle.PlateNo ?? "");
+        var model = !string.IsNullOrWhiteSpace(dto.Model) ? dto.Model.Trim() : vehicle.Model;
+        var engineNo = !string.IsNullOrWhiteSpace(dto.EngineNo) ? dto.EngineNo.Trim() : vehicle.EngineNo;
+        var odoKm = dto.OdoKm ?? vehicle.LastOdoKm ?? 0;
+
+        var care = new CustomerCare
+        {
+            OrgId = Org,
+            CareNo = careNo,
+            CareNoUser = dto.CareNoUser?.Trim(),
+            DealerCode = dealerCode,
+            DealerName = dealerName,
+            Vin = vin,
+            PlateNo = plateNo,
+            Model = model,
+            EngineNo = engineNo,
+            CustomerName = customerName,
+            CustomerPhone = customerPhone,
+            CustomerEmail = dto.CustomerEmail?.Trim(),
+            CustomerAddress = dto.CustomerAddress?.Trim(),
+            CareType = careType,
+            ContactMethod = contactMethod,
+            RoNo = dto.RoNo?.Trim().ToUpperInvariant() ?? vehicle.LastRoNo,
+            DoNo = dto.DoNo?.Trim().ToUpperInvariant(),
+            OdoKm = odoKm,
+            ServiceDate = dto.ServiceDate ?? vehicle.LastRoDate ?? vehicle.DeliveredAt ?? DateTime.Now.AddDays(-3),
+            ContactDate = dto.ContactDate,
+            NextCareDate = dto.NextCareDate,
+            CallAttempts = Math.Max(1, dto.CallAttempts),
+            CareStaff = dto.CareStaff?.Trim(),
+            ServiceAdvisor = dto.ServiceAdvisor?.Trim(),
+            ScoreOverall = Math.Clamp(dto.ScoreOverall, 1.0m, 5.0m),
+            ScoreQuality = Math.Clamp(dto.ScoreQuality, 1.0m, 5.0m),
+            ScoreAdvisor = Math.Clamp(dto.ScoreAdvisor, 1.0m, 5.0m),
+            ScoreFacility = Math.Clamp(dto.ScoreFacility, 1.0m, 5.0m),
+            IsProblemSolved = dto.IsProblemSolved,
+            NpsScore = Math.Clamp(dto.NpsScore, 0, 10),
+            CustomerFeedback = dto.CustomerFeedback?.Trim(),
+            RemedyAction = dto.RemedyAction?.Trim(),
+            IsResolved = true,
+            Status = "Pending",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.CustomerCares.Add(care);
+        Log(vin, "CustomerCareCreated", $"{careNo} Lập phiếu chăm sóc khách hàng loại {careType} ({contactMethod}). Khách hàng: {customerName}");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            care.CareNo,
+            care.CareNoUser,
+            care.DealerCode,
+            care.DealerName,
+            care.Vin,
+            care.PlateNo,
+            care.Model,
+            care.CustomerName,
+            care.CustomerPhone,
+            care.CareType,
+            care.ContactMethod,
+            care.RoNo,
+            care.OdoKm,
+            care.Status,
+            care.CreatedAt
+        };
+    }
+
+    public async Task<object> ListCustomerCaresAsync(string? status, string? dealer, string? vin, string? careType, string? contactMethod, decimal? minScore, string? careNo)
+    {
+        var q = db.CustomerCares.Where(x => x.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var st = status.Trim().ToLowerInvariant();
+            q = q.Where(x => x.Status.ToLower() == st);
+        }
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(x => x.DealerCode.ToUpper() == d);
+        }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            q = q.Where(x => x.Vin.ToUpper().Contains(v));
+        }
+        if (!string.IsNullOrWhiteSpace(careType))
+        {
+            var ct = careType.Trim().ToLowerInvariant();
+            q = q.Where(x => x.CareType.ToLower() == ct);
+        }
+        if (!string.IsNullOrWhiteSpace(contactMethod))
+        {
+            var cm = contactMethod.Trim().ToLowerInvariant();
+            q = q.Where(x => x.ContactMethod.ToLower() == cm);
+        }
+        if (minScore.HasValue)
+        {
+            q = q.Where(x => x.ScoreOverall >= minScore.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(careNo))
+        {
+            var cn = careNo.Trim().ToUpperInvariant();
+            q = q.Where(x => x.CareNo.Contains(cn) || (x.CareNoUser != null && x.CareNoUser.Contains(cn)));
+        }
+
+        var items = await q.OrderByDescending(x => x.Id).Take(500).Select(x => new
+        {
+            x.Id,
+            x.CareNo,
+            x.CareNoUser,
+            x.DealerCode,
+            x.DealerName,
+            x.Vin,
+            x.PlateNo,
+            x.Model,
+            x.CustomerName,
+            x.CustomerPhone,
+            x.CustomerEmail,
+            x.CareType,
+            x.ContactMethod,
+            x.RoNo,
+            x.DoNo,
+            x.OdoKm,
+            x.ServiceDate,
+            x.ContactDate,
+            x.NextCareDate,
+            x.CallAttempts,
+            x.CareStaff,
+            x.ServiceAdvisor,
+            x.ScoreOverall,
+            x.ScoreQuality,
+            x.ScoreAdvisor,
+            x.ScoreFacility,
+            x.IsProblemSolved,
+            x.NpsScore,
+            x.CustomerFeedback,
+            x.RemedyAction,
+            x.IsResolved,
+            x.Status,
+            x.EscalatedTo,
+            x.EscalatedAt,
+            x.CompletedBy,
+            x.CompletedAt,
+            x.CancelledBy,
+            x.CancelledAt,
+            x.CancelReason,
+            x.Remark,
+            x.CreatedBy,
+            x.CreatedAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCustomerCareAsync(string careNo)
+    {
+        careNo = careNo.Trim().ToUpperInvariant();
+        var care = await db.CustomerCares.FirstOrDefaultAsync(x => x.OrgId == Org && x.CareNo == careNo);
+        if (care is null) return null;
+
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == care.Vin);
+        var ro = !string.IsNullOrWhiteSpace(care.RoNo)
+            ? await db.RepairOrders.FirstOrDefaultAsync(r => r.OrgId == Org && r.RoNo == care.RoNo)
+            : null;
+
+        return new
+        {
+            care.Id,
+            care.CareNo,
+            care.CareNoUser,
+            care.DealerCode,
+            care.DealerName,
+            care.Vin,
+            care.PlateNo,
+            care.Model,
+            care.EngineNo,
+            care.CustomerName,
+            care.CustomerPhone,
+            care.CustomerEmail,
+            care.CustomerAddress,
+            care.CareType,
+            care.ContactMethod,
+            care.RoNo,
+            care.DoNo,
+            care.OdoKm,
+            care.ServiceDate,
+            care.ContactDate,
+            care.NextCareDate,
+            care.CallAttempts,
+            care.CareStaff,
+            care.ServiceAdvisor,
+            care.ScoreOverall,
+            care.ScoreQuality,
+            care.ScoreAdvisor,
+            care.ScoreFacility,
+            care.IsProblemSolved,
+            care.NpsScore,
+            care.CustomerFeedback,
+            care.RemedyAction,
+            care.IsResolved,
+            care.Status,
+            care.EscalatedTo,
+            care.EscalatedAt,
+            care.CompletedBy,
+            care.CompletedAt,
+            care.CancelledBy,
+            care.CancelledAt,
+            care.CancelReason,
+            care.Remark,
+            care.CreatedBy,
+            care.CreatedAt,
+            vehicle = vehicle is null ? null : new
+            {
+                vehicle.Vin,
+                vehicle.Model,
+                vehicle.Color,
+                vehicle.EngineNo,
+                status = vehicle.Status.ToString(),
+                vehicle.DealerCode,
+                vehicle.OwnerName,
+                vehicle.OwnerPhone,
+                vehicle.PlateNo,
+                vehicle.LastOdoKm,
+                vehicle.LastRoNo,
+                vehicle.LastCareNo,
+                vehicle.LastCareDate,
+                vehicle.LastCareType,
+                vehicle.LastCsiScore,
+                vehicle.CareCount
+            },
+            repairOrder = ro is null ? null : new
+            {
+                ro.RoNo,
+                ro.RoNoUser,
+                ro.RoType,
+                ro.Status,
+                ro.TotalAmount,
+                ro.CheckInDate,
+                ro.ActualDeliveryDate
+            }
+        };
+    }
+
+    public async Task<object?> UpdateCustomerCareAsync(string careNo, UpdateCustomerCareDto dto)
+    {
+        careNo = careNo.Trim().ToUpperInvariant();
+        var care = await db.CustomerCares.FirstOrDefaultAsync(x => x.OrgId == Org && x.CareNo == careNo);
+        if (care is null) return null;
+        if (care.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể sửa đổi thông tin phiếu CSKH ở trạng thái {care.Status}.");
+
+        if (dto.CareNoUser != null) care.CareNoUser = dto.CareNoUser.Trim();
+        if (dto.DealerCode != null) care.DealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        if (dto.DealerName != null) care.DealerName = dto.DealerName.Trim();
+        if (dto.PlateNo != null) care.PlateNo = dto.PlateNo.Trim();
+        if (dto.CustomerName != null) care.CustomerName = dto.CustomerName.Trim();
+        if (dto.CustomerPhone != null) care.CustomerPhone = dto.CustomerPhone.Trim();
+        if (dto.CustomerEmail != null) care.CustomerEmail = dto.CustomerEmail.Trim();
+        if (dto.CustomerAddress != null) care.CustomerAddress = dto.CustomerAddress.Trim();
+        if (dto.CareType != null) care.CareType = dto.CareType.Trim();
+        if (dto.ContactMethod != null) care.ContactMethod = dto.ContactMethod.Trim();
+        if (dto.RoNo != null) care.RoNo = dto.RoNo.Trim().ToUpperInvariant();
+        if (dto.DoNo != null) care.DoNo = dto.DoNo.Trim().ToUpperInvariant();
+        if (dto.OdoKm.HasValue) care.OdoKm = dto.OdoKm.Value;
+        if (dto.ServiceDate.HasValue) care.ServiceDate = dto.ServiceDate.Value;
+        if (dto.ContactDate.HasValue) care.ContactDate = dto.ContactDate.Value;
+        if (dto.NextCareDate.HasValue) care.NextCareDate = dto.NextCareDate.Value;
+        if (dto.CareStaff != null) care.CareStaff = dto.CareStaff.Trim();
+        if (dto.ServiceAdvisor != null) care.ServiceAdvisor = dto.ServiceAdvisor.Trim();
+        if (dto.ScoreOverall.HasValue) care.ScoreOverall = Math.Clamp(dto.ScoreOverall.Value, 1.0m, 5.0m);
+        if (dto.ScoreQuality.HasValue) care.ScoreQuality = Math.Clamp(dto.ScoreQuality.Value, 1.0m, 5.0m);
+        if (dto.ScoreAdvisor.HasValue) care.ScoreAdvisor = Math.Clamp(dto.ScoreAdvisor.Value, 1.0m, 5.0m);
+        if (dto.ScoreFacility.HasValue) care.ScoreFacility = Math.Clamp(dto.ScoreFacility.Value, 1.0m, 5.0m);
+        if (dto.IsProblemSolved.HasValue) care.IsProblemSolved = dto.IsProblemSolved.Value;
+        if (dto.NpsScore.HasValue) care.NpsScore = Math.Clamp(dto.NpsScore.Value, 0, 10);
+        if (dto.CustomerFeedback != null) care.CustomerFeedback = dto.CustomerFeedback.Trim();
+        if (dto.RemedyAction != null) care.RemedyAction = dto.RemedyAction.Trim();
+        if (dto.Remark != null) care.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            care.CareNo,
+            care.CustomerName,
+            care.CustomerPhone,
+            care.CareType,
+            care.ContactMethod,
+            care.Status,
+            care.ScoreOverall,
+            care.IsProblemSolved
+        };
+    }
+
+    public async Task<object?> RecordContactAttemptAsync(string careNo, RecordContactAttemptDto dto)
+    {
+        careNo = careNo.Trim().ToUpperInvariant();
+        var care = await db.CustomerCares.FirstOrDefaultAsync(x => x.OrgId == Org && x.CareNo == careNo);
+        if (care is null) return null;
+        if (care.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể ghi nhận liên hệ phiếu CSKH đã {care.Status}.");
+
+        care.CallAttempts += 1;
+        care.ContactDate = dto.ContactDate ?? DateTime.Now;
+        if (dto.NextCareDate.HasValue) care.NextCareDate = dto.NextCareDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.ContactMethod)) care.ContactMethod = dto.ContactMethod.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CareStaff)) care.CareStaff = dto.CareStaff.Trim();
+
+        if (dto.IsReached)
+        {
+            care.Status = "Contacting";
+            if (!string.IsNullOrWhiteSpace(dto.Note))
+                care.CustomerFeedback = (care.CustomerFeedback + "\n" + dto.Note).Trim();
+            Log(care.Vin, "CustomerCareContacting", $"{careNo} Đã liên hệ lần {care.CallAttempts} ({care.ContactMethod}). Nhân viên: {care.CareStaff}");
+        }
+        else
+        {
+            if (care.CallAttempts >= 3)
+            {
+                care.Status = "Unreachable";
+                care.Remark = (care.Remark + $" | Không liên lạc được sau {care.CallAttempts} lần").Trim(' ', '|');
+                Log(care.Vin, "CustomerCareUnreachable", $"{careNo} Không liên lạc được sau {care.CallAttempts} lần gọi.");
+            }
+            else
+            {
+                care.Status = "Contacting";
+                Log(care.Vin, "CustomerCareAttemptFailed", $"{careNo} Liên hệ lần {care.CallAttempts} không thành công (máy bận/không nghe máy).");
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return new { care.CareNo, care.CallAttempts, care.ContactDate, care.NextCareDate, care.Status, care.CareStaff };
+    }
+
+    public async Task<object?> CompleteCustomerCareAsync(string careNo, CompleteCustomerCareDto dto)
+    {
+        careNo = careNo.Trim().ToUpperInvariant();
+        var care = await db.CustomerCares.FirstOrDefaultAsync(x => x.OrgId == Org && x.CareNo == careNo);
+        if (care is null) return null;
+        if (care.Status == "Cancelled")
+            throw new InvalidOperationException("Không thể hoàn tất phiếu CSKH đã bị hủy.");
+
+        var now = DateTime.Now;
+        care.Status = "Completed";
+        care.ScoreOverall = Math.Clamp(dto.ScoreOverall, 1.0m, 5.0m);
+        care.ScoreQuality = Math.Clamp(dto.ScoreQuality, 1.0m, 5.0m);
+        care.ScoreAdvisor = Math.Clamp(dto.ScoreAdvisor, 1.0m, 5.0m);
+        care.ScoreFacility = Math.Clamp(dto.ScoreFacility, 1.0m, 5.0m);
+        care.IsProblemSolved = dto.IsProblemSolved;
+        care.NpsScore = Math.Clamp(dto.NpsScore, 0, 10);
+        care.IsResolved = dto.IsResolved;
+        care.ContactDate = dto.ContactDate ?? care.ContactDate ?? now;
+        if (dto.NextCareDate.HasValue) care.NextCareDate = dto.NextCareDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.CareStaff)) care.CareStaff = dto.CareStaff.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerFeedback)) care.CustomerFeedback = dto.CustomerFeedback.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.RemedyAction)) care.RemedyAction = dto.RemedyAction.Trim();
+
+        care.CompletedBy = dto.User?.Trim() ?? care.CareStaff ?? "cskh.staff";
+        care.CompletedAt = now;
+
+        // Cập nhật trường trên hồ sơ xe VIN
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == care.Vin);
+        if (vehicle != null)
+        {
+            vehicle.LastCareNo = care.CareNo;
+            vehicle.LastCareDate = care.ContactDate;
+            vehicle.LastCareType = care.CareType;
+            vehicle.LastCsiScore = care.ScoreOverall;
+            vehicle.CareCount += 1;
+        }
+
+        Log(care.Vin, "CustomerCareCompleted",
+            $"{careNo} Hoàn tất CSKH loại {care.CareType}. Đánh giá CSI: {care.ScoreOverall}/5.0 sao (Chất lượng: {care.ScoreQuality}, Cố vấn: {care.ScoreAdvisor}, CSVC: {care.ScoreFacility}, NPS: {care.NpsScore}/10). Phản hồi: {care.CustomerFeedback ?? "Hài lòng"}");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            care.CareNo,
+            care.Status,
+            care.CareType,
+            care.ScoreOverall,
+            care.ScoreQuality,
+            care.ScoreAdvisor,
+            care.ScoreFacility,
+            care.IsProblemSolved,
+            care.NpsScore,
+            care.CustomerFeedback,
+            care.RemedyAction,
+            care.CompletedBy,
+            care.CompletedAt
+        };
+    }
+
+    public async Task<object?> EscalateCustomerCareAsync(string careNo, EscalateCustomerCareDto dto)
+    {
+        careNo = careNo.Trim().ToUpperInvariant();
+        var care = await db.CustomerCares.FirstOrDefaultAsync(x => x.OrgId == Org && x.CareNo == careNo);
+        if (care is null) return null;
+        if (care.Status == "Cancelled")
+            throw new InvalidOperationException("Không thể chuyển tiếp khiếu nại phiếu CSKH đã bị hủy.");
+
+        var now = DateTime.Now;
+        care.Status = "Escalated";
+        care.EscalatedTo = dto.EscalatedTo?.Trim() ?? "ServiceManager";
+        care.EscalatedAt = now;
+        care.IsResolved = false;
+        if (!string.IsNullOrWhiteSpace(dto.CustomerFeedback)) care.CustomerFeedback = dto.CustomerFeedback.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.RemedyAction)) care.RemedyAction = dto.RemedyAction.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Note)) care.Remark = (care.Remark + " | " + dto.Note).Trim(' ', '|');
+
+        Log(care.Vin, "CustomerCareEscalated",
+            $"{careNo} Chuyển tiếp khiếu nại khách hàng lên {care.EscalatedTo}. Phản hồi bức xúc: {care.CustomerFeedback}. Phương án: {care.RemedyAction}");
+
+        await db.SaveChangesAsync();
+
+        return new { care.CareNo, care.Status, care.EscalatedTo, care.EscalatedAt, care.CustomerFeedback, care.RemedyAction };
+    }
+
+    public async Task<object?> CancelCustomerCareAsync(string careNo, CancelCustomerCareDto dto)
+    {
+        careNo = careNo.Trim().ToUpperInvariant();
+        var care = await db.CustomerCares.FirstOrDefaultAsync(x => x.OrgId == Org && x.CareNo == careNo);
+        if (care is null) return null;
+        if (care.Status == "Completed")
+            throw new InvalidOperationException("Không thể hủy phiếu CSKH đã hoàn tất.");
+
+        var now = DateTime.Now;
+        care.Status = "Cancelled";
+        care.CancelledBy = dto.User?.Trim() ?? "staff";
+        care.CancelledAt = now;
+        care.CancelReason = dto.Reason?.Trim() ?? dto.Note?.Trim() ?? "Hủy yêu cầu chăm sóc khách hàng";
+
+        Log(care.Vin, "CustomerCareCancelled", $"{careNo} Đã hủy phiếu CSKH: {care.CancelReason}");
+        await db.SaveChangesAsync();
+
+        return new { care.CareNo, care.Status, care.CancelledBy, care.CancelledAt, care.CancelReason };
+    }
+
+    public async Task<object?> GetVehicleCareHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null) return null;
+
+        var cares = await db.CustomerCares
+            .Where(x => x.OrgId == Org && x.Vin == vin)
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync();
+
+        var completedCares = cares.Where(x => x.Status == "Completed").ToList();
+        var avgCsiScore = completedCares.Count > 0 ? Math.Round(completedCares.Average(x => x.ScoreOverall), 1) : 0;
+        var avgNpsScore = completedCares.Count > 0 ? Math.Round(completedCares.Average(x => x.NpsScore), 1) : 0;
+
+        return new
+        {
+            vin = vehicle.Vin,
+            model = vehicle.Model,
+            plateNo = vehicle.PlateNo,
+            ownerName = vehicle.OwnerName,
+            ownerPhone = vehicle.OwnerPhone,
+            vehicle.LastCareNo,
+            vehicle.LastCareDate,
+            vehicle.LastCareType,
+            vehicle.LastCsiScore,
+            vehicle.CareCount,
+            totalInteractions = cares.Count,
+            completedCount = completedCares.Count,
+            averageCsiScore = avgCsiScore,
+            averageNpsScore = avgNpsScore,
+            history = cares.Select(c => new
+            {
+                c.CareNo,
+                c.CareNoUser,
+                c.DealerCode,
+                c.DealerName,
+                c.CareType,
+                c.ContactMethod,
+                c.RoNo,
+                c.DoNo,
+                c.ContactDate,
+                c.NextCareDate,
+                c.CareStaff,
+                c.ScoreOverall,
+                c.ScoreQuality,
+                c.ScoreAdvisor,
+                c.ScoreFacility,
+                c.IsProblemSolved,
+                c.NpsScore,
+                c.CustomerFeedback,
+                c.RemedyAction,
+                c.Status,
+                c.CompletedAt,
+                c.CreatedAt
+            })
+        };
+    }
+
+    public async Task<object> GetCustomerCareSummaryAsync(string? dealerCode, DateTime? fromDate, DateTime? toDate)
+    {
+        var q = db.CustomerCares.Where(x => x.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode)) q = q.Where(x => x.DealerCode == dealerCode);
+        if (fromDate.HasValue) q = q.Where(x => x.CreatedAt >= fromDate.Value);
+        if (toDate.HasValue) q = q.Where(x => x.CreatedAt <= toDate.Value);
+
+        var cares = await q.ToListAsync();
+
+        var totalCares = cares.Count;
+        var pendingCount = cares.Count(x => x.Status == "Pending");
+        var contactingCount = cares.Count(x => x.Status == "Contacting");
+        var completedCount = cares.Count(x => x.Status == "Completed");
+        var escalatedCount = cares.Count(x => x.Status == "Escalated");
+        var unreachableCount = cares.Count(x => x.Status == "Unreachable");
+        var cancelledCount = cares.Count(x => x.Status == "Cancelled");
+
+        var completedItems = cares.Where(x => x.Status == "Completed").ToList();
+        var averageCsiScore = completedItems.Count > 0 ? Math.Round(completedItems.Average(x => x.ScoreOverall), 2) : 0;
+        var averageQualityScore = completedItems.Count > 0 ? Math.Round(completedItems.Average(x => x.ScoreQuality), 2) : 0;
+        var averageAdvisorScore = completedItems.Count > 0 ? Math.Round(completedItems.Average(x => x.ScoreAdvisor), 2) : 0;
+        var averageFacilityScore = completedItems.Count > 0 ? Math.Round(completedItems.Average(x => x.ScoreFacility), 2) : 0;
+        var averageNpsScore = completedItems.Count > 0 ? Math.Round(completedItems.Average(x => x.NpsScore), 1) : 0;
+
+        var satisfiedCount = completedItems.Count(x => x.ScoreOverall >= 4.0m);
+        var csatPercent = completedItems.Count > 0 ? Math.Round((double)satisfiedCount / completedItems.Count * 100, 1) : 0;
+        var completionRatePercent = totalCares > 0 ? Math.Round((double)completedCount / totalCares * 100, 1) : 0;
+
+        var promotersCount = completedItems.Count(x => x.NpsScore >= 9);
+        var passivesCount = completedItems.Count(x => x.NpsScore is 7 or 8);
+        var detractorsCount = completedItems.Count(x => x.NpsScore <= 6);
+        var netPromoterScore = completedItems.Count > 0 ? Math.Round(((double)promotersCount - detractorsCount) / completedItems.Count * 100, 1) : 0;
+
+        var byCareType = cares.GroupBy(x => x.CareType).Select(g => new
+        {
+            careType = g.Key,
+            totalCount = g.Count(),
+            completedCount = g.Count(x => x.Status == "Completed"),
+            averageScore = g.Where(x => x.Status == "Completed").Any()
+                ? Math.Round(g.Where(x => x.Status == "Completed").Average(x => x.ScoreOverall), 2)
+                : 0
+        }).ToList();
+
+        var byDealer = cares.GroupBy(x => x.DealerCode).Select(g => new
+        {
+            dealerCode = g.Key,
+            dealerName = g.First().DealerName ?? g.Key,
+            totalCount = g.Count(),
+            completedCount = g.Count(x => x.Status == "Completed"),
+            averageScore = g.Where(x => x.Status == "Completed").Any()
+                ? Math.Round(g.Where(x => x.Status == "Completed").Average(x => x.ScoreOverall), 2)
+                : 0
+        }).ToList();
+
+        var ratingDistribution = new
+        {
+            star5 = completedItems.Count(x => x.ScoreOverall >= 4.8m),
+            star4 = completedItems.Count(x => x.ScoreOverall >= 3.8m && x.ScoreOverall < 4.8m),
+            star3 = completedItems.Count(x => x.ScoreOverall >= 2.8m && x.ScoreOverall < 3.8m),
+            star1to2 = completedItems.Count(x => x.ScoreOverall < 2.8m)
+        };
+
+        return new
+        {
+            totalCares,
+            pendingCount,
+            contactingCount,
+            completedCount,
+            escalatedCount,
+            unreachableCount,
+            cancelledCount,
+            completionRatePercent,
+            csatPercent,
+            averageCsiScore,
+            averageQualityScore,
+            averageAdvisorScore,
+            averageFacilityScore,
+            averageNpsScore,
+            netPromoterScore,
+            npsBreakdown = new { promotersCount, passivesCount, detractorsCount },
+            ratingDistribution,
+            byCareType,
             byDealer
         };
     }

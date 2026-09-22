@@ -69,6 +69,11 @@ public sealed class Vehicle
     public string? LastQuoteNo { get; set; }           // Mã báo giá dịch vụ & phụ tùng gần nhất (Ser_Quotation / ServiceQuotation)
     public DateTime? LastQuoteDate { get; set; }       // Ngày lập báo giá dịch vụ gần nhất
     public int QuotationCount { get; set; } = 0;       // Tổng số lần xe đã lập báo giá dịch vụ & phụ tùng
+    public string? LastCareNo { get; set; }           // Mã phiếu CSKH gần nhất (Ser_CustomerCare / CustomerCare)
+    public DateTime? LastCareDate { get; set; }       // Ngày thực hiện CSKH gần nhất
+    public string? LastCareType { get; set; }         // Loại hình chăm sóc gần nhất (FollowUp24h, FollowUp72h, MaintenanceReminder, Birthday, SeasonalCare)
+    public decimal? LastCsiScore { get; set; }        // Điểm đánh giá hài lòng CSI gần nhất (1-5 sao)
+    public int CareCount { get; set; } = 0;           // Tổng số lần đã thực hiện CSKH
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -2036,6 +2041,59 @@ public sealed class ServiceQuotationPartLine
     public string PaymentType { get; set; } = "Customer"; // Customer (Khách thanh toán), Warranty (Bảo hành OEM chi trả), Insurance (Bảo hiểm chi trả)
     public string Status { get; set; } = "Pending";     // Pending → Approved (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
+}
+
+/// <summary>Chăm sóc khách hàng & Khảo sát chỉ số hài lòng CSI sau dịch vụ/bán xe (BizCarSv.Customer / Ser_CustomerCare, Ser_CustomerCare24h, Ser_CustomerCare72h, Ser_CustomerCareMaintance, Ser_CustomerCareBth): quản lý luồng chăm sóc khách hàng sau khi nhận xe mới hoặc sau bảo dưỡng sửa chữa xưởng, khảo sát CSI 24h & 72h, nhắc hạn bảo dưỡng định kỳ và chúc mừng sinh nhật chủ xe.</summary>
+public sealed class CustomerCare
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string CareNo { get; set; } = "";             // Mã phiếu CSKH (CC26-...)
+    public string? CareNoUser { get; set; }              // Mã phiếu do người dùng / đại lý nhập (nếu có)
+    public string DealerCode { get; set; } = "";         // Đại lý thực hiện CSKH
+    public string? DealerName { get; set; }              // Tên đại lý
+    public string Vin { get; set; } = "";                // Số khung xe
+    public string? PlateNo { get; set; }                 // Biển số xe
+    public string? Model { get; set; }                   // Dòng xe (SantaFe, Tucson, Accent, Creta, Elantra...)
+    public string? EngineNo { get; set; }                // Số máy
+    public string? CustomerName { get; set; }            // Tên chủ xe / khách hàng
+    public string? CustomerPhone { get; set; }           // Số điện thoại khách hàng
+    public string? CustomerEmail { get; set; }           // Email khách hàng
+    public string? CustomerAddress { get; set; }         // Địa chỉ khách hàng
+    public string CareType { get; set; } = "FollowUp72h"; // FollowUp24h (Bàn giao xe mới), FollowUp72h (Khảo sát dịch vụ xưởng), MaintenanceReminder (Nhắc bảo dưỡng định kỳ), Birthday (Chúc mừng sinh nhật), SeasonalCare (Chăm sóc xe theo mùa vụ)
+    public string ContactMethod { get; set; } = "PhoneCall"; // PhoneCall (Gọi điện), SMS (Tin nhắn), ZaloZNS (Zalo), Email (Email), InGarage (Trực tiếp)
+    public string? RoNo { get; set; }                    // Mã lệnh sửa chữa xưởng liên quan (Ser_RO)
+    public string? DoNo { get; set; }                    // Mã lệnh giao xe liên quan (DeliveryOrder / DLS_Deal)
+    public int? OdoKm { get; set; }                      // Số km ODO ghi nhận
+    public DateTime? ServiceDate { get; set; }           // Ngày làm dịch vụ / Ngày nhận xe
+    public DateTime? ContactDate { get; set; }           // Ngày liên hệ thực tế
+    public DateTime? NextCareDate { get; set; }          // Ngày hẹn chăm sóc / bảo dưỡng tiếp theo
+    public int CallAttempts { get; set; } = 1;           // Số lần thử gọi / liên hệ
+    public string? CareStaff { get; set; }               // Nhân viên CSKH phụ trách
+    public string? ServiceAdvisor { get; set; }          // Cố vấn dịch vụ phụ trách xe
+
+    // Khảo sát & Đánh giá chỉ số CSI (Customer Satisfaction Index)
+    public decimal ScoreOverall { get; set; } = 5.0m;    // Điểm hài lòng tổng quan (1.0 - 5.0 sao)
+    public decimal ScoreQuality { get; set; } = 5.0m;    // Điểm chất lượng kỹ thuật sửa chữa / xe (1.0 - 5.0 sao)
+    public decimal ScoreAdvisor { get; set; } = 5.0m;    // Điểm thái độ & tính chuyên nghiệp của Cố vấn (1.0 - 5.0 sao)
+    public decimal ScoreFacility { get; set; } = 5.0m;   // Điểm cơ sở vật chất phòng chờ & tiếp đón (1.0 - 5.0 sao)
+    public bool IsProblemSolved { get; set; } = true;    // Sự cố kỹ thuật của xe đã được giải quyết triệt để
+    public int NpsScore { get; set; } = 10;              // Chỉ số NPS sẵn sàng giới thiệu bạn bè (0 - 10)
+    public string? CustomerFeedback { get; set; }        // Ý kiến phản hồi / góp ý chi tiết của chủ xe
+    public string? RemedyAction { get; set; }            // Phương án xử lý khiếu nại / khắc phục sự cố nếu khách chưa hài lòng
+    public bool IsResolved { get; set; } = true;         // Khiếu nại đã được giải quyết thỏa đáng
+
+    public string Status { get; set; } = "Pending";      // Pending → Contacting → Completed (hoặc Escalated / Unreachable / Cancelled)
+    public string? EscalatedTo { get; set; }             // Chuyển cấp quản lý xử lý (ServiceManager, Director...)
+    public DateTime? EscalatedAt { get; set; }           // Thời điểm chuyển cấp khiếu nại
+    public string? CompletedBy { get; set; }             // Người hoàn tất CSKH
+    public DateTime? CompletedAt { get; set; }           // Thời điểm hoàn tất CSKH
+    public string? CancelledBy { get; set; }             // Người hủy
+    public DateTime? CancelledAt { get; set; }           // Thời điểm hủy
+    public string? CancelReason { get; set; }            // Lý do hủy
+    public string? Remark { get; set; }                  // Ghi chú nghiệp vụ
+    public string? CreatedBy { get; set; }               // Người tạo
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
 }
 
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>

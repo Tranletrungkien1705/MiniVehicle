@@ -2498,6 +2498,114 @@ public static class Seeder
                 v1Quote.QuotationCount = 1;
             }
         }
+
+        if (!await db.CustomerCares.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var care1 = new CustomerCare
+            {
+                OrgId = org,
+                CareNo = "CC-HN01-202603-0001",
+                CareNoUser = "CSKH-2026/03/HN01-001",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                Vin = "DEMOVIN00000001",
+                PlateNo = "30K-888.88",
+                Model = "Accent 1.4 AT",
+                EngineNo = "G4LC0001",
+                CustomerName = "Nguyễn Văn An",
+                CustomerPhone = "0901234567",
+                CustomerEmail = "an.nguyen@gmail.com",
+                CustomerAddress = "Số 12 phố Trần Duy Hưng, Cầu Giấy, Hà Nội",
+                CareType = "FollowUp72h",
+                ContactMethod = "PhoneCall",
+                RoNo = "RO-HN01-2026-0001",
+                OdoKm = 20500,
+                ServiceDate = DateTime.Now.AddDays(-3),
+                ContactDate = DateTime.Now.AddDays(-1),
+                NextCareDate = DateTime.Now.AddDays(89),
+                CallAttempts = 1,
+                CareStaff = "CSKH Lê Thùy Linh",
+                ServiceAdvisor = "Trần Đình Khang",
+                ScoreOverall = 5.0m,
+                ScoreQuality = 5.0m,
+                ScoreAdvisor = 5.0m,
+                ScoreFacility = 4.8m,
+                IsProblemSolved = true,
+                NpsScore = 10,
+                CustomerFeedback = "Khách hàng rất hài lòng về dịch vụ bảo dưỡng, xe chạy êm, cố vấn nhiệt tình giải thích chi tiết các hạng mục thay dầu lọc và vệ sinh phanh.",
+                IsResolved = true,
+                Status = "Completed",
+                CompletedBy = "CSKH Lê Thùy Linh",
+                CompletedAt = DateTime.Now.AddDays(-1),
+                Remark = "Khảo sát CSI 72h sau bảo dưỡng cấp 20.000 km hoàn tất xuất sắc",
+                CreatedBy = "system.trigger",
+                CreatedAt = DateTime.Now.AddDays(-3)
+            };
+            db.CustomerCares.Add(care1);
+
+            var care2 = new CustomerCare
+            {
+                OrgId = org,
+                CareNo = "CC-HN01-202603-0002",
+                CareNoUser = "CSKH-2026/03/HN01-002",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                Vin = "DEMOVIN00000002",
+                PlateNo = "30K-999.99",
+                Model = "Creta 1.5 Cao cấp",
+                EngineNo = "G4FL0002",
+                CustomerName = "Trần Thị Bích",
+                CustomerPhone = "0912345678",
+                CustomerEmail = "bich.tran@gmail.com",
+                CustomerAddress = "Số 88 đường Láng, Đống Đa, Hà Nội",
+                CareType = "MaintenanceReminder",
+                ContactMethod = "ZaloZNS",
+                OdoKm = 10000,
+                ServiceDate = DateTime.Now.AddDays(-90),
+                ContactDate = DateTime.Now.AddDays(-2),
+                NextCareDate = DateTime.Now.AddDays(7),
+                CallAttempts = 1,
+                CareStaff = "CSKH Hoàng Mai Trang",
+                ServiceAdvisor = "Trần Đình Khang",
+                ScoreOverall = 4.8m,
+                ScoreQuality = 4.8m,
+                ScoreAdvisor = 5.0m,
+                ScoreFacility = 4.5m,
+                IsProblemSolved = true,
+                NpsScore = 9,
+                CustomerFeedback = "Khách đã nhận tin nhắn ZNS nhắc bảo dưỡng 10.000 km và đồng ý đặt lịch hẹn thứ 7 tuần tới.",
+                IsResolved = true,
+                Status = "Completed",
+                CompletedBy = "CSKH Hoàng Mai Trang",
+                CompletedAt = DateTime.Now.AddDays(-2),
+                Remark = "Nhắc bảo dưỡng định kỳ 10.000 km qua Zalo ZNS thành công",
+                CreatedBy = "system.auto_reminder",
+                CreatedAt = DateTime.Now.AddDays(-5)
+            };
+            db.CustomerCares.Add(care2);
+            await db.SaveChangesAsync();
+
+            var v1Care = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Care != null)
+            {
+                v1Care.LastCareNo = care1.CareNo;
+                v1Care.LastCareDate = care1.ContactDate;
+                v1Care.LastCareType = care1.CareType;
+                v1Care.LastCsiScore = care1.ScoreOverall;
+                v1Care.CareCount = 1;
+            }
+
+            var v2Care = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Care != null)
+            {
+                v2Care.LastCareNo = care2.CareNo;
+                v2Care.LastCareDate = care2.ContactDate;
+                v2Care.LastCareType = care2.CareType;
+                v2Care.LastCsiScore = care2.ScoreOverall;
+                v2Care.CareCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -2631,7 +2739,13 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"QuotationCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"ServiceQuotations\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"QuoteNo\" text NOT NULL DEFAULT '', \"QuoteNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"OdoKm\" integer NOT NULL DEFAULT 0, \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"CustomerAddress\" text NULL, \"CustomerType\" text NOT NULL DEFAULT 'Individual', \"QuotationType\" text NOT NULL DEFAULT 'PeriodicMaintenance', \"ServiceAdvisor\" text NULL, \"QuoteDate\" timestamp NOT NULL DEFAULT now(), \"ValidUntilDate\" timestamp NULL, \"PaymentMethod\" text NOT NULL DEFAULT 'Cash', \"TotalLaborAmount\" numeric NOT NULL DEFAULT 0, \"TotalPartAmount\" numeric NOT NULL DEFAULT 0, \"DiscountAmount\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"ApprovedByCustomer\" boolean NOT NULL DEFAULT false, \"CustomerApprovedAt\" timestamp NULL, \"CustomerSignature\" text NULL, \"ConvertedRoNo\" text NULL, \"ConvertedAt\" timestamp NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"SentBy\" text NULL, \"SentAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"ServiceQuotationLaborLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceQuotationId\" bigint NOT NULL, \"QuoteNo\" text NOT NULL DEFAULT '', \"SerCode\" text NOT NULL DEFAULT '', \"SerName\" text NOT NULL DEFAULT '', \"ServiceType\" text NOT NULL DEFAULT 'Maintenance', \"StandardHours\" numeric NOT NULL DEFAULT 1.0, \"LaborPrice\" numeric NOT NULL DEFAULT 300000, \"Discount\" numeric NOT NULL DEFAULT 0, \"LaborAmount\" numeric NOT NULL DEFAULT 300000, \"Technician\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"ServiceQuotationPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceQuotationId\" bigint NOT NULL, \"QuoteNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"Discount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PaymentType\" text NOT NULL DEFAULT 'Customer', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceQuotationPartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServiceQuotationId\" bigint NOT NULL, \"QuoteNo\" text NOT NULL DEFAULT '', \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"Discount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"PaymentType\" text NOT NULL DEFAULT 'Customer', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCareNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCareDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCareType\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCsiScore\" numeric NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"CareCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"CustomerCares\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CareNo\" text NOT NULL DEFAULT '', \"CareNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"PlateNo\" text NULL, \"Model\" text NULL, \"EngineNo\" text NULL, \"CustomerName\" text NULL, \"CustomerPhone\" text NULL, \"CustomerEmail\" text NULL, \"CustomerAddress\" text NULL, \"CareType\" text NOT NULL DEFAULT 'FollowUp72h', \"ContactMethod\" text NOT NULL DEFAULT 'PhoneCall', \"RoNo\" text NULL, \"DoNo\" text NULL, \"OdoKm\" integer NULL, \"ServiceDate\" timestamp NULL, \"ContactDate\" timestamp NULL, \"NextCareDate\" timestamp NULL, \"CallAttempts\" integer NOT NULL DEFAULT 1, \"CareStaff\" text NULL, \"ServiceAdvisor\" text NULL, \"ScoreOverall\" numeric NOT NULL DEFAULT 5.0, \"ScoreQuality\" numeric NOT NULL DEFAULT 5.0, \"ScoreAdvisor\" numeric NOT NULL DEFAULT 5.0, \"ScoreFacility\" numeric NOT NULL DEFAULT 5.0, \"IsProblemSolved\" boolean NOT NULL DEFAULT true, \"NpsScore\" integer NOT NULL DEFAULT 10, \"CustomerFeedback\" text NULL, \"RemedyAction\" text NULL, \"IsResolved\" boolean NOT NULL DEFAULT true, \"Status\" text NOT NULL DEFAULT 'Pending', \"EscalatedTo\" text NULL, \"EscalatedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

@@ -2539,6 +2539,109 @@ app.MapGet("/api/vehicles/{vin}/quotation-history", async (string vin, IVehicleS
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Chăm sóc khách hàng & Khảo sát CSI sau dịch vụ/bán xe (BizCarSv.Customer / Ser_CustomerCare, Ser_CustomerCare24h, Ser_CustomerCare72h, Ser_CustomerCareMaintance, Ser_CustomerCareBth) =====
+
+app.MapPost("/api/customer-cares", async (CreateCustomerCareDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần cung cấp số khung VIN để tạo phiếu chăm sóc khách hàng." });
+    try { return Results.Ok(await svc.CreateCustomerCareAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/customer-cares", async (IVehicleService svc, string? status, string? dealer, string? vin, string? careType, string? contactMethod, decimal? minScore, string? careNo) =>
+    Results.Ok(await svc.ListCustomerCaresAsync(status, dealer, vin, careType, contactMethod, minScore, careNo))).RequireAuthorization();
+
+app.MapGet("/api/customer-cares/summary", async (IVehicleService svc, string? dealerCode, DateTime? fromDate, DateTime? toDate) =>
+    Results.Ok(await svc.GetCustomerCareSummaryAsync(dealerCode, fromDate, toDate))).RequireAuthorization();
+
+app.MapGet("/api/reports/customer-cares/summary", async (IVehicleService svc, string? dealerCode, DateTime? fromDate, DateTime? toDate) =>
+    Results.Ok(await svc.GetCustomerCareSummaryAsync(dealerCode, fromDate, toDate))).RequireAuthorization();
+
+app.MapGet("/api/customer-cares/{careNo}", async (string careNo, IVehicleService svc) =>
+{
+    var r = await svc.GetCustomerCareAsync(careNo);
+    return r is null ? Results.NotFound(new { careNo, error = "Không tìm thấy phiếu CSKH." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/customer-cares/{careNo}", async (string careNo, UpdateCustomerCareDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateCustomerCareAsync(careNo, dto);
+        return r is null ? Results.NotFound(new { careNo, error = "Không tìm thấy phiếu CSKH." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-cares/{careNo}/update", async (string careNo, UpdateCustomerCareDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateCustomerCareAsync(careNo, dto);
+        return r is null ? Results.NotFound(new { careNo, error = "Không tìm thấy phiếu CSKH." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-cares/{careNo}/contact-attempt", async (string careNo, RecordContactAttemptDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RecordContactAttemptAsync(careNo, dto);
+        return r is null ? Results.NotFound(new { careNo, error = "Không tìm thấy phiếu CSKH." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-cares/{careNo}/complete", async (string careNo, CompleteCustomerCareDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.CompleteCustomerCareAsync(careNo, dto);
+        return r is null ? Results.NotFound(new { careNo, error = "Không tìm thấy phiếu CSKH." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-cares/{careNo}/escalate", async (string careNo, EscalateCustomerCareDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.EscalateCustomerCareAsync(careNo, dto);
+        return r is null ? Results.NotFound(new { careNo, error = "Không tìm thấy phiếu CSKH." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-cares/{careNo}/cancel", async (string careNo, CancelCustomerCareDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.CancelCustomerCareAsync(careNo, dto);
+        return r is null ? Results.NotFound(new { careNo, error = "Không tìm thấy phiếu CSKH." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/customer-cares", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleCareHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/customer-care-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleCareHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/care-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleCareHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
