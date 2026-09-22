@@ -51,6 +51,14 @@ public record InspectPdiLineDto(
     string? Remark = null
 );
 
+public record MortgageItemInputDto(string Vin, decimal MortgageAmount = 0, string? Remark = null);
+public record CreateMortgageRequestDto(string BankCode, List<string>? Vins = null, List<MortgageItemInputDto>? Items = null, DateTime? MortgageDate = null, string? Remark = null, string? ReqMortgageNo = null);
+public record MortgageRequestTransitionDto(string? Note = null);
+
+public record RedeemItemInputDto(string Vin, string? ReleaseDocType = "All", string? Remark = null);
+public record CreateRedeemRequestDto(string DealerCode, string BankCode, List<string>? Vins = null, List<RedeemItemInputDto>? Items = null, string? ReqMortgageNo = null, string? Reason = null, string? Remark = null, string? RedeemReqNo = null);
+public record RedeemRequestTransitionDto(string? Note = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -106,6 +114,14 @@ public interface IVehicleService
     Task<object?> GetPdiRequestAsync(string pdiReqNo);
     Task<object?> PdiRequestTransitionAsync(string pdiReqNo, string action, PdiRequestTransitionDto? dto);
     Task<object?> InspectPdiLineAsync(string pdiReqNo, string vin, InspectPdiLineDto dto);
+    Task<object> CreateMortgageRequestAsync(CreateMortgageRequestDto dto);
+    Task<object> ListMortgageRequestsAsync(string? status, string? bank, string? vin);
+    Task<object?> GetMortgageRequestAsync(string reqMortgageNo);
+    Task<object?> MortgageRequestTransitionAsync(string reqMortgageNo, string action, MortgageRequestTransitionDto? dto);
+    Task<object> CreateRedeemRequestAsync(CreateRedeemRequestDto dto);
+    Task<object> ListRedeemRequestsAsync(string? status, string? dealer, string? bank, string? vin);
+    Task<object?> GetRedeemRequestAsync(string redeemReqNo);
+    Task<object?> RedeemRequestTransitionAsync(string redeemReqNo, string action, RedeemRequestTransitionDto? dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -143,6 +159,7 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         var items = await q.OrderByDescending(v => v.Id).Take(500).Select(v => new
         {
             v.Vin, v.Model, v.Color, v.ModelYear, status = v.Status.ToString(),
+            v.IsTestCar, v.IsMortgaged, v.MortgageBankCode,
             v.StorageCode, v.DealerCode, v.OwnerName, v.PlateNo, v.DeliveredAt, v.WarrantyEnd
         }).ToListAsync();
         return new { count = items.Count, items };
@@ -218,6 +235,7 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         return new
         {
             v.Vin, v.Model, status = v.Status.ToString(), v.DealerCode, v.OwnerName, v.PlateNo,
+            v.StorageCode, v.IsTestCar, v.IsMortgaged, v.MortgageBankCode, v.MortgageDate, v.RedeemDate,
             v.DeliveredAt, v.WarrantyStart, v.WarrantyEnd, history = events
         };
     }
@@ -252,6 +270,7 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         return new
         {
             found = true, v.Vin, v.Model, v.Color, v.ModelYear, status = v.Status.ToString(),
+            v.IsTestCar, v.IsMortgaged, v.MortgageBankCode,
             delivered = v.Status == VehicleStatus.Delivered, v.DeliveredAt,
             warrantyActive = active,
             warrantyEnd = v.WarrantyEnd?.ToString("yyyy-MM-dd"),
@@ -1991,5 +2010,407 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             line.DefectNotes,
             headerStatus = pdi.Status
         };
+    }
+
+    // ===== Thế chấp xe ngân hàng (BizHTC.GiaiChap.RM_ReqMortgage / RM_ReqMortgage) =====
+    public async Task<object> CreateMortgageRequestAsync(CreateMortgageRequestDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.BankCode))
+            throw new InvalidOperationException("Cần mã Ngân hàng thế chấp (BankCode).");
+
+        var items = new List<MortgageItemInputDto>();
+        if (dto.Items != null && dto.Items.Count > 0) items.AddRange(dto.Items);
+        else if (dto.Vins != null && dto.Vins.Count > 0) items.AddRange(dto.Vins.Select(v => new MortgageItemInputDto(v)));
+
+        if (items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 VIN trong yêu cầu thế chấp.");
+
+        var distinctItems = items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var reqNo = string.IsNullOrWhiteSpace(dto.ReqMortgageNo)
+            ? "RM" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.ReqMortgageNo!.Trim().ToUpperInvariant();
+
+        if (await db.MortgageRequests.AnyAsync(r => r.OrgId == Org && r.ReqMortgageNo == reqNo))
+            throw new InvalidOperationException($"Mã yêu cầu thế chấp {reqNo} đã tồn tại.");
+
+        var bankCode = dto.BankCode.Trim().ToUpperInvariant();
+        var m = new MortgageRequest
+        {
+            OrgId = Org,
+            ReqMortgageNo = reqNo,
+            BankCode = bankCode,
+            MortgageDate = dto.MortgageDate ?? DateTime.Now,
+            Remark = dto.Remark?.Trim(),
+            Status = "Pending",
+            CreatedAt = DateTime.Now
+        };
+        db.MortgageRequests.Add(m);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            db.MortgageRequestLines.Add(new MortgageRequestLine
+            {
+                OrgId = Org,
+                MortgageRequestId = m.Id,
+                ReqMortgageNo = reqNo,
+                Vin = vin,
+                MortgageAmount = item.MortgageAmount,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(vin, "MortgageRequested", $"{reqNo} Ngân hàng: {bankCode}. Định giá: {item.MortgageAmount:N0}");
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            m.ReqMortgageNo,
+            m.BankCode,
+            m.MortgageDate,
+            m.Status,
+            totalVins = distinctItems.Count,
+            totalAmount = distinctItems.Sum(i => i.MortgageAmount),
+            vins = distinctItems.Select(i => new { i.Vin, i.MortgageAmount })
+        };
+    }
+
+    public async Task<object> ListMortgageRequestsAsync(string? status, string? bank, string? vin)
+    {
+        var q = db.MortgageRequests.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(bank)) { var b = bank.Trim().ToUpperInvariant(); q = q.Where(r => r.BankCode == b); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.MortgageRequestLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.ReqMortgageNo).Distinct().ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.ReqMortgageNo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.ReqMortgageNo,
+            r.BankCode,
+            r.MortgageDate,
+            r.Status,
+            r.Remark,
+            r.CreatedAt,
+            r.ApprovedAt,
+            vinCount = db.MortgageRequestLines.Count(l => l.OrgId == Org && l.MortgageRequestId == r.Id),
+            totalAmount = db.MortgageRequestLines.Where(l => l.OrgId == Org && l.MortgageRequestId == r.Id).Sum(l => l.MortgageAmount)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetMortgageRequestAsync(string reqMortgageNo)
+    {
+        reqMortgageNo = reqMortgageNo.Trim().ToUpperInvariant();
+        var m = await db.MortgageRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.ReqMortgageNo == reqMortgageNo);
+        if (m is null) return null;
+
+        var lines = await db.MortgageRequestLines.Where(l => l.OrgId == Org && l.MortgageRequestId == m.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.MortgageAmount,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), v.StorageCode, v.DealerCode, v.IsMortgaged, v.MortgageBankCode } : null
+        }).ToList();
+
+        return new
+        {
+            m.ReqMortgageNo,
+            m.BankCode,
+            m.MortgageDate,
+            m.Status,
+            m.Remark,
+            m.CreatedAt,
+            m.ApprovedAt,
+            totalAmount = lines.Sum(l => l.MortgageAmount),
+            vins = details
+        };
+    }
+
+    public async Task<object?> MortgageRequestTransitionAsync(string reqMortgageNo, string action, MortgageRequestTransitionDto? dto)
+    {
+        reqMortgageNo = reqMortgageNo.Trim().ToUpperInvariant();
+        var m = await db.MortgageRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.ReqMortgageNo == reqMortgageNo);
+        if (m is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.MortgageRequestLines.Where(l => l.OrgId == Org && l.MortgageRequestId == m.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (m.Status != "Pending") return null;
+                m.Status = "Approved";
+                m.ApprovedAt = now;
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Approved";
+                foreach (var v in vehicles)
+                {
+                    v.IsMortgaged = true;
+                    v.MortgageBankCode = m.BankCode;
+                    v.MortgageDate = m.MortgageDate ?? now;
+                    Log(v.Vin, "Mortgaged", $"{reqMortgageNo} Thế chấp ngân hàng {m.BankCode}");
+                }
+                break;
+
+            case "reject":
+                if (m.Status != "Pending") return null;
+                m.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    m.Remark = string.IsNullOrWhiteSpace(m.Remark) ? dto.Note : $"{m.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "MortgageRejected", $"{reqMortgageNo} Từ chối thế chấp: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (m.Status is not ("Pending" or "Approved")) return null;
+                var prevStatus = m.Status;
+                m.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    m.Remark = string.IsNullOrWhiteSpace(m.Remark) ? dto.Note : $"{m.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) l.Status = "Cancelled";
+                if (prevStatus == "Approved")
+                {
+                    foreach (var v in vehicles)
+                    {
+                        v.IsMortgaged = false;
+                        Log(v.Vin, "MortgageCancelled", $"{reqMortgageNo} Hủy thế chấp");
+                    }
+                }
+                else
+                {
+                    foreach (var v in vehicles) Log(v.Vin, "MortgageCancelled", $"{reqMortgageNo} Hủy yêu cầu thế chấp");
+                }
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { m.ReqMortgageNo, m.BankCode, status = m.Status, m.ApprovedAt };
+    }
+
+    // ===== Giải chấp xe ngân hàng (BizHTC.GiaiChap.RD_ReqRedeem / RD_ReqRedeem) =====
+    public async Task<object> CreateRedeemRequestAsync(CreateRedeemRequestDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.BankCode))
+            throw new InvalidOperationException("Cần DealerCode và BankCode để tạo yêu cầu giải chấp.");
+
+        var items = new List<RedeemItemInputDto>();
+        if (dto.Items != null && dto.Items.Count > 0) items.AddRange(dto.Items);
+        else if (dto.Vins != null && dto.Vins.Count > 0) items.AddRange(dto.Vins.Select(v => new RedeemItemInputDto(v)));
+
+        if (items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 VIN trong yêu cầu giải chấp.");
+
+        var distinctItems = items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).ToList();
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var reqNo = string.IsNullOrWhiteSpace(dto.RedeemReqNo)
+            ? "RD" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.RedeemReqNo!.Trim().ToUpperInvariant();
+
+        if (await db.RedeemRequests.AnyAsync(r => r.OrgId == Org && r.RedeemReqNo == reqNo))
+            throw new InvalidOperationException($"Mã yêu cầu giải chấp {reqNo} đã tồn tại.");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+        var bankCode = dto.BankCode.Trim().ToUpperInvariant();
+
+        var rd = new RedeemRequest
+        {
+            OrgId = Org,
+            RedeemReqNo = reqNo,
+            DealerCode = dealer,
+            BankCode = bankCode,
+            ReqMortgageNo = dto.ReqMortgageNo?.Trim().ToUpperInvariant(),
+            Reason = dto.Reason?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            Status = "Pending",
+            CreatedAt = DateTime.Now
+        };
+        db.RedeemRequests.Add(rd);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            db.RedeemRequestLines.Add(new RedeemRequestLine
+            {
+                OrgId = Org,
+                RedeemRequestId = rd.Id,
+                RedeemReqNo = reqNo,
+                Vin = vin,
+                ReleaseDocType = string.IsNullOrWhiteSpace(item.ReleaseDocType) ? "All" : item.ReleaseDocType.Trim(),
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(vin, "RedeemRequested", $"{reqNo} ĐL:{dealer} Ngân hàng:{bankCode} Loại giấy tờ:{item.ReleaseDocType ?? "All"}");
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            rd.RedeemReqNo,
+            rd.DealerCode,
+            rd.BankCode,
+            rd.ReqMortgageNo,
+            rd.Reason,
+            rd.Status,
+            totalVins = distinctItems.Count,
+            vins = distinctItems.Select(i => new { i.Vin, i.ReleaseDocType })
+        };
+    }
+
+    public async Task<object> ListRedeemRequestsAsync(string? status, string? dealer, string? bank, string? vin)
+    {
+        var q = db.RedeemRequests.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim().ToUpperInvariant(); q = q.Where(r => r.DealerCode == d); }
+        if (!string.IsNullOrWhiteSpace(bank)) { var b = bank.Trim().ToUpperInvariant(); q = q.Where(r => r.BankCode == b); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.RedeemRequestLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.RedeemReqNo).Distinct().ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.RedeemReqNo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.RedeemReqNo,
+            r.DealerCode,
+            r.BankCode,
+            r.ReqMortgageNo,
+            r.Reason,
+            r.Status,
+            r.Remark,
+            r.CreatedAt,
+            r.ApprovedAt,
+            r.CompletedAt,
+            vinCount = db.RedeemRequestLines.Count(l => l.OrgId == Org && l.RedeemRequestId == r.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetRedeemRequestAsync(string redeemReqNo)
+    {
+        redeemReqNo = redeemReqNo.Trim().ToUpperInvariant();
+        var rd = await db.RedeemRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.RedeemReqNo == redeemReqNo);
+        if (rd is null) return null;
+
+        var lines = await db.RedeemRequestLines.Where(l => l.OrgId == Org && l.RedeemRequestId == rd.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.ReleaseDocType,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), v.StorageCode, v.DealerCode, v.IsMortgaged, v.MortgageBankCode, v.RedeemDate } : null
+        }).ToList();
+
+        return new
+        {
+            rd.RedeemReqNo,
+            rd.DealerCode,
+            rd.BankCode,
+            rd.ReqMortgageNo,
+            rd.Reason,
+            rd.Status,
+            rd.Remark,
+            rd.CreatedAt,
+            rd.ApprovedAt,
+            rd.CompletedAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> RedeemRequestTransitionAsync(string redeemReqNo, string action, RedeemRequestTransitionDto? dto)
+    {
+        redeemReqNo = redeemReqNo.Trim().ToUpperInvariant();
+        var rd = await db.RedeemRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.RedeemReqNo == redeemReqNo);
+        if (rd is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.RedeemRequestLines.Where(l => l.OrgId == Org && l.RedeemRequestId == rd.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (rd.Status != "Pending") return null;
+                rd.Status = "Approved";
+                rd.ApprovedAt = now;
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "RedeemApproved", $"{redeemReqNo} Ngân hàng {rd.BankCode} chấp thuận giải chấp");
+                break;
+
+            case "complete":
+                if (rd.Status is not ("Approved" or "Pending")) return null;
+                rd.Status = "Completed";
+                rd.ApprovedAt ??= now;
+                rd.CompletedAt = now;
+                foreach (var l in lines) l.Status = "Completed";
+                foreach (var v in vehicles)
+                {
+                    v.IsMortgaged = false;
+                    v.RedeemDate = now;
+                    Log(v.Vin, "Redeemed", $"{redeemReqNo} Hoàn tất giải chấp ngân hàng {rd.BankCode}. Giải phóng toàn bộ chứng từ xuất xưởng.");
+                }
+                break;
+
+            case "reject":
+                if (rd.Status != "Pending") return null;
+                rd.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    rd.Remark = string.IsNullOrWhiteSpace(rd.Remark) ? dto.Note : $"{rd.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "RedeemRejected", $"{redeemReqNo} Từ chối giải chấp: {dto?.Note ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (rd.Status is not ("Pending" or "Approved")) return null;
+                rd.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    rd.Remark = string.IsNullOrWhiteSpace(rd.Remark) ? dto.Note : $"{rd.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "RedeemCancelled", $"{redeemReqNo} Hủy yêu cầu giải chấp: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { rd.RedeemReqNo, rd.DealerCode, rd.BankCode, status = rd.Status, rd.ApprovedAt, rd.CompletedAt };
     }
 }

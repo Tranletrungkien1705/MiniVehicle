@@ -24,6 +24,10 @@ public sealed class Vehicle
     public int? ModelYear { get; set; }
     public VehicleStatus Status { get; set; } = VehicleStatus.InStock;
     public bool IsTestCar { get; set; } = false;    // Đang phục vụ chương trình chạy thử / lái thử (FlagTestCar)
+    public bool IsMortgaged { get; set; } = false;  // Đang thế chấp bảo lãnh ngân hàng (FlagMortageBank / RM_ReqMortgage)
+    public string? MortgageBankCode { get; set; }   // Mã ngân hàng nhận thế chấp (VCB, VPB, TCB, BIDV, CTG...)
+    public DateTime? MortgageDate { get; set; }     // Ngày bắt đầu thế chấp ngân hàng
+    public DateTime? RedeemDate { get; set; }       // Ngày giải chấp / rút thế chấp (RD_ReqRedeem)
     public string? StorageCode { get; set; }        // vị trí ô đỗ / kho bãi nội bộ OEM (StorageCodeCurrent)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -338,6 +342,63 @@ public sealed class PdiRequestLine
     public DateTime? InspectedAt { get; set; }            // Thời điểm hoàn tất kiểm tra xe này
     public string? InspectedBy { get; set; }              // KTV thực hiện kiểm tra xe này
     public string? DefectNotes { get; set; }              // Ghi chú khiếm khuyết kỹ thuật nếu không đạt
+    public string? Remark { get; set; }
+}
+
+/// <summary>Yêu cầu thế chấp xe ô tô vào ngân hàng (BizHTC.GiaiChap.RM_ReqMortgage / RM_ReqMortgage): đưa lô xe vào danh mục tài sản bảo đảm / vay bảo lãnh hạn mức tín dụng ngân hàng.</summary>
+public sealed class MortgageRequest
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ReqMortgageNo { get; set; } = "";        // Mã yêu cầu thế chấp (RM...)
+    public string BankCode { get; set; } = "";             // Mã ngân hàng nhận thế chấp (VCB, VPB, TCB, BIDV, CTG...)
+    public DateTime? MortgageDate { get; set; }            // Ngày hiệu lực thế chấp
+    public string Status { get; set; } = "Pending";        // Pending → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Ghi chú hợp đồng tín dụng / gói bảo lãnh
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong yêu cầu thế chấp (RM_ReqMortgageDtl): danh sách VIN và định giá giá trị thế chấp.</summary>
+public sealed class MortgageRequestLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long MortgageRequestId { get; set; }
+    public string ReqMortgageNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public decimal MortgageAmount { get; set; } = 0;       // Giá trị định giá thế chấp / mức giải ngân bảo lãnh
+    public string Status { get; set; } = "Pending";        // Pending → Approved (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Yêu cầu giải chấp xe ngân hàng (BizHTC.GiaiChap.RD_ReqRedeem / RD_ReqRedeem): yêu cầu rút xe / giải chấp tài sản bảo lãnh ngân hàng để giao xe cho khách hàng hoặc xuất kho bán lẻ.</summary>
+public sealed class RedeemRequest
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string RedeemReqNo { get; set; } = "";          // Mã yêu cầu giải chấp (RD...)
+    public string DealerCode { get; set; } = "";           // Đại lý yêu cầu giải chấp
+    public string BankCode { get; set; } = "";             // Ngân hàng giải chấp
+    public string? ReqMortgageNo { get; set; }             // Liên kết mã yêu cầu thế chấp trước đó (nếu có)
+    public string? Reason { get; set; }                    // Lý do giải chấp (Khách hàng thanh toán 100%, Giải ngân bán lẻ, Đảo tài sản...)
+    public string Status { get; set; } = "Pending";        // Pending → Approved → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Ghi chú điều hành
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong yêu cầu giải chấp (RD_ReqRedeemDtl): danh sách VIN và loại chứng từ giấy tờ giải phóng (Hóa đơn, COC, Đăng kiểm...).</summary>
+public sealed class RedeemRequestLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long RedeemRequestId { get; set; }
+    public string RedeemReqNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string ReleaseDocType { get; set; } = "All";    // All, COC, Invoice, QualityCert, Registration
+    public string Status { get; set; } = "Pending";        // Pending → Approved → Completed (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
 }
 

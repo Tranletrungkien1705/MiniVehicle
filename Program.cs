@@ -437,6 +437,58 @@ app.MapPost("/api/pdi-requests/{pdiReqNo}/lines/{vin}/inspect", async (string pd
     return r is null ? Results.NotFound(new { pdiReqNo, vin, error = "Không tìm thấy dòng chi tiết PDI hoặc sai trạng thái." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Thế chấp xe ngân hàng (BizHTC.GiaiChap.RM_ReqMortgage / RM_ReqMortgage) ----
+app.MapPost("/api/mortgages", async (CreateMortgageRequestDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.BankCode))
+        return Results.BadRequest(new { error = "Cần mã Ngân hàng thế chấp (BankCode)." });
+    try { return Results.Ok(await svc.CreateMortgageRequestAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/mortgages", async (IVehicleService svc, string? status, string? bank, string? vin) =>
+    Results.Ok(await svc.ListMortgageRequestsAsync(status, bank, vin))).RequireAuthorization();
+
+app.MapGet("/api/mortgages/{reqMortgageNo}", async (string reqMortgageNo, IVehicleService svc) =>
+{
+    var r = await svc.GetMortgageRequestAsync(reqMortgageNo);
+    return r is null ? Results.NotFound(new { reqMortgageNo, error = "Không tìm thấy yêu cầu thế chấp." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/mortgages/{reqMortgageNo}/{action}", async (string reqMortgageNo, string action, MortgageRequestTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|reject|cancel" });
+    var r = await svc.MortgageRequestTransitionAsync(reqMortgageNo, action, dto);
+    return r is null ? Results.NotFound(new { reqMortgageNo, error = "Không thấy yêu cầu thế chấp hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+// ---- Giải chấp xe ngân hàng (BizHTC.GiaiChap.RD_ReqRedeem / RD_ReqRedeem) ----
+app.MapPost("/api/redeems", async (CreateRedeemRequestDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.BankCode))
+        return Results.BadRequest(new { error = "Cần DealerCode và BankCode." });
+    try { return Results.Ok(await svc.CreateRedeemRequestAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/redeems", async (IVehicleService svc, string? status, string? dealer, string? bank, string? vin) =>
+    Results.Ok(await svc.ListRedeemRequestsAsync(status, dealer, bank, vin))).RequireAuthorization();
+
+app.MapGet("/api/redeems/{redeemReqNo}", async (string redeemReqNo, IVehicleService svc) =>
+{
+    var r = await svc.GetRedeemRequestAsync(redeemReqNo);
+    return r is null ? Results.NotFound(new { redeemReqNo, error = "Không tìm thấy yêu cầu giải chấp." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/redeems/{redeemReqNo}/{action}", async (string redeemReqNo, string action, RedeemRequestTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|complete|reject|cancel" });
+    var r = await svc.RedeemRequestTransitionAsync(redeemReqNo, action, dto);
+    return r is null ? Results.NotFound(new { redeemReqNo, error = "Không thấy yêu cầu giải chấp hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

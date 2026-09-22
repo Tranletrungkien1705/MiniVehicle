@@ -26,6 +26,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<TestCarLine> TestCarLines => Set<TestCarLine>();
     public DbSet<PdiRequest> PdiRequests => Set<PdiRequest>();
     public DbSet<PdiRequestLine> PdiRequestLines => Set<PdiRequestLine>();
+    public DbSet<MortgageRequest> MortgageRequests => Set<MortgageRequest>();
+    public DbSet<MortgageRequestLine> MortgageRequestLines => Set<MortgageRequestLine>();
+    public DbSet<RedeemRequest> RedeemRequests => Set<RedeemRequest>();
+    public DbSet<RedeemRequestLine> RedeemRequestLines => Set<RedeemRequestLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -39,5 +43,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<StorageRearrange>().HasIndex(x => new { x.OrgId, x.StorageRearrangeNo }).IsUnique();
         b.Entity<TestCarRequest>().HasIndex(x => new { x.OrgId, x.TestCarCode }).IsUnique();
         b.Entity<PdiRequest>().HasIndex(x => new { x.OrgId, x.PdiReqNo }).IsUnique();
+        b.Entity<MortgageRequest>().HasIndex(x => new { x.OrgId, x.ReqMortgageNo }).IsUnique();
+        b.Entity<RedeemRequest>().HasIndex(x => new { x.OrgId, x.RedeemReqNo }).IsUnique();
     }
 }
