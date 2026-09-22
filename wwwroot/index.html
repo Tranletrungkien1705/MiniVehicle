@@ -23,6 +23,9 @@
 <li><code>POST /api/delivery-minutes/{no}/confirm</code> — ký nhận hoàn tất biên bản giao nhận</li>
 <li><code>POST /api/retrieves</code> &amp; <code>/api/retrieves/{no}/{action}</code> — lệnh thu hồi/trả xe về kho (Sto_CarRetrieve)</li>
 <li><code>GET /api/retrieves?status=&dealer=&vin=</code> — tra cứu danh sách lệnh thu hồi xe</li>
+<li><code>POST /api/test-cars</code> &amp; <code>/api/test-cars/{code}/{action}</code> — đăng ký / quản lý xe lái thử &amp; chạy thử (BizHTC.Car_TestCar)</li>
+<li><code>GET /api/test-cars?status=&dealer=&vin=</code> — tra cứu danh sách đăng ký xe lái thử</li>
+<li><code>POST /api/test-cars/{code}/lines/{vin}/finish</code> — hoàn tất hoàn trả xe lái thử theo từng VIN (ODO &amp; tình trạng xe)</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

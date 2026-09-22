@@ -373,6 +373,38 @@ app.MapPost("/api/rearranges/{storageRearrangeNo}/lines/{vin}/complete", async (
     return r is null ? Results.NotFound(new { storageRearrangeNo, vin, error = "Không tìm thấy dòng chi tiết hoặc sai trạng thái." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Đăng ký / Quản lý xe lái thử & chạy thử (BizHTC.Car.Car_TestCar / TestCar) ----
+app.MapPost("/api/test-cars", async (CreateTestCarDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || dto.Vins is null || dto.Vins.Count == 0)
+        return Results.BadRequest(new { error = "Cần DealerCode và danh sách Vins." });
+    try { return Results.Ok(await svc.CreateTestCarAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/test-cars", async (IVehicleService svc, string? status, string? dealer, string? vin) =>
+    Results.Ok(await svc.ListTestCarsAsync(status, dealer, vin))).RequireAuthorization();
+
+app.MapGet("/api/test-cars/{testCarCode}", async (string testCarCode, IVehicleService svc) =>
+{
+    var r = await svc.GetTestCarAsync(testCarCode);
+    return r is null ? Results.NotFound(new { testCarCode, error = "Không tìm thấy phiếu đăng ký xe lái thử." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/test-cars/{testCarCode}/{action}", async (string testCarCode, string action, TestCarTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "start" or "handover" or "inuse" or "finish" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|start|handover|inuse|finish|complete|reject|cancel" });
+    var r = await svc.TestCarTransitionAsync(testCarCode, action, dto);
+    return r is null ? Results.NotFound(new { testCarCode, error = "Không thấy phiếu lái thử hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/test-cars/{testCarCode}/lines/{vin}/finish", async (string testCarCode, string vin, FinishTestCarLineDto? dto, IVehicleService svc) =>
+{
+    var r = await svc.FinishTestCarLineAsync(testCarCode, vin, dto);
+    return r is null ? Results.NotFound(new { testCarCode, vin, error = "Không tìm thấy dòng chi tiết hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

@@ -22,6 +22,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<TransportRequestLine> TransportRequestLines => Set<TransportRequestLine>();
     public DbSet<StorageRearrange> StorageRearranges => Set<StorageRearrange>();
     public DbSet<StorageRearrangeLine> StorageRearrangeLines => Set<StorageRearrangeLine>();
+    public DbSet<TestCarRequest> TestCars => Set<TestCarRequest>();
+    public DbSet<TestCarLine> TestCarLines => Set<TestCarLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -33,5 +35,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<CarRetrieve>().HasIndex(x => new { x.OrgId, x.RetrieveNo }).IsUnique();
         b.Entity<TransportRequest>().HasIndex(x => new { x.OrgId, x.TransportReqNo }).IsUnique();
         b.Entity<StorageRearrange>().HasIndex(x => new { x.OrgId, x.StorageRearrangeNo }).IsUnique();
+        b.Entity<TestCarRequest>().HasIndex(x => new { x.OrgId, x.TestCarCode }).IsUnique();
     }
 }

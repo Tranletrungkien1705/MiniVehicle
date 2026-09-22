@@ -23,6 +23,7 @@ public sealed class Vehicle
     public string? Color { get; set; }
     public int? ModelYear { get; set; }
     public VehicleStatus Status { get; set; } = VehicleStatus.InStock;
+    public bool IsTestCar { get; set; } = false;    // Đang phục vụ chương trình chạy thử / lái thử (FlagTestCar)
     public string? StorageCode { get; set; }        // vị trí ô đỗ / kho bãi nội bộ OEM (StorageCodeCurrent)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -260,6 +261,42 @@ public sealed class StorageRearrangeLine
     public DateTime? RearrangeEndDate { get; set; }           // Thời điểm hoàn tất di dời vào vị trí mới
     public string Status { get; set; } = "Pending";           // Pending → Approved → Moving → Completed (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }                       // Ghi chú tình trạng vị trí ô đỗ
+}
+
+/// <summary>Đăng ký xe lái thử / mượn xe chạy thử (BizHTC.Car.Car_TestCar / TestCar): quản lý điều phối và bàn giao xe cho đại lý hoặc sự kiện lái thử (Roadshow / Test Drive).</summary>
+public sealed class TestCarRequest
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string TestCarCode { get; set; } = "";             // Mã lệnh / phiếu đăng ký xe lái thử (TC...)
+    public string DealerCode { get; set; } = "";              // Đại lý đăng ký mượn / nhận xe lái thử
+    public string? EventName { get; set; }                    // Tên sự kiện / Chương trình trải nghiệm lái thử
+    public string? Purpose { get; set; }                      // Mục đích (Trưng bày, Lái thử khách hàng, Test Drive Event...)
+    public DateTime? StartDate { get; set; }                  // Ngày bắt đầu đợt lái thử
+    public DateTime? EndDate { get; set; }                    // Ngày dự kiến kết thúc / bàn giao lại
+    public string Status { get; set; } = "Pending";           // Pending → Approved → InUse → Finished (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                       // Ghi chú điều hành
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong lệnh đăng ký lái thử (Car_TestCarDtl): danh sách VIN, chỉ số ODO xuất phát - kết thúc, tình trạng xe.</summary>
+public sealed class TestCarLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long TestCarRequestId { get; set; }
+    public string TestCarCode { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public int OdoStart { get; set; } = 0;                    // ODO lúc bắt đầu đợt lái thử
+    public int? OdoEnd { get; set; }                          // ODO lúc kết thúc hoàn trả xe
+    public string? ConditionStart { get; set; }               // Tình trạng ngoại thất / nội thất lúc nhận xe
+    public string? ConditionEnd { get; set; }                 // Tình trạng xe lúc hoàn trả
+    public DateTime? HandoverDate { get; set; }               // Ngày bàn giao xe thực tế
+    public DateTime? ReturnDate { get; set; }                 // Ngày trả lại xe thực tế
+    public string Status { get; set; } = "Pending";           // Pending → Approved → InUse → Finished (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
 }
 
 /// <summary>Mốc lịch sử vòng đời xe (audit) — thay cho việc dò log rời.</summary>

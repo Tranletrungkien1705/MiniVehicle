@@ -28,6 +28,9 @@ public record StorageRearrangeItemInputDto(string Vin, string StorageCodeTo, str
 public record CreateStorageRearrangeDto(List<StorageRearrangeItemInputDto> Items, string? Reason = null, string? Remark = null, string? StorageRearrangeNo = null);
 public record StorageRearrangeTransitionDto(string? Note);
 public record CompleteStorageRearrangeLineDto(string? RearrangeEndDate = null, string? Remark = null);
+public record CreateTestCarDto(string DealerCode, List<string> Vins, string? EventName = null, string? Purpose = null, DateTime? StartDate = null, DateTime? EndDate = null, string? Remark = null, string? TestCarCode = null);
+public record TestCarTransitionDto(string? Note = null);
+public record FinishTestCarLineDto(int? OdoEnd = null, string? ConditionEnd = null, string? Remark = null, DateTime? ReturnDate = null);
 
 public interface IVehicleService
 {
@@ -74,6 +77,11 @@ public interface IVehicleService
     Task<object?> GetStorageRearrangeAsync(string storageRearrangeNo);
     Task<object?> StorageRearrangeTransitionAsync(string storageRearrangeNo, string action, StorageRearrangeTransitionDto? dto);
     Task<object?> CompleteStorageRearrangeLineAsync(string storageRearrangeNo, string vin, CompleteStorageRearrangeLineDto? dto);
+    Task<object> CreateTestCarAsync(CreateTestCarDto dto);
+    Task<object> ListTestCarsAsync(string? status, string? dealer, string? vin);
+    Task<object?> GetTestCarAsync(string testCarCode);
+    Task<object?> TestCarTransitionAsync(string testCarCode, string action, TestCarTransitionDto? dto);
+    Task<object?> FinishTestCarLineAsync(string testCarCode, string vin, FinishTestCarLineDto? dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -1302,6 +1310,313 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             line.Status,
             line.RearrangeEndDate,
             headerStatus = srr.Status
+        };
+    }
+
+    // ===== Đăng ký / Mượn xe chạy thử - lái thử xe (BizHTC.Car.Car_TestCar / TestCar) =====
+    public async Task<object> CreateTestCarAsync(CreateTestCarDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode) || dto.Vins is null || dto.Vins.Count == 0)
+            throw new InvalidOperationException("Cần DealerCode và ít nhất 1 VIN để đăng ký xe lái thử.");
+
+        var dealer = dto.DealerCode.Trim();
+        var vins = dto.Vins.Select(s => s.Trim().ToUpperInvariant()).Distinct().ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        // Kiểm tra xe không được ở trạng thái đã giao cho khách hàng lẻ (Delivered)
+        var invalidDelivered = vehicles.Where(v => v.Status == VehicleStatus.Delivered).Select(v => v.Vin).ToList();
+        if (invalidDelivered.Count > 0)
+            throw new InvalidOperationException("Xe đã giao cho khách hàng cuối (Delivered) không thể đăng ký lái thử: " + string.Join(", ", invalidDelivered));
+
+        // Kiểm tra quy tắc 2010.HTC: 1 VIN chỉ thuộc 1 đề nghị lái thử đang hoạt động (Pending, Approved, InUse)
+        var activeLines = await db.TestCarLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && (l.Status == "Pending" || l.Status == "Approved" || l.Status == "InUse"))
+            .ToListAsync();
+        if (activeLines.Count > 0)
+        {
+            var conflict = activeLines.First();
+            throw new InvalidOperationException($"VIN {conflict.Vin} đang nằm trong lệnh lái thử khác chưa hoàn tất ({conflict.TestCarCode}).");
+        }
+
+        var reqCode = string.IsNullOrWhiteSpace(dto.TestCarCode)
+            ? "TC" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.TestCarCode.Trim().ToUpperInvariant();
+
+        if (await db.TestCars.AnyAsync(r => r.OrgId == Org && r.TestCarCode == reqCode))
+            throw new InvalidOperationException($"Mã phiếu lái thử {reqCode} đã tồn tại.");
+
+        var tc = new TestCarRequest
+        {
+            OrgId = Org,
+            TestCarCode = reqCode,
+            DealerCode = dealer,
+            EventName = dto.EventName?.Trim(),
+            Purpose = dto.Purpose?.Trim(),
+            StartDate = dto.StartDate,
+            EndDate = dto.EndDate,
+            Status = "Pending",
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.TestCars.Add(tc);
+        await db.SaveChangesAsync();
+
+        foreach (var v in vehicles)
+        {
+            db.TestCarLines.Add(new TestCarLine
+            {
+                OrgId = Org,
+                TestCarRequestId = tc.Id,
+                TestCarCode = reqCode,
+                Vin = v.Vin,
+                OdoStart = 0,
+                Status = "Pending",
+                Remark = dto.Remark?.Trim()
+            });
+            Log(v.Vin, "TestCarRequested", $"{reqCode} ĐL:{dealer} Mục đích:{dto.Purpose ?? dto.EventName ?? "Lái thử xe"}");
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            tc.TestCarCode,
+            tc.DealerCode,
+            tc.EventName,
+            tc.Purpose,
+            tc.Status,
+            totalVins = vins.Count,
+            vins
+        };
+    }
+
+    public async Task<object> ListTestCarsAsync(string? status, string? dealer, string? vin)
+    {
+        var q = db.TestCars.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(r => r.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedCodes = await db.TestCarLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.TestCarCode).Distinct().ToListAsync();
+            q = q.Where(r => matchedCodes.Contains(r.TestCarCode));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.TestCarCode,
+            r.DealerCode,
+            r.EventName,
+            r.Purpose,
+            r.StartDate,
+            r.EndDate,
+            r.Status,
+            r.Remark,
+            r.CreatedAt,
+            r.ApprovedAt,
+            r.FinishedAt,
+            vinCount = db.TestCarLines.Count(l => l.OrgId == Org && l.TestCarRequestId == r.Id),
+            finishedCount = db.TestCarLines.Count(l => l.OrgId == Org && l.TestCarRequestId == r.Id && l.Status == "Finished")
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetTestCarAsync(string testCarCode)
+    {
+        testCarCode = testCarCode.Trim().ToUpperInvariant();
+        var tc = await db.TestCars.FirstOrDefaultAsync(r => r.OrgId == Org && r.TestCarCode == testCarCode);
+        if (tc is null) return null;
+
+        var lines = await db.TestCarLines.Where(l => l.OrgId == Org && l.TestCarRequestId == tc.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.OdoStart,
+            l.OdoEnd,
+            l.ConditionStart,
+            l.ConditionEnd,
+            l.HandoverDate,
+            l.ReturnDate,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), v.StorageCode, v.DealerCode, v.IsTestCar } : null
+        }).ToList();
+
+        return new
+        {
+            tc.TestCarCode,
+            tc.DealerCode,
+            tc.EventName,
+            tc.Purpose,
+            tc.StartDate,
+            tc.EndDate,
+            tc.Status,
+            tc.Remark,
+            tc.CreatedAt,
+            tc.ApprovedAt,
+            tc.FinishedAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> TestCarTransitionAsync(string testCarCode, string action, TestCarTransitionDto? dto)
+    {
+        testCarCode = testCarCode.Trim().ToUpperInvariant();
+        var tc = await db.TestCars.FirstOrDefaultAsync(r => r.OrgId == Org && r.TestCarCode == testCarCode);
+        if (tc is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.TestCarLines.Where(l => l.OrgId == Org && l.TestCarRequestId == tc.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (tc.Status != "Pending") return null;
+                tc.Status = "Approved";
+                tc.ApprovedAt = now;
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Approved";
+                foreach (var v in vehicles)
+                {
+                    v.IsTestCar = true;
+                    Log(v.Vin, "TestCarApproved", testCarCode);
+                }
+                break;
+
+            case "start":
+            case "handover":
+            case "inuse":
+                if (tc.Status is not ("Pending" or "Approved")) return null;
+                tc.Status = "InUse";
+                tc.ApprovedAt ??= now;
+                foreach (var l in lines)
+                {
+                    if (l.Status is "Pending" or "Approved")
+                    {
+                        l.Status = "InUse";
+                        l.HandoverDate ??= now;
+                    }
+                }
+                foreach (var v in vehicles)
+                {
+                    v.IsTestCar = true;
+                    Log(v.Vin, "TestCarInUse", $"{testCarCode} Bàn giao xe lái thử cho ĐL:{tc.DealerCode}");
+                }
+                break;
+
+            case "finish":
+            case "complete":
+                if (tc.Status is not ("Approved" or "InUse")) return null;
+                tc.Status = "Finished";
+                tc.FinishedAt = now;
+                foreach (var l in lines)
+                {
+                    if (l.Status != "Finished")
+                    {
+                        l.Status = "Finished";
+                        l.HandoverDate ??= now;
+                        l.ReturnDate ??= now;
+                    }
+                }
+                foreach (var v in vehicles)
+                {
+                    v.IsTestCar = false;
+                    Log(v.Vin, "TestCarFinished", $"{testCarCode} Hoàn tất chương trình lái thử, trả lại xe.");
+                }
+                break;
+
+            case "reject":
+                if (tc.Status != "Pending") return null;
+                tc.Status = "Rejected";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    tc.Remark = string.IsNullOrWhiteSpace(tc.Remark) ? dto.Note : $"{tc.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles)
+                {
+                    v.IsTestCar = false;
+                    Log(v.Vin, "TestCarRejected", $"{testCarCode} Lý do: {dto?.Note ?? "N/A"}");
+                }
+                break;
+
+            case "cancel":
+                if (tc.Status is not ("Pending" or "Approved" or "InUse")) return null;
+                tc.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    tc.Remark = string.IsNullOrWhiteSpace(tc.Remark) ? dto.Note : $"{tc.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) if (l.Status != "Finished") l.Status = "Cancelled";
+                foreach (var v in vehicles)
+                {
+                    v.IsTestCar = false;
+                    Log(v.Vin, "TestCarCancelled", $"{testCarCode} Lý do: {dto?.Note ?? "N/A"}");
+                }
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { tc.TestCarCode, tc.DealerCode, status = tc.Status, tc.ApprovedAt, tc.FinishedAt };
+    }
+
+    public async Task<object?> FinishTestCarLineAsync(string testCarCode, string vin, FinishTestCarLineDto? dto)
+    {
+        testCarCode = testCarCode.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var tc = await db.TestCars.FirstOrDefaultAsync(r => r.OrgId == Org && r.TestCarCode == testCarCode);
+        if (tc is null || tc.Status is "Cancelled" or "Rejected") return null;
+
+        var line = await db.TestCarLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TestCarRequestId == tc.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        var now = DateTime.Now;
+        line.Status = "Finished";
+        line.HandoverDate ??= now;
+        line.ReturnDate = dto?.ReturnDate ?? now;
+        if (dto?.OdoEnd.HasValue == true) line.OdoEnd = dto.OdoEnd.Value;
+        if (!string.IsNullOrWhiteSpace(dto?.ConditionEnd)) line.ConditionEnd = dto.ConditionEnd.Trim();
+        if (!string.IsNullOrWhiteSpace(dto?.Remark))
+            line.Remark = string.IsNullOrWhiteSpace(line.Remark) ? dto.Remark : $"{line.Remark} | {dto.Remark}";
+
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle != null)
+        {
+            vehicle.IsTestCar = false;
+            Log(vin, "TestCarLineFinished", $"{testCarCode} Hoàn trả xe lái thử. ODO={line.OdoEnd} Tình trạng={line.ConditionEnd ?? "OK"}");
+        }
+
+        // Cập nhật trạng thái tổng thể của phiếu
+        var allLines = await db.TestCarLines.Where(l => l.OrgId == Org && l.TestCarRequestId == tc.Id).ToListAsync();
+        if (allLines.All(l => l.Status == "Finished"))
+        {
+            tc.Status = "Finished";
+            tc.FinishedAt = now;
+        }
+        else if (tc.Status == "Approved" || tc.Status == "Pending")
+        {
+            tc.Status = "InUse";
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            tc.TestCarCode,
+            line.Vin,
+            line.OdoStart,
+            line.OdoEnd,
+            line.ConditionEnd,
+            line.Status,
+            line.ReturnDate,
+            headerStatus = tc.Status
         };
     }
 }
