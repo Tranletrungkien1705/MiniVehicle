@@ -1048,6 +1048,64 @@ app.MapDelete("/api/car-box-requests/{cbReqNo}/lines/{vin}", async (string cbReq
     return r is null ? Results.NotFound(new { cbReqNo, vin, error = "Không tìm thấy dòng xe trong yêu cầu đóng thùng hoặc hồ sơ đã chốt/hủy." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Bảng kê / Đợt xuất hóa đơn GTGT xe ô tô cho Đại lý (BizHTC.Car.Car_InvoiceList / CarInvoice) ----
+app.MapPost("/api/car-invoices", async (CreateCarInvoiceDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode nhận hóa đơn." });
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong bảng kê hóa đơn." });
+    try { return Results.Ok(await svc.CreateCarInvoiceAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/car-invoices", async (IVehicleService svc, string? status, string? dealer, string? invoiceListCode, string? invoiceNo, string? vin) =>
+    Results.Ok(await svc.ListCarInvoicesAsync(status, dealer, invoiceListCode, invoiceNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/car-invoices/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.GetCarInvoiceAsync(code);
+    return r is null ? Results.NotFound(new { code, error = "Không tìm thấy bảng kê hóa đơn." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/car-invoices/{code}/{action}", async (string code, string action, CarInvoiceTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("issue" or "approve" or "cancel"))
+        return Results.BadRequest(new { error = "action = issue|cancel" });
+    var r = await svc.CarInvoiceTransitionAsync(code, action, dto);
+    return r is null ? Results.NotFound(new { code, error = "Không thấy bảng kê hóa đơn hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/car-invoices/{code}/lines/{vin}/update", async (string code, string vin, UpdateCarInvoiceLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateCarInvoiceLineAsync(code, vin, dto);
+    return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong bảng kê hóa đơn hoặc hóa đơn đã phát hành/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/car-invoices/{code}/lines", async (string code, List<CarInvoiceItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào bảng kê hóa đơn." });
+    try
+    {
+        var r = await svc.AddCarInvoiceLinesAsync(code, items);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy bảng kê hóa đơn hoặc hóa đơn đã phát hành/hủy/xe đã tồn tại." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/car-invoices/{code}/lines/{vin}", async (string code, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveCarInvoiceLineAsync(code, vin);
+    return r is null ? Results.NotFound(new { code, vin, error = "Không tìm thấy dòng xe trong bảng kê hóa đơn hoặc hóa đơn đã phát hành/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/invoice-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleInvoiceInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

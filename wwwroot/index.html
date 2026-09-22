@@ -82,6 +82,11 @@
 <li><code>POST /api/car-box-requests/{no}/lines/{vin}/inspect</code> — nghiệm thu kỹ thuật xuất xưởng đóng thùng xe từng VIN (kích thước lọt lòng, tải trọng cho phép, số phiếu KĐ xuất xưởng, cập nhật TypeCB=1)</li>
 <li><code>POST /api/car-box-requests/{no}/lines/{vin}/update</code> — cập nhật quy cách loại thùng, kích thước, tải trọng, giá đóng thùng theo từng xe VIN</li>
 <li><code>POST /api/car-box-requests/{no}/lines</code> &amp; <code>DELETE /api/car-box-requests/{no}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong yêu cầu đóng thùng</li>
+<li><code>POST /api/car-invoices</code> &amp; <code>/api/car-invoices/{code}/{action}</code> — lập bảng kê &amp; phát hành hóa đơn GTGT điện tử xuất bán buôn xe ô tô cho Đại lý (BizHTC.Car.Car_InvoiceList / CarInvoice: issue, cancel)</li>
+<li><code>GET /api/car-invoices?status=&amp;dealer=&amp;invoiceListCode=&amp;invoiceNo=&amp;vin=</code> — tra cứu danh sách bảng kê hóa đơn GTGT xuất xe cho đại lý</li>
+<li><code>POST /api/car-invoices/{code}/lines/{vin}/update</code> — điều chỉnh số hóa đơn VAT, ngày hóa đơn, đơn giá tính thuế &amp; tiền thuế VAT theo từng xe VIN</li>
+<li><code>POST /api/car-invoices/{code}/lines</code> &amp; <code>DELETE /api/car-invoices/{code}/lines/{vin}</code> — bổ sung hoặc rút bớt xe trong bảng kê hóa đơn GTGT</li>
+<li><code>GET /api/vehicles/{vin}/invoice-info</code> — tra cứu thông tin trạng thái và lịch sử phát hành hóa đơn GTGT của số khung VIN</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

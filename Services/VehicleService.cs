@@ -363,6 +363,39 @@ public record UpdateCarBoxRequestLineDto(
     string? Remark = null
 );
 
+public record CarInvoiceItemInputDto(
+    string Vin,
+    string? InvoiceNo = null,
+    DateTime? InvoiceDate = null,
+    string? InvoiceDealerCode = null,
+    decimal? TaxValue = null,
+    decimal? VatRate = null,
+    string? Remark = null
+);
+
+public record CreateCarInvoiceDto(
+    string DealerCode,
+    List<CarInvoiceItemInputDto>? Items = null,
+    List<string>? Vins = null,
+    string? InvoiceType = "VAT",
+    DateTime? InvoiceDate = null,
+    decimal VatRate = 10,
+    string? Remark = null,
+    string? InvoiceListCode = null,
+    string? CreatedBy = null
+);
+
+public record CarInvoiceTransitionDto(string? Note = null, string? User = null);
+
+public record UpdateCarInvoiceLineDto(
+    string? InvoiceNo = null,
+    DateTime? InvoiceDate = null,
+    string? InvoiceDealerCode = null,
+    decimal? TaxValue = null,
+    decimal? VatRate = null,
+    string? Remark = null
+);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -507,6 +540,14 @@ public interface IVehicleService
     Task<object?> UpdateCarBoxRequestLineAsync(string cbReqNo, string vin, UpdateCarBoxRequestLineDto dto);
     Task<object?> AddCarBoxRequestLinesAsync(string cbReqNo, List<CarBoxItemInputDto> items);
     Task<object?> RemoveCarBoxRequestLineAsync(string cbReqNo, string vin);
+    Task<object> CreateCarInvoiceAsync(CreateCarInvoiceDto dto);
+    Task<object> ListCarInvoicesAsync(string? status, string? dealer, string? invoiceListCode, string? invoiceNo, string? vin);
+    Task<object?> GetCarInvoiceAsync(string invoiceListCode);
+    Task<object?> CarInvoiceTransitionAsync(string invoiceListCode, string action, CarInvoiceTransitionDto? dto);
+    Task<object?> UpdateCarInvoiceLineAsync(string invoiceListCode, string vin, UpdateCarInvoiceLineDto dto);
+    Task<object?> AddCarInvoiceLinesAsync(string invoiceListCode, List<CarInvoiceItemInputDto> items);
+    Task<object?> RemoveCarInvoiceLineAsync(string invoiceListCode, string vin);
+    Task<object?> GetVehicleInvoiceInfoAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -8191,6 +8232,21 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         _ => "Thùng xe thương mại"
     };
 
+    private static decimal GetDefaultCarPrice(string model) => model.ToUpperInvariant() switch
+    {
+        var m when m.Contains("SANTAFE") => 1050000000m,
+        var m when m.Contains("TUCSON") => 845000000m,
+        var m when m.Contains("ACCENT") => 550000000m,
+        var m when m.Contains("CRETA") => 700000000m,
+        var m when m.Contains("ELANTRA") => 650000000m,
+        var m when m.Contains("CUSTIN") => 850000000m,
+        var m when m.Contains("PALISADE") => 1469000000m,
+        var m when m.Contains("IONIQ") => 1300000000m,
+        var m when m.Contains("H150") || m.Contains("PORTER") => 380000000m,
+        var m when m.Contains("EX8") || m.Contains("MIGHTY") => 680000000m,
+        _ => 500000000m
+    };
+
     public async Task<object> CreateCarBoxRequestAsync(CreateCarBoxRequestDto dto)
     {
         var inputItems = new List<CarBoxItemInputDto>();
@@ -8864,6 +8920,579 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             vin,
             cbr.TotalVehicleCount,
             cbr.TotalAmount
+        };
+    }
+
+    // ===== Bảng kê / Đợt xuất hóa đơn GTGT xe ô tô cho Đại lý (BizHTC.Car.Car_InvoiceList / CarInvoice) =====
+    public async Task<object> CreateCarInvoiceAsync(CreateCarInvoiceDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode nhận hóa đơn.");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+        var inputItems = new List<CarInvoiceItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            foreach (var it in dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+            {
+                var cleanVin = it.Vin.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+                if (seenVins.Add(cleanVin))
+                    inputItems.Add(it with { Vin = cleanVin });
+            }
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            foreach (var v in dto.Vins.Where(s => !string.IsNullOrWhiteSpace(s)))
+            {
+                var cleanVin = v.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+                if (seenVins.Add(cleanVin))
+                    inputItems.Add(new CarInvoiceItemInputDto(cleanVin));
+            }
+        }
+
+        if (inputItems.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 số khung VIN để lập bảng kê xuất hóa đơn GTGT.");
+
+        var vins = inputItems.Select(i => i.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var missing = vins.Where(v => !vehicles.ContainsKey(v)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException($"Không tìm thấy xe với số khung: {string.Join(", ", missing)}");
+
+        // Kiểm tra xe đã có trong bảng kê hóa đơn khác đang hoạt động
+        var busyLines = await db.CarInvoiceLines
+            .Where(l => l.OrgId == Org && vins.Contains(l.Vin) && l.Status != "Cancelled")
+            .ToListAsync();
+        if (busyLines.Count > 0)
+        {
+            var busyInfo = string.Join("; ", busyLines.Select(l => $"{l.Vin} ({l.InvoiceListCode} - HĐ: {l.InvoiceNo})"));
+            throw new InvalidOperationException($"Các xe sau đã nằm trong bảng kê hóa đơn khác: {busyInfo}");
+        }
+
+        var today = DateTime.Today;
+        var seq = await db.CarInvoices.CountAsync(i => i.OrgId == Org && i.CreatedAt.Date == today) + 1;
+        var invoiceListCode = string.IsNullOrWhiteSpace(dto.InvoiceListCode)
+            ? $"IVL{today:yyyyMMdd}-{seq:000}"
+            : dto.InvoiceListCode!.Trim().ToUpperInvariant();
+
+        if (await db.CarInvoices.AnyAsync(i => i.OrgId == Org && i.InvoiceListCode == invoiceListCode))
+            throw new InvalidOperationException($"Mã bảng kê hóa đơn {invoiceListCode} đã tồn tại.");
+
+        var defaultVatRate = dto.VatRate > 0 ? dto.VatRate : 10m;
+        var invoiceDate = dto.InvoiceDate ?? DateTime.Now;
+
+        var carInvoice = new CarInvoice
+        {
+            OrgId = Org,
+            InvoiceListCode = invoiceListCode,
+            DealerCode = dealer,
+            InvoiceType = string.IsNullOrWhiteSpace(dto.InvoiceType) ? "VAT" : dto.InvoiceType.Trim(),
+            InvoiceDate = invoiceDate,
+            TotalVehicleCount = inputItems.Count,
+            VatRate = defaultVatRate,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "AccountingDept",
+            CreatedAt = DateTime.Now
+        };
+
+        db.CarInvoices.Add(carInvoice);
+        await db.SaveChangesAsync();
+
+        decimal totalTaxValue = 0;
+        decimal totalVatAmount = 0;
+        int invSeq = 1;
+
+        foreach (var it in inputItems)
+        {
+            var v = vehicles[it.Vin];
+            var taxValue = it.TaxValue.HasValue && it.TaxValue.Value > 0
+                ? it.TaxValue.Value
+                : GetDefaultCarPrice(v.Model);
+            var vatRate = it.VatRate ?? defaultVatRate;
+            var vatAmount = Math.Round(taxValue * vatRate / 100m, 0);
+            var totalAmount = taxValue + vatAmount;
+
+            var invNo = !string.IsNullOrWhiteSpace(it.InvoiceNo)
+                ? it.InvoiceNo.Trim().ToUpperInvariant()
+                : $"HD{today:yy}-{(seq * 100 + invSeq):000000}";
+            invSeq++;
+
+            var invLineDate = it.InvoiceDate ?? invoiceDate;
+            var lineDealer = !string.IsNullOrWhiteSpace(it.InvoiceDealerCode) ? it.InvoiceDealerCode.Trim() : dealer;
+
+            totalTaxValue += taxValue;
+            totalVatAmount += vatAmount;
+
+            db.CarInvoiceLines.Add(new CarInvoiceLine
+            {
+                OrgId = Org,
+                CarInvoiceId = carInvoice.Id,
+                InvoiceListCode = invoiceListCode,
+                Vin = it.Vin,
+                Model = v.Model,
+                EngineNo = v.EngineNo,
+                InvoiceDealerCode = lineDealer,
+                InvoiceNo = invNo,
+                InvoiceDate = invLineDate,
+                TaxValue = taxValue,
+                VatRate = vatRate,
+                VatAmount = vatAmount,
+                TotalAmount = totalAmount,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            });
+
+            Log(it.Vin, "CarInvoiceDraftCreated",
+                $"{invoiceListCode} Lập dự thảo hóa đơn GTGT {invNo} cho đại lý {lineDealer}. Trị giá trước thuế: {taxValue:N0} VNĐ, VAT({vatRate}%): {vatAmount:N0} VNĐ");
+        }
+
+        carInvoice.TotalTaxValue = totalTaxValue;
+        carInvoice.TotalVatAmount = totalVatAmount;
+        carInvoice.TotalAmount = totalTaxValue + totalVatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            carInvoice.InvoiceListCode,
+            carInvoice.DealerCode,
+            carInvoice.InvoiceType,
+            carInvoice.InvoiceDate,
+            carInvoice.TotalVehicleCount,
+            carInvoice.TotalTaxValue,
+            carInvoice.VatRate,
+            carInvoice.TotalVatAmount,
+            carInvoice.TotalAmount,
+            carInvoice.Status,
+            carInvoice.Remark,
+            linesCount = inputItems.Count
+        };
+    }
+
+    public async Task<object> ListCarInvoicesAsync(string? status, string? dealer, string? invoiceListCode, string? invoiceNo, string? vin)
+    {
+        var q = db.CarInvoices.Where(i => i.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(i => i.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim(); q = q.Where(i => i.DealerCode.Contains(d)); }
+        if (!string.IsNullOrWhiteSpace(invoiceListCode)) { var code = invoiceListCode.Trim(); q = q.Where(i => i.InvoiceListCode.Contains(code)); }
+
+        if (!string.IsNullOrWhiteSpace(invoiceNo))
+        {
+            var no = invoiceNo.Trim().ToUpperInvariant();
+            var matchedCodes = await db.CarInvoiceLines
+                .Where(l => l.OrgId == Org && l.InvoiceNo.Contains(no))
+                .Select(l => l.InvoiceListCode)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(i => matchedCodes.Contains(i.InvoiceListCode));
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedCodes = await db.CarInvoiceLines
+                .Where(l => l.OrgId == Org && l.Vin == vv)
+                .Select(l => l.InvoiceListCode)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(i => matchedCodes.Contains(i.InvoiceListCode));
+        }
+
+        var items = await q.OrderByDescending(i => i.Id).Take(500).Select(i => new
+        {
+            i.InvoiceListCode,
+            i.DealerCode,
+            i.InvoiceType,
+            i.InvoiceDate,
+            i.TotalVehicleCount,
+            i.TotalTaxValue,
+            i.VatRate,
+            i.TotalVatAmount,
+            i.TotalAmount,
+            i.Status,
+            i.CreatedBy,
+            i.CreatedAt,
+            i.IssuedBy,
+            i.IssuedAt,
+            i.CancelledAt,
+            i.Remark,
+            linesCount = db.CarInvoiceLines.Count(l => l.OrgId == Org && l.CarInvoiceId == i.Id),
+            issuedLinesCount = db.CarInvoiceLines.Count(l => l.OrgId == Org && l.CarInvoiceId == i.Id && l.Status == "Issued")
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCarInvoiceAsync(string invoiceListCode)
+    {
+        invoiceListCode = invoiceListCode.Trim().ToUpperInvariant();
+        var invoice = await db.CarInvoices.FirstOrDefaultAsync(i => i.OrgId == Org && i.InvoiceListCode == invoiceListCode);
+        if (invoice is null) return null;
+
+        var lines = await db.CarInvoiceLines.Where(l => l.OrgId == Org && l.CarInvoiceId == invoice.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.Vin,
+            l.Model,
+            l.EngineNo,
+            l.InvoiceDealerCode,
+            l.InvoiceNo,
+            l.InvoiceDate,
+            l.TaxValue,
+            l.VatRate,
+            l.VatAmount,
+            l.TotalAmount,
+            l.Status,
+            l.Remark,
+            color = vehicles.TryGetValue(l.Vin, out var v) ? v.Color : null,
+            modelYear = vehicles.TryGetValue(l.Vin, out var vy) ? vy.ModelYear : null,
+            vehicleStatus = vehicles.TryGetValue(l.Vin, out var vs) ? vs.Status.ToString() : null,
+            isInvoiced = vehicles.TryGetValue(l.Vin, out var vi) && vi.IsInvoiced
+        }).ToList();
+
+        return new
+        {
+            invoice.InvoiceListCode,
+            invoice.DealerCode,
+            invoice.InvoiceType,
+            invoice.InvoiceDate,
+            invoice.TotalVehicleCount,
+            invoice.TotalTaxValue,
+            invoice.VatRate,
+            invoice.TotalVatAmount,
+            invoice.TotalAmount,
+            invoice.Status,
+            invoice.CreatedBy,
+            invoice.CreatedAt,
+            invoice.IssuedBy,
+            invoice.IssuedAt,
+            invoice.CancelledAt,
+            invoice.Remark,
+            vins = details
+        };
+    }
+
+    public async Task<object?> CarInvoiceTransitionAsync(string invoiceListCode, string action, CarInvoiceTransitionDto? dto)
+    {
+        invoiceListCode = invoiceListCode.Trim().ToUpperInvariant();
+        var act = action.Trim().ToLowerInvariant();
+
+        var invoice = await db.CarInvoices.FirstOrDefaultAsync(i => i.OrgId == Org && i.InvoiceListCode == invoiceListCode);
+        if (invoice is null) return null;
+
+        var lines = await db.CarInvoiceLines.Where(l => l.OrgId == Org && l.CarInvoiceId == invoice.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "issue" or "approve":
+                if (invoice.Status != "Draft") return null;
+
+                invoice.Status = "Issued";
+                invoice.IssuedBy = dto?.User ?? "ChiefAccountant";
+                invoice.IssuedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    invoice.Remark = (invoice.Remark + " | Phát hành: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Issued";
+                    line.InvoiceDate ??= now;
+
+                    if (vehicles.TryGetValue(line.Vin, out var v))
+                    {
+                        v.IsInvoiced = true;
+                        v.InvoiceNo = line.InvoiceNo;
+                        v.InvoiceDate = line.InvoiceDate;
+                        v.InvoiceListCode = invoice.InvoiceListCode;
+                    }
+
+                    Log(line.Vin, "InvoiceIssued",
+                        $"{invoiceListCode} Phát hành chính thức hóa đơn GTGT điện tử số {line.InvoiceNo} ngày {line.InvoiceDate:yyyy-MM-dd} cho đại lý {line.InvoiceDealerCode}. Tổng thanh toán: {line.TotalAmount:N0} VNĐ (VAT {line.VatRate}%: {line.VatAmount:N0} VNĐ).");
+                }
+                break;
+
+            case "cancel":
+                if (invoice.Status == "Cancelled") return null;
+
+                invoice.Status = "Cancelled";
+                invoice.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    invoice.Remark = (invoice.Remark + " | Hủy: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Cancelled";
+
+                    if (vehicles.TryGetValue(line.Vin, out var v) && v.InvoiceListCode == invoice.InvoiceListCode)
+                    {
+                        v.IsInvoiced = false;
+                        v.InvoiceNo = null;
+                        v.InvoiceDate = null;
+                        v.InvoiceListCode = null;
+                    }
+
+                    Log(line.Vin, "InvoiceCancelled",
+                        $"{invoiceListCode} Hủy bỏ hóa đơn GTGT {line.InvoiceNo}. Giải phóng trạng thái hóa đơn của xe. Lý do: {dto?.Note ?? "N/A"}");
+                }
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            invoice.InvoiceListCode,
+            invoice.DealerCode,
+            invoice.Status,
+            invoice.TotalVehicleCount,
+            invoice.TotalAmount,
+            invoice.IssuedBy,
+            invoice.IssuedAt,
+            invoice.CancelledAt,
+            action = act
+        };
+    }
+
+    public async Task<object?> UpdateCarInvoiceLineAsync(string invoiceListCode, string vin, UpdateCarInvoiceLineDto dto)
+    {
+        invoiceListCode = invoiceListCode.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var invoice = await db.CarInvoices.FirstOrDefaultAsync(i => i.OrgId == Org && i.InvoiceListCode == invoiceListCode);
+        if (invoice is null || invoice.Status is "Issued" or "Cancelled") return null;
+
+        var line = await db.CarInvoiceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.CarInvoiceId == invoice.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.InvoiceNo)) line.InvoiceNo = dto.InvoiceNo.Trim().ToUpperInvariant();
+        if (dto.InvoiceDate.HasValue) line.InvoiceDate = dto.InvoiceDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.InvoiceDealerCode)) line.InvoiceDealerCode = dto.InvoiceDealerCode.Trim();
+        if (dto.TaxValue.HasValue && dto.TaxValue.Value >= 0) line.TaxValue = dto.TaxValue.Value;
+        if (dto.VatRate.HasValue && dto.VatRate.Value >= 0) line.VatRate = dto.VatRate.Value;
+
+        line.VatAmount = Math.Round(line.TaxValue * line.VatRate / 100m, 0);
+        line.TotalAmount = line.TaxValue + line.VatAmount;
+
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.CarInvoiceLines.Where(l => l.OrgId == Org && l.CarInvoiceId == invoice.Id).ToListAsync();
+        invoice.TotalTaxValue = allLines.Sum(l => l.TaxValue);
+        invoice.TotalVatAmount = allLines.Sum(l => l.VatAmount);
+        invoice.TotalAmount = invoice.TotalTaxValue + invoice.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            invoice.InvoiceListCode,
+            line.Vin,
+            line.InvoiceNo,
+            line.InvoiceDate,
+            line.InvoiceDealerCode,
+            line.TaxValue,
+            line.VatRate,
+            line.VatAmount,
+            line.TotalAmount,
+            line.Remark,
+            invoiceTotalAmount = invoice.TotalAmount
+        };
+    }
+
+    public async Task<object?> AddCarInvoiceLinesAsync(string invoiceListCode, List<CarInvoiceItemInputDto> items)
+    {
+        invoiceListCode = invoiceListCode.Trim().ToUpperInvariant();
+        var invoice = await db.CarInvoices.FirstOrDefaultAsync(i => i.OrgId == Org && i.InvoiceListCode == invoiceListCode);
+        if (invoice is null || invoice.Status is "Issued" or "Cancelled") return null;
+
+        var distinctItems = new List<CarInvoiceItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+            if (seenVins.Add(cleanVin))
+                distinctItems.Add(it with { Vin = cleanVin });
+        }
+
+        if (distinctItems.Count == 0) return null;
+
+        var existingVins = await db.CarInvoiceLines
+            .Where(l => l.OrgId == Org && l.CarInvoiceId == invoice.Id)
+            .Select(l => l.Vin)
+            .ToListAsync();
+
+        var newItems = distinctItems.Where(i => !existingVins.Contains(i.Vin)).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var missing = newVins.Where(v => !vehicles.ContainsKey(v)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException($"Không tìm thấy xe với số khung: {string.Join(", ", missing)}");
+
+        // Kiểm tra xe đang nằm trong bảng kê hóa đơn khác
+        var busyLines = await db.CarInvoiceLines
+            .Where(l => l.OrgId == Org && newVins.Contains(l.Vin) && l.Status != "Cancelled")
+            .ToListAsync();
+        if (busyLines.Count > 0)
+        {
+            var busyInfo = string.Join("; ", busyLines.Select(l => $"{l.Vin} ({l.InvoiceListCode})"));
+            throw new InvalidOperationException($"Các xe sau đã nằm trong bảng kê hóa đơn khác: {busyInfo}");
+        }
+
+        var today = DateTime.Today;
+        var existingLineCount = await db.CarInvoiceLines.CountAsync(l => l.OrgId == Org && l.CarInvoiceId == invoice.Id);
+        int invSeq = existingLineCount + 1;
+
+        foreach (var it in newItems)
+        {
+            var v = vehicles[it.Vin];
+            var taxValue = it.TaxValue.HasValue && it.TaxValue.Value > 0 ? it.TaxValue.Value : GetDefaultCarPrice(v.Model);
+            var vatRate = it.VatRate ?? invoice.VatRate;
+            var vatAmount = Math.Round(taxValue * vatRate / 100m, 0);
+            var totalAmount = taxValue + vatAmount;
+
+            var invNo = !string.IsNullOrWhiteSpace(it.InvoiceNo)
+                ? it.InvoiceNo.Trim().ToUpperInvariant()
+                : $"HD{today:yy}-{(invSeq + 100):000000}";
+            invSeq++;
+
+            var invLineDate = it.InvoiceDate ?? invoice.InvoiceDate;
+            var lineDealer = !string.IsNullOrWhiteSpace(it.InvoiceDealerCode) ? it.InvoiceDealerCode.Trim() : invoice.DealerCode;
+
+            db.CarInvoiceLines.Add(new CarInvoiceLine
+            {
+                OrgId = Org,
+                CarInvoiceId = invoice.Id,
+                InvoiceListCode = invoice.InvoiceListCode,
+                Vin = it.Vin,
+                Model = v.Model,
+                EngineNo = v.EngineNo,
+                InvoiceDealerCode = lineDealer,
+                InvoiceNo = invNo,
+                InvoiceDate = invLineDate,
+                TaxValue = taxValue,
+                VatRate = vatRate,
+                VatAmount = vatAmount,
+                TotalAmount = totalAmount,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            });
+
+            Log(it.Vin, "CarInvoiceDraftLineAdded",
+                $"{invoiceListCode} Bổ sung xe vào dự thảo bảng kê hóa đơn {invNo} cho đại lý {lineDealer}");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.CarInvoiceLines.Where(l => l.OrgId == Org && l.CarInvoiceId == invoice.Id).ToListAsync();
+        invoice.TotalVehicleCount = allLines.Count;
+        invoice.TotalTaxValue = allLines.Sum(l => l.TaxValue);
+        invoice.TotalVatAmount = allLines.Sum(l => l.VatAmount);
+        invoice.TotalAmount = invoice.TotalTaxValue + invoice.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            invoice.InvoiceListCode,
+            addedCount = newItems.Count,
+            invoice.TotalVehicleCount,
+            invoice.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveCarInvoiceLineAsync(string invoiceListCode, string vin)
+    {
+        invoiceListCode = invoiceListCode.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var invoice = await db.CarInvoices.FirstOrDefaultAsync(i => i.OrgId == Org && i.InvoiceListCode == invoiceListCode);
+        if (invoice is null || invoice.Status is "Issued" or "Cancelled") return null;
+
+        var line = await db.CarInvoiceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.CarInvoiceId == invoice.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.CarInvoiceLines.Remove(line);
+        Log(vin, "CarInvoiceLineRemoved", $"{invoiceListCode} Rút xe khỏi dự thảo bảng kê hóa đơn");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.CarInvoiceLines.Where(l => l.OrgId == Org && l.CarInvoiceId == invoice.Id).ToListAsync();
+        invoice.TotalVehicleCount = allLines.Count;
+        invoice.TotalTaxValue = allLines.Sum(l => l.TaxValue);
+        invoice.TotalVatAmount = allLines.Sum(l => l.VatAmount);
+        invoice.TotalAmount = invoice.TotalTaxValue + invoice.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            invoice.InvoiceListCode,
+            vin,
+            invoice.TotalVehicleCount,
+            invoice.TotalAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleInvoiceInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var lines = await db.CarInvoiceLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.Color,
+            v.EngineNo,
+            v.Status,
+            v.DealerCode,
+            v.IsInvoiced,
+            v.InvoiceNo,
+            v.InvoiceDate,
+            v.InvoiceListCode,
+            invoices = lines.Select(l => new
+            {
+                l.Id,
+                l.InvoiceListCode,
+                l.InvoiceNo,
+                l.InvoiceDate,
+                l.InvoiceDealerCode,
+                l.TaxValue,
+                l.VatRate,
+                l.VatAmount,
+                l.TotalAmount,
+                l.Status,
+                l.Remark
+            })
         };
     }
 }

@@ -43,6 +43,10 @@ public sealed class Vehicle
     public string TypeCB { get; set; } = "0";       // Tình trạng đóng thùng xe thương mại: "0" - Chassis chưa đóng thùng, "1" - Đã đóng thùng (BizHTC.Car.TypeCB)
     public string? LoaiThung { get; set; }          // Loại thùng hiện tại (ThungBat, ThungKin, ThungLanh, ThungLung, ThungComposite, ThungChuyenDung)
     public string? CBReqNo { get; set; }            // Mã yêu cầu đóng thùng gần nhất (Sto_CBReq)
+    public bool IsInvoiced { get; set; } = false;   // Đã xuất hóa đơn GTGT bán xe cho đại lý (Car_InvoiceList)
+    public string? InvoiceNo { get; set; }          // Số hóa đơn GTGT điện tử (HD26-...)
+    public DateTime? InvoiceDate { get; set; }      // Ngày xuất hóa đơn GTGT
+    public string? InvoiceListCode { get; set; }    // Mã bảng kê / đợt xuất hóa đơn liên quan (IVL...)
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -1040,6 +1044,50 @@ public sealed class CarBoxRequestLine
     public string? DefectNotes { get; set; }              // Ghi chú khiếm khuyết kỹ thuật nếu chưa đạt
     public string Status { get; set; } = "Pending";       // Pending → Approved → InProgress → Completed (hoặc Rejected / Cancelled)
     public DateTime? CompletedDate { get; set; }          // Ngày hoàn tất đóng thùng cho xe này
+    public string? Remark { get; set; }
+}
+
+/// <summary>Bảng kê / Đợt xuất hóa đơn GTGT xe ô tô cho Đại lý (BizHTC.Car.Car_InvoiceList / CarInvoice): quản lý phát hành hóa đơn GTGT điện tử bán buôn xe ô tô từ OEM cho đại lý, đối soát giá trị tính thuế, tiền thuế VAT và cập nhật trạng thái hóa đơn trên hồ sơ số khung VIN.</summary>
+public sealed class CarInvoice
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string InvoiceListCode { get; set; } = "";     // Mã bảng kê hóa đơn (IVL...)
+    public string DealerCode { get; set; } = "";          // Mã đại lý nhận hóa đơn GTGT
+    public string InvoiceType { get; set; } = "VAT";      // Loại hóa đơn: VAT (Hóa đơn GTGT điện tử), Commercial (Hóa đơn thương mại), Export (Hóa đơn xuất khẩu)
+    public DateTime InvoiceDate { get; set; } = DateTime.Now; // Ngày lập hóa đơn
+    public int TotalVehicleCount { get; set; } = 0;       // Tổng số lượng xe xuất hóa đơn trong đợt
+    public decimal TotalTaxValue { get; set; } = 0;       // Tổng trị giá xe trước thuế (VNĐ)
+    public decimal VatRate { get; set; } = 10;            // Thuế suất VAT (%) (VD: 10% = 10)
+    public decimal TotalVatAmount { get; set; } = 0;      // Tổng tiền thuế VAT (VNĐ)
+    public decimal TotalAmount { get; set; } = 0;         // Tổng tiền thanh toán đã bao gồm VAT = TotalTaxValue + TotalVatAmount
+    public string Status { get; set; } = "Draft";         // Draft → Issued (hoặc Cancelled)
+    public string? Remark { get; set; }                   // Diễn giải / ghi chú bảng kê hóa đơn
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? IssuedBy { get; set; }                 // Kế toán viên / Người ký phát hành hóa đơn điện tử
+    public DateTime? IssuedAt { get; set; }               // Thời điểm phát hành hóa đơn chính thức
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong bảng kê hóa đơn GTGT (BizHTC.Car.Car_InvoiceListDetail / CarInvoiceLine): số khung VIN, số hóa đơn VAT, ngày hóa đơn, đại lý thụ hưởng, đơn giá tính thuế, thuế VAT và tổng tiền.</summary>
+public sealed class CarInvoiceLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long CarInvoiceId { get; set; }
+    public string InvoiceListCode { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? EngineNo { get; set; }
+    public string InvoiceDealerCode { get; set; } = "";   // Mã đại lý ghi trên hóa đơn
+    public string InvoiceNo { get; set; } = "";           // Số hóa đơn GTGT điện tử (HD26-0001001)
+    public DateTime? InvoiceDate { get; set; }            // Ngày lập hóa đơn cho xe này
+    public decimal TaxValue { get; set; } = 0;            // Đơn giá xe trước thuế GTGT (VNĐ)
+    public decimal VatRate { get; set; } = 10;            // Thuế suất VAT (%)
+    public decimal VatAmount { get; set; } = 0;           // Tiền thuế VAT = TaxValue * VatRate / 100
+    public decimal TotalAmount { get; set; } = 0;         // Tổng tiền xe bao gồm thuế = TaxValue + VatAmount
+    public string Status { get; set; } = "Pending";       // Pending → Issued (hoặc Cancelled)
     public string? Remark { get; set; }
 }
 
