@@ -3738,6 +3738,133 @@ app.MapGet("/api/vehicles/{vin}/storage-payment-history", async (string vin, IVe
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Bảng kê & Quyết toán chi phí Màn hình AVN & Thẻ bản đồ định vị trên xe ô tô (BizHTC.Payment / Pmt_PaymentAVN & AvnPayment / FrmQuanLyThanhToanAVN, FrmTaoThanhToanAVN) =====
+
+app.MapPost("/api/avn-payments", async (CreateAvnPaymentDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.PmtMonth))
+        return Results.BadRequest(new { error = "Cần tháng/kỳ quyết toán PmtMonth (YYYY-MM)." });
+    try { return Results.Ok(await svc.CreateAvnPaymentAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/avn-payments", async (IVehicleService svc, string? status, string? supplierCode, string? pmtMonth, string? paymentAVNNo, string? vin) =>
+    Results.Ok(await svc.ListAvnPaymentsAsync(status, supplierCode, pmtMonth, paymentAVNNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/avn-payments/summary", async (IVehicleService svc, string? supplierCode, string? pmtMonth) =>
+    Results.Ok(await svc.GetAvnPaymentSummaryAsync(supplierCode, pmtMonth))).RequireAuthorization();
+
+app.MapGet("/api/reports/avn-payments/summary", async (IVehicleService svc, string? supplierCode, string? pmtMonth) =>
+    Results.Ok(await svc.GetAvnPaymentSummaryAsync(supplierCode, pmtMonth))).RequireAuthorization();
+
+app.MapGet("/api/avn-payments/{paymentAVNNo}", async (string paymentAVNNo, IVehicleService svc) =>
+{
+    var r = await svc.GetAvnPaymentAsync(paymentAVNNo);
+    return r is null ? Results.NotFound(new { paymentAVNNo, error = "Không tìm thấy bảng kê quyết toán AVN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/avn-payments/{paymentAVNNo}", async (string paymentAVNNo, UpdateAvnPaymentHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateAvnPaymentHeaderAsync(paymentAVNNo, dto);
+        return r is null ? Results.NotFound(new { paymentAVNNo, error = "Không tìm thấy bảng kê quyết toán AVN." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/avn-payments/{paymentAVNNo}/update", async (string paymentAVNNo, UpdateAvnPaymentHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateAvnPaymentHeaderAsync(paymentAVNNo, dto);
+        return r is null ? Results.NotFound(new { paymentAVNNo, error = "Không tìm thấy bảng kê quyết toán AVN." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/avn-payments/{paymentAVNNo}/{action}", async (string paymentAVNNo, string action, AvnPaymentTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "request" or "approve1" or "approve-step1" or "approve2" or "approve" or "supplier-sign" or "suppliersign" or "sign-supplier" or "htv-sign" or "htvsign" or "sign-htv" or "settle" or "pay" or "finish" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve1|approve2|supplier-sign|htv-sign|settle|reject|cancel" });
+    try
+    {
+        var r = await svc.AvnPaymentTransitionAsync(paymentAVNNo, action, dto);
+        return r is null ? Results.NotFound(new { paymentAVNNo, error = "Không tìm thấy bảng kê hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/avn-payments/{paymentAVNNo}/lines/{vin}/update", async (string paymentAVNNo, string vin, UpdateAvnPaymentLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateAvnPaymentLineAsync(paymentAVNNo, vin, dto);
+        return r is null ? Results.NotFound(new { paymentAVNNo, vin, error = "Không tìm thấy dòng xe trong bảng kê AVN." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/avn-payments/{paymentAVNNo}/lines/{vin}", async (string paymentAVNNo, string vin, UpdateAvnPaymentLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateAvnPaymentLineAsync(paymentAVNNo, vin, dto);
+        return r is null ? Results.NotFound(new { paymentAVNNo, vin, error = "Không tìm thấy dòng xe trong bảng kê AVN." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/avn-payments/{paymentAVNNo}/lines", async (string paymentAVNNo, List<AvnPaymentLineInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào bảng kê." });
+    try
+    {
+        var r = await svc.AddAvnPaymentLinesAsync(paymentAVNNo, items);
+        return r is null ? Results.NotFound(new { paymentAVNNo, error = "Không tìm thấy bảng kê hoặc không thể thêm xe." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/avn-payments/{paymentAVNNo}/lines/{vin}", async (string paymentAVNNo, string vin, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveAvnPaymentLineAsync(paymentAVNNo, vin);
+        return r is null ? Results.NotFound(new { paymentAVNNo, vin, error = "Không tìm thấy dòng xe trong bảng kê hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/avn-payments/{paymentAVNNo}", async (string paymentAVNNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveAvnPaymentAsync(paymentAVNNo);
+        return r is null ? Results.NotFound(new { paymentAVNNo, error = "Không tìm thấy bảng kê hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/avn-payment-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleAvnPaymentInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/avn-payments", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleAvnPaymentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/avn-payment-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleAvnPaymentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

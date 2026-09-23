@@ -3794,6 +3794,127 @@ public static class Seeder
                 v2Storage.StoragePaymentCount = 1;
             }
         }
+
+        if (!await db.AvnPayments.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var avn1 = new AvnPayment
+            {
+                OrgId = org,
+                PaymentAVNNo = "AVN-202603-001",
+                PaymentAVNNoUser = "BK-AVN/2026/03/MOBIS-01",
+                PmtMonth = "2026-03",
+                SupplierCode = "MOBIS",
+                SupplierName = "Mobis Auto Parts Vietnam",
+                TotalVehicleCount = 2,
+                TotalBeforeVAT = 18400000m,
+                VatRate = 10,
+                TotalVatAmount = 1840000m,
+                TotalAmount = 20240000m,
+                Status = "Settled",
+                SupplierSignStatus = "Signed",
+                SupplierSignDate = DateTime.Now.AddDays(-2),
+                SupplierSignBy = "Mobis.Director.KimMinSoo",
+                HTVSignStatus = "Signed",
+                HTVSignDate = DateTime.Now.AddDays(-2),
+                HTVSignBy = "HTV.TechnicalDirector.NguyenVanNam",
+                BankRefNo = "UNC-VCB-20260318-9900",
+                PaymentDate = DateTime.Now.AddDays(-1),
+                FilePath = "https://doc.hyundai.thanhcong.vn/avn-payments/AVN-202603-001.pdf",
+                Remark = "Bảng kê quyết toán chi phí lắp đặt Màn hình AVN & Thẻ bản đồ dẫn đường GPS hãng Mobis kỳ tháng 03/2026",
+                CreatedBy = "avn.specialist.oem",
+                CreatedAt = DateTime.Now.AddDays(-6),
+                Approved1By = "CostAccountant.NguyenThanhHa",
+                Approved1At = DateTime.Now.AddDays(-5),
+                Approved2By = "PartsDirector.TranVanPhuc",
+                Approved2At = DateTime.Now.AddDays(-4),
+                SettledBy = "ChiefAccountant.VuThiLan",
+                SettledAt = DateTime.Now.AddDays(-1)
+            };
+            db.AvnPayments.Add(avn1);
+            await db.SaveChangesAsync();
+
+            db.AvnPaymentLines.AddRange(
+                new AvnPaymentLine
+                {
+                    OrgId = org,
+                    AvnPaymentId = avn1.Id,
+                    PaymentAVNNo = avn1.PaymentAVNNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    EngineNo = "G4LC0001",
+                    Color = "Trắng",
+                    AvnDeviceCode = "AVN-GEN5-8INCH",
+                    AvnSerialNo = "AVN-202603-0001",
+                    MapCardSerialNo = "MAP-202603-0001",
+                    MapVersion = "VN-MAP-2026.Q1",
+                    DevicePrice = 7000000m,
+                    MapPrice = 1200000m,
+                    InstallationFee = 300000m,
+                    AccessoryCost = 200000m,
+                    TotalAmount = 8700000m,
+                    InStorageDate = DateTime.Now.AddDays(-25),
+                    AvnInstallDate = DateTime.Now.AddDays(-20),
+                    Status = "Settled",
+                    Remark = "Màn hình AVN 8 inch cảm ứng tích hợp Apple CarPlay / Android Auto & Bản đồ Vietmap bản quyền"
+                },
+                new AvnPaymentLine
+                {
+                    OrgId = org,
+                    AvnPaymentId = avn1.Id,
+                    PaymentAVNNo = avn1.PaymentAVNNo,
+                    LineIndex = 2,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    EngineNo = "G4FL0002",
+                    Color = "Đen",
+                    AvnDeviceCode = "AVN-GEN5W-10INCH",
+                    AvnSerialNo = "AVN-202603-0002",
+                    MapCardSerialNo = "MAP-202603-0002",
+                    MapVersion = "VN-MAP-2026.Q1",
+                    DevicePrice = 8000000m,
+                    MapPrice = 1200000m,
+                    InstallationFee = 300000m,
+                    AccessoryCost = 200000m,
+                    TotalAmount = 9700000m,
+                    InStorageDate = DateTime.Now.AddDays(-25),
+                    AvnInstallDate = DateTime.Now.AddDays(-20),
+                    Status = "Settled",
+                    Remark = "Màn hình AVN 10.25 inch độ phân giải cao kết nối Bluelink & Thẻ bản đồ GPS"
+                }
+            );
+
+            var v1Avn = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Avn != null)
+            {
+                v1Avn.IsAvnInstalled = true;
+                v1Avn.AvnDeviceCode = "AVN-GEN5-8INCH";
+                v1Avn.AvnSerialNo = "AVN-202603-0001";
+                v1Avn.MapCardSerialNo = "MAP-202603-0001";
+                v1Avn.IsAvnPaid = true;
+                v1Avn.AvnPaidAmount = 8700000m;
+                v1Avn.LastAvnPaymentNo = avn1.PaymentAVNNo;
+                v1Avn.LastAvnPaymentDate = avn1.PaymentDate;
+                v1Avn.AvnPaymentCount = 1;
+            }
+
+            var v2Avn = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Avn != null)
+            {
+                v2Avn.IsAvnInstalled = true;
+                v2Avn.AvnDeviceCode = "AVN-GEN5W-10INCH";
+                v2Avn.AvnSerialNo = "AVN-202603-0002";
+                v2Avn.MapCardSerialNo = "MAP-202603-0002";
+                v2Avn.IsAvnPaid = true;
+                v2Avn.AvnPaidAmount = 9700000m;
+                v2Avn.LastAvnPaymentNo = avn1.PaymentAVNNo;
+                v2Avn.LastAvnPaymentDate = avn1.PaymentDate;
+                v2Avn.AvnPaymentCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -3989,7 +4110,18 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastStoragePaymentDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"StoragePaymentCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"StoragePayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PaymentStorageNo\" text NOT NULL DEFAULT '', \"PaymentStorageNoUser\" text NULL, \"PmtMonth\" text NOT NULL DEFAULT '', \"StorageCode\" text NOT NULL DEFAULT 'TCV_YARD', \"StorageProvider\" text NULL DEFAULT 'TCMS - Thanh Cong Motor Services', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalStorageDays\" integer NOT NULL DEFAULT 0, \"TotalBeforeVAT\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"TCMSSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"TCMSSignDate\" timestamp NULL, \"TCMSSignBy\" text NULL, \"HTVSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"HTVSignDate\" timestamp NULL, \"HTVSignBy\" text NULL, \"BankRefNo\" text NULL, \"PaymentDate\" timestamp NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"StoragePaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"StoragePaymentId\" bigint NOT NULL, \"PaymentStorageNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCodeInit\" text NULL, \"StoreDate\" timestamp NULL, \"DeliveryOutDate\" timestamp NULL, \"DealerCode\" text NULL, \"InCostStorageDate\" timestamp NOT NULL DEFAULT now(), \"OutCostStorageDate\" timestamp NOT NULL DEFAULT now(), \"StorageDays\" integer NOT NULL DEFAULT 1, \"DailyRate\" numeric NOT NULL DEFAULT 35000, \"CoverDailyRate\" numeric NOT NULL DEFAULT 0, \"StorageCost\" numeric NOT NULL DEFAULT 35000, \"CoverCost\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 35000, \"StorageLevel\" text NOT NULL DEFAULT 'Standard', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"StoragePaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"StoragePaymentId\" bigint NOT NULL, \"PaymentStorageNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCodeInit\" text NULL, \"StoreDate\" timestamp NULL, \"DeliveryOutDate\" timestamp NULL, \"DealerCode\" text NULL, \"InCostStorageDate\" timestamp NOT NULL DEFAULT now(), \"OutCostStorageDate\" timestamp NOT NULL DEFAULT now(), \"StorageDays\" integer NOT NULL DEFAULT 1, \"DailyRate\" numeric NOT NULL DEFAULT 35000, \"CoverDailyRate\" numeric NOT NULL DEFAULT 0, \"StorageCost\" numeric NOT NULL DEFAULT 35000, \"CoverCost\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 35000, \"StorageLevel\" text NOT NULL DEFAULT 'Standard', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsAvnInstalled\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"AvnDeviceCode\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"AvnSerialNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"MapCardSerialNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsAvnPaid\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"AvnPaidAmount\" numeric NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastAvnPaymentNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastAvnPaymentDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"AvnPaymentCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"AvnPayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PaymentAVNNo\" text NOT NULL DEFAULT '', \"PaymentAVNNoUser\" text NULL, \"PmtMonth\" text NOT NULL DEFAULT '', \"SupplierCode\" text NOT NULL DEFAULT 'MOBIS', \"SupplierName\" text NULL DEFAULT 'Mobis Auto Parts Vietnam', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalBeforeVAT\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"SupplierSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"SupplierSignDate\" timestamp NULL, \"SupplierSignBy\" text NULL, \"HTVSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"HTVSignDate\" timestamp NULL, \"HTVSignBy\" text NULL, \"BankRefNo\" text NULL, \"PaymentDate\" timestamp NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"AvnPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AvnPaymentId\" bigint NOT NULL, \"PaymentAVNNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"AvnDeviceCode\" text NOT NULL DEFAULT 'AVN-GEN5W-10INCH', \"AvnSerialNo\" text NOT NULL DEFAULT '', \"MapCardSerialNo\" text NULL, \"MapVersion\" text NULL DEFAULT 'VN-MAP-2026.Q1', \"DevicePrice\" numeric NOT NULL DEFAULT 7500000, \"MapPrice\" numeric NOT NULL DEFAULT 1200000, \"InstallationFee\" numeric NOT NULL DEFAULT 300000, \"AccessoryCost\" numeric NOT NULL DEFAULT 200000, \"TotalAmount\" numeric NOT NULL DEFAULT 9200000, \"InStorageDate\" timestamp NULL, \"AvnInstallDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

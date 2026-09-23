@@ -110,6 +110,15 @@ public sealed class Vehicle
     public string? LastStoragePaymentNo { get; set; } // Mã bảng kê quyết toán lưu kho gần nhất (PaymentStorageNo)
     public DateTime? LastStoragePaymentDate { get; set; } // Ngày quyết toán chi phí lưu kho gần nhất
     public int StoragePaymentCount { get; set; } = 0; // Số lần xe phát sinh trong bảng kê quyết toán lưu kho
+    public bool IsAvnInstalled { get; set; } = false; // Đã trang bị màn hình giải trí & dẫn đường AVN (BizHTC.Payment.Pmt_PaymentAVN)
+    public string? AvnDeviceCode { get; set; }        // Mã chủng loại màn hình AVN gắn trên xe
+    public string? AvnSerialNo { get; set; }          // Số Serial màn hình AVN
+    public string? MapCardSerialNo { get; set; }      // Số Serial thẻ nhớ bản đồ dẫn đường
+    public bool IsAvnPaid { get; set; } = false;      // Đã thanh toán / quyết toán chi phí thiết bị AVN (BizHTC.Payment.Pmt_PaymentAVN)
+    public decimal AvnPaidAmount { get; set; } = 0;   // Tổng tiền AVN đã thanh toán của xe (VNĐ)
+    public string? LastAvnPaymentNo { get; set; }     // Mã bảng kê quyết toán AVN gần nhất (PaymentAVNNo)
+    public DateTime? LastAvnPaymentDate { get; set; } // Ngày quyết toán chi phí AVN gần nhất
+    public int AvnPaymentCount { get; set; } = 0;     // Số lần xe phát sinh trong bảng kê quyết toán AVN
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -3693,6 +3702,188 @@ public sealed record VehicleStoragePaymentInfoDto(
     DateTime? LastStoragePaymentDate,
     int StoragePaymentCount,
     List<StoragePaymentLine> PaymentLines
+);
+
+// ===== Bảng kê & Quyết toán chi phí Màn hình / Thiết bị Audio Visual Navigation AVN & Thẻ bản đồ định vị trên xe ô tô (BizHTC.Payment / Pmt_PaymentAVN, Pmt_PaymentAVNDetail, Mst_AVNPrice / FrmQuanLyThanhToanAVN, FrmTaoThanhToanAVN) =====
+
+/// <summary>Bảng kê & Quyết toán chi phí Màn hình giải trí & Dẫn đường thông minh AVN kèm Thẻ bản đồ định vị GPS bản quyền (BizHTC.Payment.Pmt_PaymentAVN / AvnPayment): quản lý đối soát và thanh toán chi phí thiết bị AVN, thẻ bản đồ và công lắp đặt giữa Hãng xe OEM HTV và Nhà cung cấp giải pháp màn hình/bản đồ AVN (Mobis, Panasonic, Vietmap, FPT...).</summary>
+public sealed class AvnPayment
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PaymentAVNNo { get; set; } = "";        // Mã bảng kê quyết toán AVN (AVN-202603-001, PAVN...)
+    public string? PaymentAVNNoUser { get; set; }       // Mã số bảng kê do người dùng nhập / tham chiếu nội bộ
+    public string PmtMonth { get; set; } = "";          // Kỳ / tháng quyết toán chi phí (YYYY-MM, ví dụ: 2026-03)
+    public string SupplierCode { get; set; } = "MOBIS"; // Mã nhà cung cấp thiết bị AVN (MOBIS, PANASONIC, VIETMAP, FPT_AUTO...)
+    public string? SupplierName { get; set; } = "Mobis Auto Parts Vietnam"; // Tên nhà cung cấp thiết bị AVN
+    public int TotalVehicleCount { get; set; } = 0;     // Tổng số lượng xe lắp đặt thiết bị AVN trong bảng kê
+    public decimal TotalBeforeVAT { get; set; } = 0;    // Tổng chi phí AVN trước thuế VAT (VNĐ)
+    public decimal VatRate { get; set; } = 10;          // Thuế suất VAT (%) (VD: 10% = 10)
+    public decimal TotalVatAmount { get; set; } = 0;    // Tiền thuế VAT = TotalBeforeVAT * VatRate / 100
+    public decimal TotalAmount { get; set; } = 0;       // Tổng số tiền thanh toán đã bao gồm VAT = TotalBeforeVAT + TotalVatAmount
+    public string Status { get; set; } = "Draft";       // Draft → Submitted → Approved1 → Approved2 → SupplierSigned → HTVSigned → Settled (hoặc Rejected / Cancelled)
+    public string? SupplierSignStatus { get; set; } = "Unsigned"; // Trạng thái ký số Nhà cung cấp AVN (Unsigned, Signed)
+    public DateTime? SupplierSignDate { get; set; }     // Ngày ký số Nhà cung cấp AVN
+    public string? SupplierSignBy { get; set; }         // Người đại diện Nhà cung cấp ký số
+    public string? HTVSignStatus { get; set; } = "Unsigned"; // Trạng thái ký số Hãng xe OEM HTV (Unsigned, Signed)
+    public DateTime? HTVSignDate { get; set; }          // Ngày ký số HTV
+    public string? HTVSignBy { get; set; }              // Người đại diện HTV ký số
+    public string? BankRefNo { get; set; }              // Số chứng từ / Ủy nhiệm chi UNC ngân hàng giải ngân thanh toán
+    public DateTime? PaymentDate { get; set; }          // Ngày thực tế chuyển khoản thanh toán
+    public string? FilePath { get; set; }               // Tệp đính kèm bảng kê có chữ ký số (PDF)
+    public string? Remark { get; set; }                 // Ghi chú đợt quyết toán
+    public string? CreatedBy { get; set; }              // Người lập bảng kê
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? Approved1By { get; set; }            // Kế toán chi phí vật tư sơ duyệt A1
+    public DateTime? Approved1At { get; set; }
+    public string? Approved2By { get; set; }            // Giám đốc Khối Phụ tùng / Khối Sản xuất duyệt A2
+    public DateTime? Approved2At { get; set; }
+    public string? SettledBy { get; set; }              // Kế toán trưởng / Thủ quỹ xác nhận giải ngân
+    public DateTime? SettledAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe trong Bảng kê quyết toán chi phí AVN (BizHTC.Payment.Pmt_PaymentAVNDetail / AvnPaymentLine): số khung VIN, model, mã đầu AVN, serial đầu AVN, serial thẻ bản đồ GPS, phiên bản bản đồ, đơn giá thiết bị, giá thẻ bản đồ, công lắp đặt và tổng chi phí.</summary>
+public sealed class AvnPaymentLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long AvnPaymentId { get; set; }
+    public string PaymentAVNNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;             // Thứ tự dòng
+    public string Vin { get; set; } = "";               // Số khung VIN xe gắn màn hình AVN
+    public string Model { get; set; } = "";             // Dòng xe (SantaFe, Tucson, Accent, Creta, Elantra, Stargazer, Custin, Ioniq 5...)
+    public string? SpecCode { get; set; }               // Phiên bản xe
+    public string? EngineNo { get; set; }               // Số máy
+    public string? Color { get; set; }                  // Màu sắc
+    public string AvnDeviceCode { get; set; } = "AVN-GEN5W-10INCH"; // Mã chủng loại màn hình AVN (AVN-GEN5W-10INCH, AVN-GEN5-8INCH, AVN-OLED-12.3INCH...)
+    public string AvnSerialNo { get; set; } = "";       // Số Serial thân máy màn hình AVN
+    public string? MapCardSerialNo { get; set; }        // Số Serial thẻ nhớ bản đồ dẫn đường GPS
+    public string? MapVersion { get; set; } = "VN-MAP-2026.Q1"; // Phiên bản phần mềm bản đồ số
+    public decimal DevicePrice { get; set; } = 7500000m; // Đơn giá thiết bị màn hình AVN (VNĐ)
+    public decimal MapPrice { get; set; } = 1200000m;   // Đơn giá thẻ nhớ bản đồ / bản quyền bản đồ dẫn đường (VNĐ)
+    public decimal InstallationFee { get; set; } = 300000m; // Chi phí công lắp ráp kết nối điện (VNĐ)
+    public decimal AccessoryCost { get; set; } = 200000m;   // Chi phí phụ kiện cáp giắc anten GPS (VNĐ)
+    public decimal TotalAmount { get; set; } = 9200000m; // Tổng chi phí AVN trên xe = DevicePrice + MapPrice + InstallationFee + AccessoryCost (VNĐ)
+    public DateTime? InStorageDate { get; set; }        // Ngày xe nhập kho bãi / xuất xưởng
+    public DateTime? AvnInstallDate { get; set; }       // Ngày hoàn tất lắp đặt kích hoạt thiết bị AVN trên xe
+    public string Status { get; set; } = "Pending";     // Pending → Approved → Settled (hoặc Cancelled)
+    public string? Remark { get; set; }                 // Ghi chú kỹ thuật chi tiết
+}
+
+// ===== DTOs cho Bảng kê & Quyết toán chi phí Màn hình AVN & Bản đồ dẫn đường (BizHTC.Payment / Pmt_PaymentAVN & AvnPayment) =====
+
+public sealed record CreateAvnPaymentDto(
+    string? PaymentAVNNo,
+    string? PaymentAVNNoUser,
+    string PmtMonth,
+    string? SupplierCode,
+    string? SupplierName,
+    decimal? VatRate,
+    string? Remark,
+    string? CreatedBy,
+    List<AvnPaymentLineInputDto>? Items
+);
+
+public sealed record AvnPaymentLineInputDto(
+    string Vin,
+    string? Model,
+    string? SpecCode,
+    string? EngineNo,
+    string? Color,
+    string? AvnDeviceCode,
+    string? AvnSerialNo,
+    string? MapCardSerialNo,
+    string? MapVersion,
+    decimal? DevicePrice,
+    decimal? MapPrice,
+    decimal? InstallationFee,
+    decimal? AccessoryCost,
+    DateTime? InStorageDate,
+    DateTime? AvnInstallDate,
+    string? Remark
+);
+
+public sealed record UpdateAvnPaymentHeaderDto(
+    string? PaymentAVNNoUser,
+    string? PmtMonth,
+    string? SupplierCode,
+    string? SupplierName,
+    decimal? VatRate,
+    string? BankRefNo,
+    DateTime? PaymentDate,
+    string? FilePath,
+    string? Remark
+);
+
+public sealed record UpdateAvnPaymentLineDto(
+    string? Model,
+    string? SpecCode,
+    string? AvnDeviceCode,
+    string? AvnSerialNo,
+    string? MapCardSerialNo,
+    string? MapVersion,
+    decimal? DevicePrice,
+    decimal? MapPrice,
+    decimal? InstallationFee,
+    decimal? AccessoryCost,
+    DateTime? InStorageDate,
+    DateTime? AvnInstallDate,
+    string? Status,
+    string? Remark
+);
+
+public sealed record AvnPaymentTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate,
+    string? BankRefNo,
+    DateTime? PaymentDate,
+    string? FilePath
+);
+
+public sealed record AvnPaymentSummaryDto(
+    int TotalPayments,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalApproved,
+    int TotalSigned,
+    int TotalSettled,
+    int TotalCancelled,
+    int TotalVehicles,
+    decimal TotalBeforeVAT,
+    decimal TotalVatAmount,
+    decimal TotalAmount,
+    decimal TotalSettledAmount,
+    List<AvnPaymentSupplierStatsDto> BySupplier,
+    List<AvnPaymentMonthStatsDto> ByMonth
+);
+
+public sealed record AvnPaymentSupplierStatsDto(string SupplierCode, string SupplierName, int PaymentCount, int VehicleCount, decimal TotalAmount, decimal SettledAmount);
+public sealed record AvnPaymentMonthStatsDto(string PmtMonth, int PaymentCount, int VehicleCount, decimal TotalAmount, decimal SettledAmount);
+
+public sealed record VehicleAvnPaymentInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    bool IsAvnInstalled,
+    string? AvnDeviceCode,
+    string? AvnSerialNo,
+    string? MapCardSerialNo,
+    bool IsAvnPaid,
+    decimal AvnPaidAmount,
+    string? LastAvnPaymentNo,
+    DateTime? LastAvnPaymentDate,
+    int AvnPaymentCount,
+    List<AvnPaymentLine> PaymentLines
 );
 
 

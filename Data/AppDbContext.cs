@@ -109,6 +109,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<CavityDispatchLog> CavityDispatchLogs => Set<CavityDispatchLog>();
     public DbSet<StoragePayment> StoragePayments => Set<StoragePayment>();
     public DbSet<StoragePaymentLine> StoragePaymentLines => Set<StoragePaymentLine>();
+    public DbSet<AvnPayment> AvnPayments => Set<AvnPayment>();
+    public DbSet<AvnPaymentLine> AvnPaymentLines => Set<AvnPaymentLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -164,5 +166,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<ServiceCavity>().HasIndex(x => new { x.OrgId, x.CavityNo }).IsUnique();
         b.Entity<CavityDispatchLog>().HasIndex(x => new { x.OrgId, x.DispatchNo }).IsUnique();
         b.Entity<StoragePayment>().HasIndex(x => new { x.OrgId, x.PaymentStorageNo }).IsUnique();
+        b.Entity<AvnPayment>().HasIndex(x => new { x.OrgId, x.PaymentAVNNo }).IsUnique();
+        b.Entity<AvnPaymentLine>().HasIndex(x => new { x.OrgId, x.PaymentAVNNo, x.Vin });
     }
 }

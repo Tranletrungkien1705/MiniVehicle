@@ -2012,6 +2012,20 @@ public interface IVehicleService
     Task<object> GetStoragePaymentSummaryAsync(string? storageCode, string? pmtMonth);
     Task<object?> GetVehicleStoragePaymentInfoAsync(string vin);
     Task<object?> GetVehicleStoragePaymentHistoryAsync(string vin);
+
+    // Bảng kê & Quyết toán chi phí Màn hình AVN & Thẻ bản đồ định vị trên xe ô tô (BizHTC.Payment / Pmt_PaymentAVN & AvnPayment)
+    Task<object> CreateAvnPaymentAsync(CreateAvnPaymentDto dto);
+    Task<object> ListAvnPaymentsAsync(string? status, string? supplierCode, string? pmtMonth, string? paymentAVNNo, string? vin);
+    Task<object?> GetAvnPaymentAsync(string paymentAVNNo);
+    Task<object?> UpdateAvnPaymentHeaderAsync(string paymentAVNNo, UpdateAvnPaymentHeaderDto dto);
+    Task<object?> AvnPaymentTransitionAsync(string paymentAVNNo, string action, AvnPaymentTransitionDto? dto);
+    Task<object?> UpdateAvnPaymentLineAsync(string paymentAVNNo, string vin, UpdateAvnPaymentLineDto dto);
+    Task<object?> AddAvnPaymentLinesAsync(string paymentAVNNo, List<AvnPaymentLineInputDto> items);
+    Task<object?> RemoveAvnPaymentLineAsync(string paymentAVNNo, string vin);
+    Task<object?> RemoveAvnPaymentAsync(string paymentAVNNo);
+    Task<object> GetAvnPaymentSummaryAsync(string? supplierCode, string? pmtMonth);
+    Task<object?> GetVehicleAvnPaymentInfoAsync(string vin);
+    Task<object?> GetVehicleAvnPaymentHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -28113,6 +28127,833 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 veh.LastStoragePaymentNo,
                 veh.LastStoragePaymentDate,
                 veh.StoragePaymentCount
+            },
+            paymentLines = lines,
+            events
+        };
+    }
+
+    // ===== Bảng kê & Quyết toán chi phí Màn hình AVN & Thẻ bản đồ định vị trên xe ô tô (BizHTC.Payment / Pmt_PaymentAVN & AvnPayment) =====
+
+    public async Task<object> CreateAvnPaymentAsync(CreateAvnPaymentDto dto)
+    {
+        var pmtMonth = string.IsNullOrWhiteSpace(dto.PmtMonth) ? DateTime.Now.ToString("yyyy-MM") : dto.PmtMonth.Trim();
+        var supplierCode = string.IsNullOrWhiteSpace(dto.SupplierCode) ? "MOBIS" : dto.SupplierCode.Trim().ToUpperInvariant();
+        var supplierName = string.IsNullOrWhiteSpace(dto.SupplierName)
+            ? (supplierCode == "MOBIS" ? "Mobis Auto Parts Vietnam"
+              : supplierCode == "PANASONIC" ? "Panasonic Automotive Systems"
+              : supplierCode == "VIETMAP" ? "Vietmap Navigation Co."
+              : supplierCode == "FPT_AUTO" ? "FPT Automotive Software"
+              : $"{supplierCode} AVN Solutions")
+            : dto.SupplierName.Trim();
+
+        var cleanMonthStr = pmtMonth.Replace("-", "");
+        var paymentNo = string.IsNullOrWhiteSpace(dto.PaymentAVNNo)
+            ? $"AVN-{cleanMonthStr}-{(await db.AvnPayments.CountAsync(p => p.OrgId == Org && p.PmtMonth == pmtMonth) + 1):000}"
+            : dto.PaymentAVNNo.Trim().ToUpperInvariant();
+
+        if (await db.AvnPayments.AnyAsync(p => p.OrgId == Org && p.PaymentAVNNo == paymentNo))
+            throw new InvalidOperationException($"Số bảng kê quyết toán AVN {paymentNo} đã tồn tại.");
+
+        var distinctItems = new List<AvnPaymentLineInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (dto.Items is { Count: > 0 })
+        {
+            foreach (var it in dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+            {
+                var cleanVin = it.Vin.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+                if (seenVins.Add(cleanVin))
+                {
+                    distinctItems.Add(it with { Vin = cleanVin });
+                }
+            }
+        }
+
+        var vatRate = dto.VatRate ?? 10m;
+        var payment = new AvnPayment
+        {
+            OrgId = Org,
+            PaymentAVNNo = paymentNo,
+            PaymentAVNNoUser = dto.PaymentAVNNoUser?.Trim(),
+            PmtMonth = pmtMonth,
+            SupplierCode = supplierCode,
+            SupplierName = supplierName,
+            TotalVehicleCount = distinctItems.Count,
+            TotalBeforeVAT = 0,
+            VatRate = vatRate,
+            TotalVatAmount = 0,
+            TotalAmount = 0,
+            Status = "Draft",
+            SupplierSignStatus = "Unsigned",
+            HTVSignStatus = "Unsigned",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "AVN.Specialist",
+            CreatedAt = DateTime.Now
+        };
+
+        db.AvnPayments.Add(payment);
+        await db.SaveChangesAsync();
+
+        var lines = new List<AvnPaymentLine>();
+        var lineIndex = 1;
+
+        foreach (var it in distinctItems)
+        {
+            var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == it.Vin);
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : (veh?.Model ?? "SantaFe");
+            var spec = !string.IsNullOrWhiteSpace(it.SpecCode) ? it.SpecCode.Trim() : null;
+            var engine = !string.IsNullOrWhiteSpace(it.EngineNo) ? it.EngineNo.Trim() : veh?.EngineNo;
+            var color = !string.IsNullOrWhiteSpace(it.Color) ? it.Color.Trim() : veh?.Color;
+
+            var devCode = !string.IsNullOrWhiteSpace(it.AvnDeviceCode) ? it.AvnDeviceCode.Trim().ToUpperInvariant() : "AVN-GEN5W-10INCH";
+            var devSerial = !string.IsNullOrWhiteSpace(it.AvnSerialNo) ? it.AvnSerialNo.Trim().ToUpperInvariant() : $"AVN-{cleanMonthStr}-{lineIndex:0000}";
+            var mapSerial = !string.IsNullOrWhiteSpace(it.MapCardSerialNo) ? it.MapCardSerialNo.Trim().ToUpperInvariant() : $"MAP-{cleanMonthStr}-{lineIndex:0000}";
+            var mapVersion = !string.IsNullOrWhiteSpace(it.MapVersion) ? it.MapVersion.Trim() : "VN-MAP-2026.Q1";
+
+            var devPrice = it.DevicePrice ?? 7500000m;
+            var mapPrice = it.MapPrice ?? 1200000m;
+            var installFee = it.InstallationFee ?? 300000m;
+            var accCost = it.AccessoryCost ?? 200000m;
+            var totalLine = devPrice + mapPrice + installFee + accCost;
+
+            var line = new AvnPaymentLine
+            {
+                OrgId = Org,
+                AvnPaymentId = payment.Id,
+                PaymentAVNNo = paymentNo,
+                LineIndex = lineIndex++,
+                Vin = it.Vin,
+                Model = model,
+                SpecCode = spec,
+                EngineNo = engine,
+                Color = color,
+                AvnDeviceCode = devCode,
+                AvnSerialNo = devSerial,
+                MapCardSerialNo = mapSerial,
+                MapVersion = mapVersion,
+                DevicePrice = devPrice,
+                MapPrice = mapPrice,
+                InstallationFee = installFee,
+                AccessoryCost = accCost,
+                TotalAmount = totalLine,
+                InStorageDate = it.InStorageDate ?? DateTime.Now.AddDays(-15),
+                AvnInstallDate = it.AvnInstallDate ?? DateTime.Now.AddDays(-5),
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            lines.Add(line);
+            Log(it.Vin, "AvnPaymentCreated", $"{paymentNo} Đưa vào bảng kê quyết toán chi phí AVN {supplierName} kỳ {pmtMonth}. Tổng tiền: {totalLine:N0} VNĐ");
+        }
+
+        if (lines.Count > 0)
+        {
+            db.AvnPaymentLines.AddRange(lines);
+            await db.SaveChangesAsync();
+
+            payment.TotalBeforeVAT = lines.Sum(l => l.TotalAmount);
+            payment.TotalVatAmount = Math.Round(payment.TotalBeforeVAT * payment.VatRate / 100, 0);
+            payment.TotalAmount = payment.TotalBeforeVAT + payment.TotalVatAmount;
+            await db.SaveChangesAsync();
+        }
+
+        return new
+        {
+            payment.Id,
+            payment.PaymentAVNNo,
+            payment.PaymentAVNNoUser,
+            payment.PmtMonth,
+            payment.SupplierCode,
+            payment.SupplierName,
+            payment.TotalVehicleCount,
+            payment.TotalBeforeVAT,
+            payment.VatRate,
+            payment.TotalVatAmount,
+            payment.TotalAmount,
+            payment.Status,
+            payment.SupplierSignStatus,
+            payment.HTVSignStatus,
+            payment.CreatedAt,
+            linesCount = lines.Count
+        };
+    }
+
+    public async Task<object> ListAvnPaymentsAsync(string? status, string? supplierCode, string? pmtMonth, string? paymentAVNNo, string? vin)
+    {
+        var q = db.AvnPayments.Where(p => p.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var st = status.Trim().ToLowerInvariant();
+            q = q.Where(p => p.Status.ToLower() == st);
+        }
+
+        if (!string.IsNullOrWhiteSpace(supplierCode))
+        {
+            var sup = supplierCode.Trim().ToUpperInvariant();
+            q = q.Where(p => p.SupplierCode == sup);
+        }
+
+        if (!string.IsNullOrWhiteSpace(pmtMonth))
+        {
+            var m = pmtMonth.Trim();
+            q = q.Where(p => p.PmtMonth == m);
+        }
+
+        if (!string.IsNullOrWhiteSpace(paymentAVNNo))
+        {
+            var no = paymentAVNNo.Trim().ToUpperInvariant();
+            q = q.Where(p => p.PaymentAVNNo.Contains(no) || (p.PaymentAVNNoUser != null && p.PaymentAVNNoUser.Contains(no)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var cleanVin = vin.Trim().ToUpperInvariant();
+            var paymentIds = await db.AvnPaymentLines
+                .Where(l => l.OrgId == Org && l.Vin == cleanVin)
+                .Select(l => l.AvnPaymentId)
+                .Distinct()
+                .ToListAsync();
+
+            q = q.Where(p => paymentIds.Contains(p.Id));
+        }
+
+        var list = await q.OrderByDescending(p => p.Id).Take(100).ToListAsync();
+        return list.Select(p => new
+        {
+            p.Id,
+            p.PaymentAVNNo,
+            p.PaymentAVNNoUser,
+            p.PmtMonth,
+            p.SupplierCode,
+            p.SupplierName,
+            p.TotalVehicleCount,
+            p.TotalBeforeVAT,
+            p.VatRate,
+            p.TotalVatAmount,
+            p.TotalAmount,
+            p.Status,
+            p.SupplierSignStatus,
+            p.SupplierSignDate,
+            p.SupplierSignBy,
+            p.HTVSignStatus,
+            p.HTVSignDate,
+            p.HTVSignBy,
+            p.BankRefNo,
+            p.PaymentDate,
+            p.FilePath,
+            p.Remark,
+            p.CreatedBy,
+            p.CreatedAt,
+            p.Approved1By,
+            p.Approved1At,
+            p.Approved2By,
+            p.Approved2At,
+            p.SettledBy,
+            p.SettledAt,
+            p.RejectedBy,
+            p.RejectedAt,
+            p.RejectReason,
+            p.CancelledBy,
+            p.CancelledAt,
+            p.CancelReason
+        });
+    }
+
+    public async Task<object?> GetAvnPaymentAsync(string paymentAVNNo)
+    {
+        paymentAVNNo = paymentAVNNo.Trim().ToUpperInvariant();
+        var payment = await db.AvnPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentAVNNo == paymentAVNNo);
+        if (payment is null) return null;
+
+        var lines = await db.AvnPaymentLines
+            .Where(l => l.OrgId == Org && l.AvnPaymentId == payment.Id)
+            .OrderBy(l => l.LineIndex)
+            .ToListAsync();
+
+        return new
+        {
+            payment.Id,
+            payment.PaymentAVNNo,
+            payment.PaymentAVNNoUser,
+            payment.PmtMonth,
+            payment.SupplierCode,
+            payment.SupplierName,
+            payment.TotalVehicleCount,
+            payment.TotalBeforeVAT,
+            payment.VatRate,
+            payment.TotalVatAmount,
+            payment.TotalAmount,
+            payment.Status,
+            payment.SupplierSignStatus,
+            payment.SupplierSignDate,
+            payment.SupplierSignBy,
+            payment.HTVSignStatus,
+            payment.HTVSignDate,
+            payment.HTVSignBy,
+            payment.BankRefNo,
+            payment.PaymentDate,
+            payment.FilePath,
+            payment.Remark,
+            payment.CreatedBy,
+            payment.CreatedAt,
+            payment.Approved1By,
+            payment.Approved1At,
+            payment.Approved2By,
+            payment.Approved2At,
+            payment.SettledBy,
+            payment.SettledAt,
+            payment.RejectedBy,
+            payment.RejectedAt,
+            payment.RejectReason,
+            payment.CancelledBy,
+            payment.CancelledAt,
+            payment.CancelReason,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.PaymentAVNNo,
+                l.LineIndex,
+                l.Vin,
+                l.Model,
+                l.SpecCode,
+                l.EngineNo,
+                l.Color,
+                l.AvnDeviceCode,
+                l.AvnSerialNo,
+                l.MapCardSerialNo,
+                l.MapVersion,
+                l.DevicePrice,
+                l.MapPrice,
+                l.InstallationFee,
+                l.AccessoryCost,
+                l.TotalAmount,
+                l.InStorageDate,
+                l.AvnInstallDate,
+                l.Status,
+                l.Remark
+            })
+        };
+    }
+
+    public async Task<object?> UpdateAvnPaymentHeaderAsync(string paymentAVNNo, UpdateAvnPaymentHeaderDto dto)
+    {
+        paymentAVNNo = paymentAVNNo.Trim().ToUpperInvariant();
+        var payment = await db.AvnPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentAVNNo == paymentAVNNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể chỉnh sửa bảng kê quyết toán AVN ở trạng thái {payment.Status}.");
+
+        if (dto.PaymentAVNNoUser != null) payment.PaymentAVNNoUser = dto.PaymentAVNNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PmtMonth)) payment.PmtMonth = dto.PmtMonth.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SupplierCode)) payment.SupplierCode = dto.SupplierCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.SupplierName)) payment.SupplierName = dto.SupplierName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.BankRefNo)) payment.BankRefNo = dto.BankRefNo.Trim();
+        if (dto.PaymentDate.HasValue) payment.PaymentDate = dto.PaymentDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.FilePath)) payment.FilePath = dto.FilePath.Trim();
+        if (dto.Remark != null) payment.Remark = dto.Remark.Trim();
+
+        if (dto.VatRate.HasValue && dto.VatRate.Value >= 0)
+        {
+            payment.VatRate = dto.VatRate.Value;
+            payment.TotalVatAmount = Math.Round(payment.TotalBeforeVAT * payment.VatRate / 100, 0);
+            payment.TotalAmount = payment.TotalBeforeVAT + payment.TotalVatAmount;
+        }
+
+        await db.SaveChangesAsync();
+        return await GetAvnPaymentAsync(paymentAVNNo);
+    }
+
+    public async Task<object?> AvnPaymentTransitionAsync(string paymentAVNNo, string action, AvnPaymentTransitionDto? dto)
+    {
+        paymentAVNNo = paymentAVNNo.Trim().ToUpperInvariant();
+        var payment = await db.AvnPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentAVNNo == paymentAVNNo);
+        if (payment is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "User";
+        var lines = await db.AvnPaymentLines.Where(l => l.OrgId == Org && l.AvnPaymentId == payment.Id).ToListAsync();
+
+        switch (action.Trim().ToLowerInvariant())
+        {
+            case "submit" or "request":
+                if (payment.Status != "Draft")
+                    throw new InvalidOperationException($"Không thể trình duyệt bảng kê khi đang ở trạng thái {payment.Status}.");
+                payment.Status = "Submitted";
+                foreach (var l in lines)
+                {
+                    l.Status = "Submitted";
+                    Log(l.Vin, "AvnPaymentSubmitted", $"{paymentAVNNo} Trình duyệt bảng kê quyết toán chi phí AVN kỳ {payment.PmtMonth} ({payment.SupplierName}). Người nộp: {actor}");
+                }
+                break;
+
+            case "approve1" or "approve-step1":
+                if (payment.Status != "Submitted")
+                    throw new InvalidOperationException($"Không thể sơ duyệt A1 khi đang ở trạng thái {payment.Status}. Cần ở trạng thái 'Submitted'.");
+                payment.Status = "Approved1";
+                payment.Approved1By = actor;
+                payment.Approved1At = now;
+                foreach (var l in lines)
+                {
+                    l.Status = "Approved1";
+                    Log(l.Vin, "AvnPaymentApproved1", $"{paymentAVNNo} Kế toán chi phí vật tư sơ duyệt A1 bảng kê quyết toán AVN. Người duyệt: {actor}");
+                }
+                break;
+
+            case "approve2" or "approve":
+                if (payment.Status is not ("Approved1" or "Submitted"))
+                    throw new InvalidOperationException($"Không thể phê duyệt A2 khi đang ở trạng thái {payment.Status}. Cần ở trạng thái 'Approved1'.");
+                payment.Status = "Approved2";
+                payment.Approved2By = actor;
+                payment.Approved2At = now;
+                foreach (var l in lines)
+                {
+                    l.Status = "Approved2";
+                    Log(l.Vin, "AvnPaymentApproved2", $"{paymentAVNNo} Lãnh đạo phê duyệt A2 quyết toán AVN {payment.SupplierName}. Người duyệt: {actor}");
+                }
+                break;
+
+            case "supplier-sign" or "suppliersign" or "sign-supplier":
+                if (payment.Status is not ("Approved2" or "Approved1" or "Submitted"))
+                    throw new InvalidOperationException($"Không thể ký số Nhà cung cấp khi đang ở trạng thái {payment.Status}.");
+                payment.SupplierSignStatus = "Signed";
+                payment.SupplierSignDate = now;
+                payment.SupplierSignBy = actor;
+                if (payment.Status == "Approved2") payment.Status = "SupplierSigned";
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) payment.FilePath = dto.FilePath.Trim();
+                foreach (var l in lines)
+                {
+                    Log(l.Vin, "AvnPaymentSupplierSigned", $"{paymentAVNNo} Nhà cung cấp {payment.SupplierName} đã ký số xác nhận biên bản đối soát. Người ký: {actor}");
+                }
+                break;
+
+            case "htv-sign" or "htvsign" or "sign-htv":
+                if (payment.Status is not ("SupplierSigned" or "Approved2"))
+                    throw new InvalidOperationException($"Không thể ký số HTV khi đang ở trạng thái {payment.Status}. Cần Nhà cung cấp ký trước.");
+                payment.HTVSignStatus = "Signed";
+                payment.HTVSignDate = now;
+                payment.HTVSignBy = actor;
+                payment.Status = "HTVSigned";
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) payment.FilePath = dto.FilePath.Trim();
+                foreach (var l in lines)
+                {
+                    Log(l.Vin, "AvnPaymentHTVSigned", $"{paymentAVNNo} Đại diện Hãng xe HTV ký số hoàn tất hồ sơ quyết toán AVN. Người ký: {actor}");
+                }
+                break;
+
+            case "settle" or "pay" or "finish" or "complete":
+                if (payment.Status is not ("HTVSigned" or "SupplierSigned" or "Approved2"))
+                    throw new InvalidOperationException($"Không thể giải ngân thanh toán khi đang ở trạng thái {payment.Status}.");
+
+                payment.Status = "Settled";
+                payment.SettledBy = actor;
+                payment.SettledAt = now;
+                payment.BankRefNo = !string.IsNullOrWhiteSpace(dto?.BankRefNo) ? dto.BankRefNo.Trim() : $"UNC-AVN-{now:yyyyMMdd}-{payment.Id:000}";
+                payment.PaymentDate = dto?.PaymentDate ?? now;
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) payment.FilePath = dto.FilePath.Trim();
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Settled";
+                    var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == l.Vin);
+                    if (veh != null)
+                    {
+                        veh.IsAvnInstalled = true;
+                        veh.AvnDeviceCode = l.AvnDeviceCode;
+                        veh.AvnSerialNo = l.AvnSerialNo;
+                        veh.MapCardSerialNo = l.MapCardSerialNo;
+                        veh.IsAvnPaid = true;
+                        veh.AvnPaidAmount += l.TotalAmount;
+                        veh.LastAvnPaymentNo = payment.PaymentAVNNo;
+                        veh.LastAvnPaymentDate = payment.PaymentDate;
+                        veh.AvnPaymentCount++;
+                    }
+
+                    Log(l.Vin, "AvnPaymentSettled", $"{paymentAVNNo} Hoàn tất quyết toán chi phí AVN {l.AvnDeviceCode} (S/N: {l.AvnSerialNo}). Số tiền: {l.TotalAmount:N0} VNĐ. UNC: {payment.BankRefNo}");
+                }
+                break;
+
+            case "reject":
+                if (payment.Status is "Settled" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể từ chối bảng kê ở trạng thái {payment.Status}.");
+                payment.Status = "Rejected";
+                payment.RejectedBy = actor;
+                payment.RejectedAt = now;
+                payment.RejectReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Từ chối duyệt bảng kê";
+                foreach (var l in lines)
+                {
+                    l.Status = "Rejected";
+                    Log(l.Vin, "AvnPaymentRejected", $"{paymentAVNNo} Từ chối duyệt bảng kê quyết toán AVN: {payment.RejectReason}");
+                }
+                break;
+
+            case "cancel":
+                if (payment.Status is "Settled")
+                    throw new InvalidOperationException("Không thể hủy bảng kê đã thanh toán/tất toán (Settled).");
+                payment.Status = "Cancelled";
+                payment.CancelledBy = actor;
+                payment.CancelledAt = now;
+                payment.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hủy bảng kê quyết toán AVN";
+                foreach (var l in lines)
+                {
+                    l.Status = "Cancelled";
+                    Log(l.Vin, "AvnPaymentCancelled", $"{paymentAVNNo} Hủy bảng kê quyết toán chi phí AVN: {payment.CancelReason}");
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ. Hỗ trợ: submit, approve1, approve2, supplier-sign, htv-sign, settle, reject, cancel.");
+        }
+
+        await db.SaveChangesAsync();
+        return await GetAvnPaymentAsync(paymentAVNNo);
+    }
+
+    public async Task<object?> UpdateAvnPaymentLineAsync(string paymentAVNNo, string vin, UpdateAvnPaymentLineDto dto)
+    {
+        paymentAVNNo = paymentAVNNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var payment = await db.AvnPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentAVNNo == paymentAVNNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể chỉnh sửa dòng xe trong bảng kê quyết toán AVN ở trạng thái {payment.Status}.");
+
+        var line = await db.AvnPaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.AvnPaymentId == payment.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.Model)) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.AvnDeviceCode)) line.AvnDeviceCode = dto.AvnDeviceCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.AvnSerialNo)) line.AvnSerialNo = dto.AvnSerialNo.Trim().ToUpperInvariant();
+        if (dto.MapCardSerialNo != null) line.MapCardSerialNo = dto.MapCardSerialNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.MapVersion)) line.MapVersion = dto.MapVersion.Trim();
+        if (dto.InStorageDate.HasValue) line.InStorageDate = dto.InStorageDate.Value;
+        if (dto.AvnInstallDate.HasValue) line.AvnInstallDate = dto.AvnInstallDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        if (dto.DevicePrice.HasValue && dto.DevicePrice.Value >= 0) line.DevicePrice = dto.DevicePrice.Value;
+        if (dto.MapPrice.HasValue && dto.MapPrice.Value >= 0) line.MapPrice = dto.MapPrice.Value;
+        if (dto.InstallationFee.HasValue && dto.InstallationFee.Value >= 0) line.InstallationFee = dto.InstallationFee.Value;
+        if (dto.AccessoryCost.HasValue && dto.AccessoryCost.Value >= 0) line.AccessoryCost = dto.AccessoryCost.Value;
+
+        line.TotalAmount = line.DevicePrice + line.MapPrice + line.InstallationFee + line.AccessoryCost;
+        await db.SaveChangesAsync();
+
+        var allLines = await db.AvnPaymentLines.Where(l => l.OrgId == Org && l.AvnPaymentId == payment.Id).ToListAsync();
+        payment.TotalBeforeVAT = allLines.Sum(l => l.TotalAmount);
+        payment.TotalVatAmount = Math.Round(payment.TotalBeforeVAT * payment.VatRate / 100, 0);
+        payment.TotalAmount = payment.TotalBeforeVAT + payment.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            line.PaymentAVNNo,
+            line.Vin,
+            line.Model,
+            line.AvnDeviceCode,
+            line.AvnSerialNo,
+            line.MapCardSerialNo,
+            line.DevicePrice,
+            line.MapPrice,
+            line.InstallationFee,
+            line.AccessoryCost,
+            line.TotalAmount,
+            line.Status,
+            paymentTotalBeforeVAT = payment.TotalBeforeVAT,
+            paymentTotalAmount = payment.TotalAmount
+        };
+    }
+
+    public async Task<object?> AddAvnPaymentLinesAsync(string paymentAVNNo, List<AvnPaymentLineInputDto> items)
+    {
+        paymentAVNNo = paymentAVNNo.Trim().ToUpperInvariant();
+        var payment = await db.AvnPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentAVNNo == paymentAVNNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể thêm xe vào bảng kê quyết toán AVN ở trạng thái {payment.Status}.");
+
+        var cleanMonthStr = payment.PmtMonth.Replace("-", "");
+        var existingVins = await db.AvnPaymentLines.Where(l => l.OrgId == Org && l.AvnPaymentId == payment.Id).Select(l => l.Vin).ToListAsync();
+        var maxIndex = (await db.AvnPaymentLines.Where(l => l.OrgId == Org && l.AvnPaymentId == payment.Id).MaxAsync(l => (int?)l.LineIndex)) ?? 0;
+
+        var addedLines = new List<AvnPaymentLine>();
+
+        foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+            if (existingVins.Contains(cleanVin)) continue;
+
+            var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == cleanVin);
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : (veh?.Model ?? "SantaFe");
+            var spec = !string.IsNullOrWhiteSpace(it.SpecCode) ? it.SpecCode.Trim() : null;
+            var engine = !string.IsNullOrWhiteSpace(it.EngineNo) ? it.EngineNo.Trim() : veh?.EngineNo;
+            var color = !string.IsNullOrWhiteSpace(it.Color) ? it.Color.Trim() : veh?.Color;
+
+            var lineIndex = ++maxIndex;
+            var devCode = !string.IsNullOrWhiteSpace(it.AvnDeviceCode) ? it.AvnDeviceCode.Trim().ToUpperInvariant() : "AVN-GEN5W-10INCH";
+            var devSerial = !string.IsNullOrWhiteSpace(it.AvnSerialNo) ? it.AvnSerialNo.Trim().ToUpperInvariant() : $"AVN-{cleanMonthStr}-{lineIndex:0000}";
+            var mapSerial = !string.IsNullOrWhiteSpace(it.MapCardSerialNo) ? it.MapCardSerialNo.Trim().ToUpperInvariant() : $"MAP-{cleanMonthStr}-{lineIndex:0000}";
+            var mapVersion = !string.IsNullOrWhiteSpace(it.MapVersion) ? it.MapVersion.Trim() : "VN-MAP-2026.Q1";
+
+            var devPrice = it.DevicePrice ?? 7500000m;
+            var mapPrice = it.MapPrice ?? 1200000m;
+            var installFee = it.InstallationFee ?? 300000m;
+            var accCost = it.AccessoryCost ?? 200000m;
+            var totalLine = devPrice + mapPrice + installFee + accCost;
+
+            var line = new AvnPaymentLine
+            {
+                OrgId = Org,
+                AvnPaymentId = payment.Id,
+                PaymentAVNNo = payment.PaymentAVNNo,
+                LineIndex = lineIndex,
+                Vin = cleanVin,
+                Model = model,
+                SpecCode = spec,
+                EngineNo = engine,
+                Color = color,
+                AvnDeviceCode = devCode,
+                AvnSerialNo = devSerial,
+                MapCardSerialNo = mapSerial,
+                MapVersion = mapVersion,
+                DevicePrice = devPrice,
+                MapPrice = mapPrice,
+                InstallationFee = installFee,
+                AccessoryCost = accCost,
+                TotalAmount = totalLine,
+                InStorageDate = it.InStorageDate ?? DateTime.Now.AddDays(-15),
+                AvnInstallDate = it.AvnInstallDate ?? DateTime.Now.AddDays(-5),
+                Status = payment.Status == "Draft" ? "Pending" : payment.Status,
+                Remark = it.Remark?.Trim()
+            };
+
+            addedLines.Add(line);
+            existingVins.Add(cleanVin);
+            Log(cleanVin, "AvnPaymentLineAdded", $"{paymentAVNNo} Bổ sung vào bảng kê quyết toán chi phí AVN {payment.SupplierName} kỳ {payment.PmtMonth}");
+        }
+
+        if (addedLines.Count > 0)
+        {
+            db.AvnPaymentLines.AddRange(addedLines);
+            await db.SaveChangesAsync();
+
+            var allLines = await db.AvnPaymentLines.Where(l => l.OrgId == Org && l.AvnPaymentId == payment.Id).ToListAsync();
+            payment.TotalVehicleCount = allLines.Count;
+            payment.TotalBeforeVAT = allLines.Sum(l => l.TotalAmount);
+            payment.TotalVatAmount = Math.Round(payment.TotalBeforeVAT * payment.VatRate / 100, 0);
+            payment.TotalAmount = payment.TotalBeforeVAT + payment.TotalVatAmount;
+
+            await db.SaveChangesAsync();
+        }
+
+        return await GetAvnPaymentAsync(paymentAVNNo);
+    }
+
+    public async Task<object?> RemoveAvnPaymentLineAsync(string paymentAVNNo, string vin)
+    {
+        paymentAVNNo = paymentAVNNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var payment = await db.AvnPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentAVNNo == paymentAVNNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể xóa dòng xe khỏi bảng kê quyết toán AVN ở trạng thái {payment.Status}.");
+
+        var line = await db.AvnPaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.AvnPaymentId == payment.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.AvnPaymentLines.Remove(line);
+        Log(vin, "AvnPaymentLineRemoved", $"{paymentAVNNo} Rút xe khỏi bảng kê quyết toán chi phí AVN kỳ {payment.PmtMonth}");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.AvnPaymentLines.Where(l => l.OrgId == Org && l.AvnPaymentId == payment.Id).ToListAsync();
+        payment.TotalVehicleCount = allLines.Count;
+        payment.TotalBeforeVAT = allLines.Sum(l => l.TotalAmount);
+        payment.TotalVatAmount = Math.Round(payment.TotalBeforeVAT * payment.VatRate / 100, 0);
+        payment.TotalAmount = payment.TotalBeforeVAT + payment.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            payment.PaymentAVNNo,
+            removedVin = vin,
+            payment.TotalVehicleCount,
+            payment.TotalBeforeVAT,
+            payment.TotalVatAmount,
+            payment.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveAvnPaymentAsync(string paymentAVNNo)
+    {
+        paymentAVNNo = paymentAVNNo.Trim().ToUpperInvariant();
+        var payment = await db.AvnPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentAVNNo == paymentAVNNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled")
+            throw new InvalidOperationException($"Không thể xóa bảng kê quyết toán AVN đã ký số hoặc đã giải ngân ({payment.Status}).");
+
+        var lines = await db.AvnPaymentLines.Where(l => l.OrgId == Org && l.AvnPaymentId == payment.Id).ToListAsync();
+        db.AvnPaymentLines.RemoveRange(lines);
+        db.AvnPayments.Remove(payment);
+        await db.SaveChangesAsync();
+
+        return new { success = true, paymentAVNNo, message = "Đã xóa bảng kê quyết toán AVN." };
+    }
+
+    public async Task<object> GetAvnPaymentSummaryAsync(string? supplierCode, string? pmtMonth)
+    {
+        var q = db.AvnPayments.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(supplierCode))
+        {
+            var sup = supplierCode.Trim().ToUpperInvariant();
+            q = q.Where(p => p.SupplierCode == sup);
+        }
+        if (!string.IsNullOrWhiteSpace(pmtMonth))
+        {
+            var m = pmtMonth.Trim();
+            q = q.Where(p => p.PmtMonth == m);
+        }
+
+        var payments = await q.ToListAsync();
+
+        int totalPayments = payments.Count;
+        int totalDraft = payments.Count(p => p.Status == "Draft");
+        int totalSubmitted = payments.Count(p => p.Status == "Submitted");
+        int totalApproved = payments.Count(p => p.Status is "Approved1" or "Approved2");
+        int totalSigned = payments.Count(p => p.Status is "SupplierSigned" or "HTVSigned");
+        int totalSettled = payments.Count(p => p.Status == "Settled");
+        int totalCancelled = payments.Count(p => p.Status is "Cancelled" or "Rejected");
+
+        int totalVehicles = payments.Sum(p => p.TotalVehicleCount);
+        decimal totalBeforeVat = payments.Sum(p => p.TotalBeforeVAT);
+        decimal totalVat = payments.Sum(p => p.TotalVatAmount);
+        decimal totalAmount = payments.Sum(p => p.TotalAmount);
+        decimal totalSettledAmount = payments.Where(p => p.Status == "Settled").Sum(p => p.TotalAmount);
+
+        var bySupplier = payments
+            .GroupBy(p => new { p.SupplierCode, SupplierName = p.SupplierName ?? p.SupplierCode })
+            .Select(g => new AvnPaymentSupplierStatsDto(
+                g.Key.SupplierCode,
+                g.Key.SupplierName,
+                g.Count(),
+                g.Sum(x => x.TotalVehicleCount),
+                g.Sum(x => x.TotalAmount),
+                g.Where(x => x.Status == "Settled").Sum(x => x.TotalAmount)
+            ))
+            .OrderByDescending(x => x.TotalAmount)
+            .ToList();
+
+        var byMonth = payments
+            .GroupBy(p => p.PmtMonth)
+            .Select(g => new AvnPaymentMonthStatsDto(
+                g.Key,
+                g.Count(),
+                g.Sum(x => x.TotalVehicleCount),
+                g.Sum(x => x.TotalAmount),
+                g.Where(x => x.Status == "Settled").Sum(x => x.TotalAmount)
+            ))
+            .OrderByDescending(x => x.PmtMonth)
+            .ToList();
+
+        return new AvnPaymentSummaryDto(
+            totalPayments,
+            totalDraft,
+            totalSubmitted,
+            totalApproved,
+            totalSigned,
+            totalSettled,
+            totalCancelled,
+            totalVehicles,
+            totalBeforeVat,
+            totalVat,
+            totalAmount,
+            totalSettledAmount,
+            bySupplier,
+            byMonth
+        );
+    }
+
+    public async Task<object?> GetVehicleAvnPaymentInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.AvnPaymentLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new VehicleAvnPaymentInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.IsAvnInstalled,
+            veh.AvnDeviceCode,
+            veh.AvnSerialNo,
+            veh.MapCardSerialNo,
+            veh.IsAvnPaid,
+            veh.AvnPaidAmount,
+            veh.LastAvnPaymentNo,
+            veh.LastAvnPaymentDate,
+            veh.AvnPaymentCount,
+            lines
+        );
+    }
+
+    public async Task<object?> GetVehicleAvnPaymentHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.AvnPaymentLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("AvnPayment")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.PlateNo,
+                veh.EngineNo,
+                veh.Color,
+                veh.StorageCode,
+                veh.IsAvnInstalled,
+                veh.AvnDeviceCode,
+                veh.AvnSerialNo,
+                veh.MapCardSerialNo,
+                veh.IsAvnPaid,
+                veh.AvnPaidAmount,
+                veh.LastAvnPaymentNo,
+                veh.LastAvnPaymentDate,
+                veh.AvnPaymentCount
             },
             paymentLines = lines,
             events
