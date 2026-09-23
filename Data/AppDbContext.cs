@@ -165,6 +165,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<RearrangeTransportRequestLine> RearrangeTransportRequestLines => Set<RearrangeTransportRequestLine>();
     public DbSet<CarPlan> CarPlans => Set<CarPlan>();
     public DbSet<CarPlanLine> CarPlanLines => Set<CarPlanLine>();
+    public DbSet<StorageGlobal> StorageGlobals => Set<StorageGlobal>();
+    public DbSet<StorageLocal> StorageLocals => Set<StorageLocal>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -373,5 +375,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<CarPlan>().HasIndex(x => new { x.OrgId, x.Status });
         b.Entity<CarPlanLine>().HasIndex(x => new { x.OrgId, x.CPCode });
         b.Entity<CarPlanLine>().HasIndex(x => new { x.OrgId, x.Model });
+        b.Entity<StorageGlobal>().HasIndex(x => new { x.OrgId, x.StorageCode, x.ModelCode }).IsUnique();
+        b.Entity<StorageGlobal>().HasIndex(x => new { x.OrgId, x.ModelCode });
+        b.Entity<StorageGlobal>().HasIndex(x => new { x.OrgId, x.FlagActive });
+        b.Entity<StorageLocal>().HasIndex(x => new { x.OrgId, x.DealerCode, x.StorageCode }).IsUnique();
+        b.Entity<StorageLocal>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<StorageLocal>().HasIndex(x => new { x.OrgId, x.FlagActive });
     }
 }

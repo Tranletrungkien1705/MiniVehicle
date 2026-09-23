@@ -1695,6 +1695,12 @@ public record CarPlanTransitionDto(string? Note = null, string? ApprovedBy = nul
 public record CarPlanApproveItemDto(long? LineId = null, string? Model = null, string? SpecCode = null, string? Color = null, int? Qty = null);
 public record CarPlanArrivalDto(string Vin, string? Model = null, string? SpecCode = null, string? Color = null, string? Remark = null);
 
+// ---- Danh mục kho bãi OEM & Đại lý (BizHTC.DMS40.Mst_StorageGlobal / Dlr_StorageLocal) ----
+public record CreateStorageGlobalDto(string StorageCode, string ModelCode);
+public record UpdateStorageGlobalDto(string? ModelCode = null, bool? FlagActive = null, string? By = null);
+public record CreateStorageLocalDto(string DealerCode, string StorageCode);
+public record UpdateStorageLocalDto(string? StorageCode = null, bool? FlagActive = null, string? By = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2457,6 +2463,18 @@ public interface IVehicleService
     Task<object?> CarPlanTransitionAsync(string cpCode, string action, CarPlanTransitionDto? dto);
     Task<object?> RecordCarPlanArrivalAsync(string cpCode, CarPlanArrivalDto dto);
     Task<object> GetCarPlanSummaryAsync(string? dealerCode, string? planMonth);
+
+    // ===== Danh mục kho bãi OEM & Đại lý (BizHTC.DMS40.Mst_StorageGlobal / Dlr_StorageLocal) =====
+    Task<object> CreateStorageGlobalAsync(CreateStorageGlobalDto dto);
+    Task<object> ListStorageGlobalsAsync(string? storageCode, string? modelCode, bool? activeOnly);
+    Task<object?> GetStorageGlobalAsync(string storageCode, string modelCode);
+    Task<object?> UpdateStorageGlobalAsync(string storageCode, string modelCode, UpdateStorageGlobalDto dto);
+    Task<object?> DeleteStorageGlobalAsync(string storageCode, string modelCode);
+    Task<object> CreateStorageLocalAsync(CreateStorageLocalDto dto);
+    Task<object> ListStorageLocalsAsync(string? dealerCode, string? storageCode, bool? activeOnly);
+    Task<object?> GetStorageLocalAsync(string dealerCode, string storageCode);
+    Task<object?> UpdateStorageLocalAsync(string dealerCode, string storageCode, UpdateStorageLocalDto dto);
+    Task<object?> DeleteStorageLocalAsync(string dealerCode, string storageCode);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -43145,5 +43163,170 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             totalPendingQty = plans.Sum(c => c.TotalPendingQty),
             byStatus
         };
+    }
+
+    // ===== Danh mục kho bãi OEM & Đại lý (BizHTC.DMS40.Mst_StorageGlobal / Dlr_StorageLocal) =====
+    // Mst_StorageGlobal: kho/bãi toàn cục của Hãng OEM, khóa nghiệp vụ = (StorageCode, ModelCode).
+    public async Task<object> CreateStorageGlobalAsync(CreateStorageGlobalDto dto)
+    {
+        var storageCode = dto.StorageCode?.Trim().ToUpperInvariant();
+        var modelCode = dto.ModelCode?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(storageCode))
+            throw new InvalidOperationException("Cần mã vị trí kho StorageCode.");
+        if (string.IsNullOrWhiteSpace(modelCode))
+            throw new InvalidOperationException("Cần mã dòng xe ModelCode.");
+
+        if (await db.StorageGlobals.AnyAsync(s => s.OrgId == Org && s.StorageCode == storageCode && s.ModelCode == modelCode))
+            throw new InvalidOperationException($"Vị trí kho {storageCode} cho dòng xe {modelCode} đã tồn tại.");
+
+        var entity = new StorageGlobal
+        {
+            OrgId = Org,
+            StorageCode = storageCode,
+            ModelCode = modelCode,
+            FlagActive = true,
+            CreatedAt = DateTime.Now,
+            LogLUDateTime = DateTime.Now
+        };
+        db.StorageGlobals.Add(entity);
+        await db.SaveChangesAsync();
+        return new { entity.Id, entity.StorageCode, entity.ModelCode, entity.FlagActive };
+    }
+
+    public async Task<object> ListStorageGlobalsAsync(string? storageCode, string? modelCode, bool? activeOnly)
+    {
+        var q = db.StorageGlobals.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(storageCode))
+        {
+            var sc = storageCode.Trim().ToUpperInvariant();
+            q = q.Where(s => s.StorageCode.Contains(sc));
+        }
+        if (!string.IsNullOrWhiteSpace(modelCode))
+        {
+            var mc = modelCode.Trim().ToUpperInvariant();
+            q = q.Where(s => s.ModelCode.Contains(mc));
+        }
+        if (activeOnly == true) q = q.Where(s => s.FlagActive);
+
+        var items = await q.OrderBy(s => s.StorageCode).ThenBy(s => s.ModelCode)
+            .Select(s => new { s.Id, s.StorageCode, s.ModelCode, s.FlagActive, s.CreatedAt, s.LogLUDateTime, s.LogLUBy })
+            .ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetStorageGlobalAsync(string storageCode, string modelCode)
+    {
+        var sc = storageCode.Trim().ToUpperInvariant();
+        var mc = modelCode.Trim().ToUpperInvariant();
+        var s = await db.StorageGlobals.FirstOrDefaultAsync(x => x.OrgId == Org && x.StorageCode == sc && x.ModelCode == mc);
+        if (s is null) return null;
+        return new { s.Id, s.StorageCode, s.ModelCode, s.FlagActive, s.CreatedAt, s.LogLUDateTime, s.LogLUBy };
+    }
+
+    public async Task<object?> UpdateStorageGlobalAsync(string storageCode, string modelCode, UpdateStorageGlobalDto dto)
+    {
+        var sc = storageCode.Trim().ToUpperInvariant();
+        var mc = modelCode.Trim().ToUpperInvariant();
+        var s = await db.StorageGlobals.FirstOrDefaultAsync(x => x.OrgId == Org && x.StorageCode == sc && x.ModelCode == mc);
+        if (s is null) return null;
+
+        if (dto.FlagActive.HasValue) s.FlagActive = dto.FlagActive.Value;
+        s.LogLUDateTime = DateTime.Now;
+        s.LogLUBy = dto.By?.Trim();
+        await db.SaveChangesAsync();
+        return new { s.StorageCode, s.ModelCode, s.FlagActive, s.LogLUDateTime, s.LogLUBy };
+    }
+
+    public async Task<object?> DeleteStorageGlobalAsync(string storageCode, string modelCode)
+    {
+        var sc = storageCode.Trim().ToUpperInvariant();
+        var mc = modelCode.Trim().ToUpperInvariant();
+        var s = await db.StorageGlobals.FirstOrDefaultAsync(x => x.OrgId == Org && x.StorageCode == sc && x.ModelCode == mc);
+        if (s is null) return null;
+        db.StorageGlobals.Remove(s);
+        await db.SaveChangesAsync();
+        return new { deleted = true, s.StorageCode, s.ModelCode };
+    }
+
+    // Dlr_StorageLocal: kho/bãi cục bộ của Đại lý, khóa nghiệp vụ = (DealerCode, StorageCode).
+    public async Task<object> CreateStorageLocalAsync(CreateStorageLocalDto dto)
+    {
+        var dealerCode = dto.DealerCode?.Trim().ToUpperInvariant();
+        var storageCode = dto.StorageCode?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(dealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode.");
+        if (string.IsNullOrWhiteSpace(storageCode))
+            throw new InvalidOperationException("Cần mã vị trí kho StorageCode.");
+
+        if (await db.StorageLocals.AnyAsync(s => s.OrgId == Org && s.DealerCode == dealerCode && s.StorageCode == storageCode))
+            throw new InvalidOperationException($"Vị trí kho {storageCode} của đại lý {dealerCode} đã tồn tại.");
+
+        var entity = new StorageLocal
+        {
+            OrgId = Org,
+            DealerCode = dealerCode,
+            StorageCode = storageCode,
+            FlagActive = true,
+            CreatedAt = DateTime.Now,
+            LogLUDateTime = DateTime.Now
+        };
+        db.StorageLocals.Add(entity);
+        await db.SaveChangesAsync();
+        return new { entity.Id, entity.DealerCode, entity.StorageCode, entity.FlagActive };
+    }
+
+    public async Task<object> ListStorageLocalsAsync(string? dealerCode, string? storageCode, bool? activeOnly)
+    {
+        var q = db.StorageLocals.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+        {
+            var dc = dealerCode.Trim().ToUpperInvariant();
+            q = q.Where(s => s.DealerCode.Contains(dc));
+        }
+        if (!string.IsNullOrWhiteSpace(storageCode))
+        {
+            var sc = storageCode.Trim().ToUpperInvariant();
+            q = q.Where(s => s.StorageCode.Contains(sc));
+        }
+        if (activeOnly == true) q = q.Where(s => s.FlagActive);
+
+        var items = await q.OrderBy(s => s.DealerCode).ThenBy(s => s.StorageCode)
+            .Select(s => new { s.Id, s.DealerCode, s.StorageCode, s.FlagActive, s.CreatedAt, s.LogLUDateTime, s.LogLUBy })
+            .ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetStorageLocalAsync(string dealerCode, string storageCode)
+    {
+        var dc = dealerCode.Trim().ToUpperInvariant();
+        var sc = storageCode.Trim().ToUpperInvariant();
+        var s = await db.StorageLocals.FirstOrDefaultAsync(x => x.OrgId == Org && x.DealerCode == dc && x.StorageCode == sc);
+        if (s is null) return null;
+        return new { s.Id, s.DealerCode, s.StorageCode, s.FlagActive, s.CreatedAt, s.LogLUDateTime, s.LogLUBy };
+    }
+
+    public async Task<object?> UpdateStorageLocalAsync(string dealerCode, string storageCode, UpdateStorageLocalDto dto)
+    {
+        var dc = dealerCode.Trim().ToUpperInvariant();
+        var sc = storageCode.Trim().ToUpperInvariant();
+        var s = await db.StorageLocals.FirstOrDefaultAsync(x => x.OrgId == Org && x.DealerCode == dc && x.StorageCode == sc);
+        if (s is null) return null;
+
+        if (dto.FlagActive.HasValue) s.FlagActive = dto.FlagActive.Value;
+        s.LogLUDateTime = DateTime.Now;
+        s.LogLUBy = dto.By?.Trim();
+        await db.SaveChangesAsync();
+        return new { s.DealerCode, s.StorageCode, s.FlagActive, s.LogLUDateTime, s.LogLUBy };
+    }
+
+    public async Task<object?> DeleteStorageLocalAsync(string dealerCode, string storageCode)
+    {
+        var dc = dealerCode.Trim().ToUpperInvariant();
+        var sc = storageCode.Trim().ToUpperInvariant();
+        var s = await db.StorageLocals.FirstOrDefaultAsync(x => x.OrgId == Org && x.DealerCode == dc && x.StorageCode == sc);
+        if (s is null) return null;
+        db.StorageLocals.Remove(s);
+        await db.SaveChangesAsync();
+        return new { deleted = true, s.DealerCode, s.StorageCode };
     }
 }

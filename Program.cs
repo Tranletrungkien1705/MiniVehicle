@@ -6183,6 +6183,65 @@ app.MapPost("/api/car-plans/{cpCode}/arrivals", async (string cpCode, CarPlanArr
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).RequireAuthorization();
 
+// ---- Danh mục kho bãi OEM & Đại lý (BizHTC.DMS40.Mst_StorageGlobal / Dlr_StorageLocal) ----
+app.MapPost("/api/storage-globals", async (CreateStorageGlobalDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.StorageCode) || string.IsNullOrWhiteSpace(dto.ModelCode))
+        return Results.BadRequest(new { error = "Cần StorageCode và ModelCode." });
+    try { return Results.Ok(await svc.CreateStorageGlobalAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/storage-globals", async (IVehicleService svc, string? storageCode, string? modelCode, bool? activeOnly) =>
+    Results.Ok(await svc.ListStorageGlobalsAsync(storageCode, modelCode, activeOnly))).RequireAuthorization();
+
+app.MapGet("/api/storage-globals/{storageCode}/{modelCode}", async (string storageCode, string modelCode, IVehicleService svc) =>
+{
+    var r = await svc.GetStorageGlobalAsync(storageCode, modelCode);
+    return r is null ? Results.NotFound(new { storageCode, modelCode, error = "Không tìm thấy vị trí kho OEM." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/storage-globals/{storageCode}/{modelCode}", async (string storageCode, string modelCode, UpdateStorageGlobalDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateStorageGlobalAsync(storageCode, modelCode, dto);
+    return r is null ? Results.NotFound(new { storageCode, modelCode, error = "Không tìm thấy vị trí kho OEM." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapDelete("/api/storage-globals/{storageCode}/{modelCode}", async (string storageCode, string modelCode, IVehicleService svc) =>
+{
+    var r = await svc.DeleteStorageGlobalAsync(storageCode, modelCode);
+    return r is null ? Results.NotFound(new { storageCode, modelCode, error = "Không tìm thấy vị trí kho OEM." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/storage-locals", async (CreateStorageLocalDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.StorageCode))
+        return Results.BadRequest(new { error = "Cần DealerCode và StorageCode." });
+    try { return Results.Ok(await svc.CreateStorageLocalAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/storage-locals", async (IVehicleService svc, string? dealerCode, string? storageCode, bool? activeOnly) =>
+    Results.Ok(await svc.ListStorageLocalsAsync(dealerCode, storageCode, activeOnly))).RequireAuthorization();
+
+app.MapGet("/api/storage-locals/{dealerCode}/{storageCode}", async (string dealerCode, string storageCode, IVehicleService svc) =>
+{
+    var r = await svc.GetStorageLocalAsync(dealerCode, storageCode);
+    return r is null ? Results.NotFound(new { dealerCode, storageCode, error = "Không tìm thấy vị trí kho đại lý." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/storage-locals/{dealerCode}/{storageCode}", async (string dealerCode, string storageCode, UpdateStorageLocalDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateStorageLocalAsync(dealerCode, storageCode, dto);
+    return r is null ? Results.NotFound(new { dealerCode, storageCode, error = "Không tìm thấy vị trí kho đại lý." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapDelete("/api/storage-locals/{dealerCode}/{storageCode}", async (string dealerCode, string storageCode, IVehicleService svc) =>
+{
+    var r = await svc.DeleteStorageLocalAsync(dealerCode, storageCode);
+    return r is null ? Results.NotFound(new { dealerCode, storageCode, error = "Không tìm thấy vị trí kho đại lý." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

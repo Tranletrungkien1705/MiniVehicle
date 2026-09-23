@@ -7739,3 +7739,31 @@ public sealed class CarPlanLine
     public string Status { get; set; } = "Pending";       // Pending → Approved → Arrived (hoặc Rejected / Cancelled)
     public string? Remark { get; set; }
 }
+
+/// <summary>Danh mục kho bãi toàn cục của Hãng OEM (BizHTC.DMS40.Mst_StorageGlobal): mã vị trí kho/bãi đỗ xe
+/// theo từng dòng xe (ModelCode). Dùng để gán vị trí lưu kho (StorageCode) cho hồ sơ số khung VIN.</summary>
+public sealed class StorageGlobal
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string StorageCode { get; set; } = "";   // Mã vị trí kho/bãi đỗ (YARD-A1, BODY-SHOP-01...)
+    public string ModelCode { get; set; } = "";     // Dòng xe áp dụng cho vị trí kho này
+    public bool FlagActive { get; set; } = true;    // Còn hiệu lực sử dụng (FlagActive = '1')
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? LogLUDateTime { get; set; }    // Thời điểm cập nhật gần nhất
+    public string? LogLUBy { get; set; }            // Người cập nhật gần nhất
+}
+
+/// <summary>Danh mục kho bãi cục bộ của Đại lý (BizHTC.DMS40.Dlr_StorageLocal): mã vị trí kho/bãi đỗ xe
+/// theo từng đại lý (DealerCode). Dùng để quản lý vị trí lưu kho xe tại showroom/đại lý.</summary>
+public sealed class StorageLocal
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string DealerCode { get; set; } = "";    // Đại lý sở hữu vị trí kho
+    public string StorageCode { get; set; } = "";   // Mã vị trí kho/bãi đỗ của đại lý
+    public bool FlagActive { get; set; } = true;    // Còn hiệu lực sử dụng (FlagActive = '1')
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? LogLUDateTime { get; set; }    // Thời điểm cập nhật gần nhất
+    public string? LogLUBy { get; set; }            // Người cập nhật gần nhất
+}
