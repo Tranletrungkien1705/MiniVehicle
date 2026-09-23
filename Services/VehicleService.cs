@@ -194,6 +194,47 @@ public record UpdateStorageMaintenanceLineDto(
     string? Remark = null
 );
 
+// ---- Danh mục hạng mục kiểm tra bảo dưỡng lưu kho (Mst_MaintainTask / Mst_MaintainTaskItem) ----
+public record MaintenanceTaskItemInputDto(
+    string MtnTkItemCode,
+    string MtnTkItemName,
+    string? Unit = null,
+    string? StandardValue = null,
+    int SortOrder = 0,
+    string? Remark = null
+);
+
+public record CreateMaintenanceTaskDto(
+    string MtnTkCode,
+    string MtnTkName,
+    string? MtnTp = null,
+    int SortOrder = 0,
+    string? Remark = null,
+    List<MaintenanceTaskItemInputDto>? Items = null
+);
+
+public record UpdateMaintenanceTaskDto(
+    string? MtnTkName = null,
+    string? MtnTp = null,
+    int? SortOrder = null,
+    bool? FlagActive = null,
+    string? Remark = null
+);
+
+// ---- Checklist kết quả kiểm tra chi tiết theo VIN (StoF_MaintainMix) ----
+public record ChecklistItemInputDto(
+    string MtnTkCode,
+    string MtnTkItemCode,
+    string? MtnVal = null,
+    bool? IsPassed = true,
+    string? Remark = null
+);
+
+public record SaveChecklistDto(
+    List<ChecklistItemInputDto> Items,
+    string? Remark = null
+);
+
 public record PackingListItemInputDto(
     string Vin,
     string Model,
@@ -1765,6 +1806,12 @@ public interface IVehicleService
     Task<object?> RemoveStorageMaintenanceLineAsync(string mtnNo, string vin);
     Task<object> GetDueMaintenanceVehiclesAsync(string? storageCode, int dueWithinDays = 7);
     Task<object?> GetVehicleMaintenanceHistoryAsync(string vin);
+    Task<object> CreateMaintenanceTaskAsync(CreateMaintenanceTaskDto dto);
+    Task<object> ListMaintenanceTasksAsync(string? mtnTp, bool? flagActive, string? keyword);
+    Task<object?> GetMaintenanceTaskAsync(string mtnTkCode);
+    Task<object?> UpdateMaintenanceTaskAsync(string mtnTkCode, UpdateMaintenanceTaskDto dto);
+    Task<object?> SaveStorageMaintenanceChecklistAsync(string mtnNo, string vin, SaveChecklistDto dto);
+    Task<object?> GetStorageMaintenanceChecklistAsync(string mtnNo, string vin);
     Task<object> CreatePackingListAsync(CreatePackingListDto dto);
     Task<object> ListPackingListsAsync(string? status, string? portCode, string? contractNo, string? vesselName, string? vin);
     Task<object?> GetPackingListAsync(string packingListNo);
@@ -9150,6 +9197,310 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 h.DefectNotes,
                 h.Status,
                 h.Remark
+            })
+        };
+    }
+
+    // ===== Danh mục hạng mục kiểm tra bảo dưỡng lưu kho (Mst_MaintainTask / Mst_MaintainTaskItem) =====
+    public async Task<object> CreateMaintenanceTaskAsync(CreateMaintenanceTaskDto dto)
+    {
+        var code = dto.MtnTkCode?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(code))
+            throw new InvalidOperationException("Cần mã loại công việc bảo dưỡng MtnTkCode.");
+        if (string.IsNullOrWhiteSpace(dto.MtnTkName))
+            throw new InvalidOperationException("Cần tên loại công việc bảo dưỡng MtnTkName.");
+
+        if (await db.MaintenanceTasks.AnyAsync(t => t.OrgId == Org && t.MtnTkCode == code))
+            throw new InvalidOperationException($"Mã loại công việc bảo dưỡng {code} đã tồn tại.");
+
+        var task = new MaintenanceTask
+        {
+            OrgId = Org,
+            MtnTkCode = code,
+            MtnTkName = dto.MtnTkName.Trim(),
+            MtnTp = string.IsNullOrWhiteSpace(dto.MtnTp) ? null : dto.MtnTp.Trim().ToUpperInvariant(),
+            SortOrder = dto.SortOrder,
+            FlagActive = true,
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.MaintenanceTasks.Add(task);
+
+        var items = new List<MaintenanceTaskItem>();
+        if (dto.Items is { Count: > 0 })
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var it in dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.MtnTkItemCode)))
+            {
+                var itemCode = it.MtnTkItemCode.Trim().ToUpperInvariant();
+                if (!seen.Add(itemCode)) continue;
+                var item = new MaintenanceTaskItem
+                {
+                    OrgId = Org,
+                    MtnTkCode = code,
+                    MtnTkItemCode = itemCode,
+                    MtnTkItemName = string.IsNullOrWhiteSpace(it.MtnTkItemName) ? itemCode : it.MtnTkItemName.Trim(),
+                    Unit = it.Unit?.Trim(),
+                    StandardValue = it.StandardValue?.Trim(),
+                    SortOrder = it.SortOrder,
+                    FlagActive = true,
+                    Remark = it.Remark?.Trim(),
+                    CreatedAt = DateTime.Now
+                };
+                items.Add(item);
+                db.MaintenanceTaskItems.Add(item);
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            task.Id,
+            task.MtnTkCode,
+            task.MtnTkName,
+            task.MtnTp,
+            task.SortOrder,
+            task.FlagActive,
+            itemCount = items.Count,
+            items = items.Select(i => new { i.MtnTkItemCode, i.MtnTkItemName, i.Unit, i.StandardValue, i.SortOrder })
+        };
+    }
+
+    public async Task<object> ListMaintenanceTasksAsync(string? mtnTp, bool? flagActive, string? keyword)
+    {
+        var q = db.MaintenanceTasks.Where(t => t.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(mtnTp))
+        {
+            var tp = mtnTp.Trim().ToUpperInvariant();
+            q = q.Where(t => t.MtnTp == tp);
+        }
+        if (flagActive.HasValue)
+            q = q.Where(t => t.FlagActive == flagActive.Value);
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToUpperInvariant();
+            q = q.Where(t => t.MtnTkCode.Contains(kw) || t.MtnTkName.ToUpper().Contains(kw));
+        }
+
+        var tasks = await q.OrderBy(t => t.SortOrder).ThenBy(t => t.MtnTkCode).ToListAsync();
+        var codes = tasks.Select(t => t.MtnTkCode).ToList();
+        var items = await db.MaintenanceTaskItems
+            .Where(i => i.OrgId == Org && codes.Contains(i.MtnTkCode))
+            .OrderBy(i => i.SortOrder).ThenBy(i => i.MtnTkItemCode)
+            .ToListAsync();
+        var itemMap = items.GroupBy(i => i.MtnTkCode).ToDictionary(g => g.Key, g => g.ToList());
+
+        return tasks.Select(t => new
+        {
+            t.Id,
+            t.MtnTkCode,
+            t.MtnTkName,
+            t.MtnTp,
+            t.SortOrder,
+            t.FlagActive,
+            t.Remark,
+            itemCount = itemMap.TryGetValue(t.MtnTkCode, out var lst) ? lst.Count : 0,
+            items = (itemMap.TryGetValue(t.MtnTkCode, out var lst2) ? lst2 : new List<MaintenanceTaskItem>()).Select(i => new
+            {
+                i.MtnTkItemCode,
+                i.MtnTkItemName,
+                i.Unit,
+                i.StandardValue,
+                i.SortOrder,
+                i.FlagActive
+            })
+        });
+    }
+
+    public async Task<object?> GetMaintenanceTaskAsync(string mtnTkCode)
+    {
+        var code = mtnTkCode.Trim().ToUpperInvariant();
+        var task = await db.MaintenanceTasks.FirstOrDefaultAsync(t => t.OrgId == Org && t.MtnTkCode == code);
+        if (task is null) return null;
+
+        var items = await db.MaintenanceTaskItems
+            .Where(i => i.OrgId == Org && i.MtnTkCode == code)
+            .OrderBy(i => i.SortOrder).ThenBy(i => i.MtnTkItemCode)
+            .ToListAsync();
+
+        return new
+        {
+            task.Id,
+            task.MtnTkCode,
+            task.MtnTkName,
+            task.MtnTp,
+            task.SortOrder,
+            task.FlagActive,
+            task.Remark,
+            task.CreatedAt,
+            items = items.Select(i => new
+            {
+                i.Id,
+                i.MtnTkItemCode,
+                i.MtnTkItemName,
+                i.Unit,
+                i.StandardValue,
+                i.SortOrder,
+                i.FlagActive,
+                i.Remark
+            })
+        };
+    }
+
+    public async Task<object?> UpdateMaintenanceTaskAsync(string mtnTkCode, UpdateMaintenanceTaskDto dto)
+    {
+        var code = mtnTkCode.Trim().ToUpperInvariant();
+        var task = await db.MaintenanceTasks.FirstOrDefaultAsync(t => t.OrgId == Org && t.MtnTkCode == code);
+        if (task is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.MtnTkName)) task.MtnTkName = dto.MtnTkName.Trim();
+        if (dto.MtnTp is not null) task.MtnTp = string.IsNullOrWhiteSpace(dto.MtnTp) ? null : dto.MtnTp.Trim().ToUpperInvariant();
+        if (dto.SortOrder.HasValue) task.SortOrder = dto.SortOrder.Value;
+        if (dto.FlagActive.HasValue) task.FlagActive = dto.FlagActive.Value;
+        if (dto.Remark is not null) task.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            task.MtnTkCode,
+            task.MtnTkName,
+            task.MtnTp,
+            task.SortOrder,
+            task.FlagActive,
+            task.Remark
+        };
+    }
+
+    // ===== Checklist kết quả kiểm tra chi tiết theo VIN (StoF_MaintainMix) =====
+    public async Task<object?> SaveStorageMaintenanceChecklistAsync(string mtnNo, string vin, SaveChecklistDto dto)
+    {
+        mtnNo = mtnNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var mtn = await db.StorageMaintenances.FirstOrDefaultAsync(m => m.OrgId == Org && m.MtnNo == mtnNo);
+        if (mtn is null || mtn.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.StorageMaintenanceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần danh sách hạng mục kiểm tra Items.");
+
+        var existing = await db.StorageMaintenanceChecklists
+            .Where(c => c.OrgId == Org && c.StorageMaintenanceId == mtn.Id && c.Vin == vin)
+            .ToListAsync();
+        var existingMap = existing.ToDictionary(c => c.MtnTkCode + "|" + c.MtnTkItemCode, StringComparer.OrdinalIgnoreCase);
+
+        var taskItemNames = await db.MaintenanceTaskItems
+            .Where(i => i.OrgId == Org)
+            .ToDictionaryAsync(i => i.MtnTkCode + "|" + i.MtnTkItemCode, i => i.MtnTkItemName, StringComparer.OrdinalIgnoreCase);
+
+        var saved = new List<StorageMaintenanceChecklist>();
+        foreach (var it in dto.Items)
+        {
+            if (string.IsNullOrWhiteSpace(it.MtnTkCode) || string.IsNullOrWhiteSpace(it.MtnTkItemCode)) continue;
+            var tkCode = it.MtnTkCode.Trim().ToUpperInvariant();
+            var itemCode = it.MtnTkItemCode.Trim().ToUpperInvariant();
+            var key = tkCode + "|" + itemCode;
+
+            if (existingMap.TryGetValue(key, out var row))
+            {
+                row.MtnVal = it.MtnVal?.Trim();
+                row.IsPassed = it.IsPassed ?? true;
+                row.Status = "Approved";
+                if (it.Remark is not null) row.Remark = it.Remark.Trim();
+                saved.Add(row);
+            }
+            else
+            {
+                var row2 = new StorageMaintenanceChecklist
+                {
+                    OrgId = Org,
+                    StorageMaintenanceId = mtn.Id,
+                    MtnNo = mtnNo,
+                    Vin = vin,
+                    Model = line.Model,
+                    MtnTkCode = tkCode,
+                    MtnTkItemCode = itemCode,
+                    MtnTkItemName = taskItemNames.TryGetValue(key, out var nm) ? nm : itemCode,
+                    MtnVal = it.MtnVal?.Trim(),
+                    IsPassed = it.IsPassed ?? true,
+                    Status = "Approved",
+                    Remark = it.Remark?.Trim(),
+                    CreatedAt = DateTime.Now
+                };
+                db.StorageMaintenanceChecklists.Add(row2);
+                saved.Add(row2);
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        var all = await db.StorageMaintenanceChecklists
+            .Where(c => c.OrgId == Org && c.StorageMaintenanceId == mtn.Id && c.Vin == vin)
+            .OrderBy(c => c.MtnTkCode).ThenBy(c => c.MtnTkItemCode)
+            .ToListAsync();
+
+        Log(vin, "StorageMaintenanceChecklistSaved",
+            $"{mtnNo} Ghi nhận {saved.Count} hạng mục kiểm tra bảo dưỡng cho xe (tổng {all.Count} hạng mục, {all.Count(c => !c.IsPassed)} không đạt)");
+
+        return new
+        {
+            mtnNo,
+            vin,
+            savedCount = saved.Count,
+            totalCount = all.Count,
+            failedCount = all.Count(c => !c.IsPassed),
+            items = all.Select(c => new
+            {
+                c.MtnTkCode,
+                c.MtnTkItemCode,
+                c.MtnTkItemName,
+                c.MtnVal,
+                c.IsPassed,
+                c.Status,
+                c.Remark
+            })
+        };
+    }
+
+    public async Task<object?> GetStorageMaintenanceChecklistAsync(string mtnNo, string vin)
+    {
+        mtnNo = mtnNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var mtn = await db.StorageMaintenances.FirstOrDefaultAsync(m => m.OrgId == Org && m.MtnNo == mtnNo);
+        if (mtn is null) return null;
+
+        var line = await db.StorageMaintenanceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.StorageMaintenanceId == mtn.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        var items = await db.StorageMaintenanceChecklists
+            .Where(c => c.OrgId == Org && c.StorageMaintenanceId == mtn.Id && c.Vin == vin)
+            .OrderBy(c => c.MtnTkCode).ThenBy(c => c.MtnTkItemCode)
+            .ToListAsync();
+
+        return new
+        {
+            mtnNo,
+            vin,
+            line.Model,
+            line.StorageCode,
+            line.InspectionResult,
+            totalCount = items.Count,
+            passedCount = items.Count(c => c.IsPassed),
+            failedCount = items.Count(c => !c.IsPassed),
+            items = items.Select(c => new
+            {
+                c.MtnTkCode,
+                c.MtnTkItemCode,
+                c.MtnTkItemName,
+                c.MtnVal,
+                c.IsPassed,
+                c.Status,
+                c.Remark
             })
         };
     }

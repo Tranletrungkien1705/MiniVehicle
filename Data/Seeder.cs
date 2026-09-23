@@ -553,6 +553,45 @@ public static class Seeder
             );
         }
 
+        if (!await db.MaintenanceTasks.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            db.MaintenanceTasks.AddRange(
+                new MaintenanceTask { OrgId = org, MtnTkCode = "BATTERY", MtnTkName = "Kiểm tra ắc quy & hệ thống điện", MtnTp = "STOCK", SortOrder = 1, FlagActive = true, Remark = "Đo điện áp bình, sạc bổ sung nếu yếu" },
+                new MaintenanceTask { OrgId = org, MtnTkCode = "TIRE", MtnTkName = "Kiểm tra lốp & áp suất", MtnTp = "STOCK", SortOrder = 2, FlagActive = true, Remark = "Đo áp suất, dịch chuyển bánh chống méo lốp" },
+                new MaintenanceTask { OrgId = org, MtnTkCode = "ENGINE", MtnTkName = "Nổ máy & kiểm tra động cơ", MtnTp = "STOCK", SortOrder = 3, FlagActive = true, Remark = "Nổ máy 15 phút, bơm dầu bôi trơn" },
+                new MaintenanceTask { OrgId = org, MtnTkCode = "FLUID", MtnTkName = "Kiểm tra dầu mỡ & nước làm mát", MtnTp = "STOCK", SortOrder = 4, FlagActive = true, Remark = "Mức dầu máy, nước làm mát, dầu phanh" },
+                new MaintenanceTask { OrgId = org, MtnTkCode = "BODY", MtnTkName = "Vệ sinh thân vỏ & nội thất", MtnTp = "STOCK", SortOrder = 5, FlagActive = true, Remark = "Rửa xe, vệ sinh bề mặt sơn" }
+            );
+            await db.SaveChangesAsync();
+
+            db.MaintenanceTaskItems.AddRange(
+                new MaintenanceTaskItem { OrgId = org, MtnTkCode = "BATTERY", MtnTkItemCode = "BAT_VOLT", MtnTkItemName = "Điện áp bình ắc quy", Unit = "V", StandardValue = ">= 12.4", SortOrder = 1, FlagActive = true },
+                new MaintenanceTaskItem { OrgId = org, MtnTkCode = "BATTERY", MtnTkItemCode = "BAT_CHARGE", MtnTkItemName = "Sạc bổ sung ắc quy", Unit = "OK/NG", StandardValue = "OK", SortOrder = 2, FlagActive = true },
+                new MaintenanceTaskItem { OrgId = org, MtnTkCode = "TIRE", MtnTkItemCode = "TIRE_PRESS", MtnTkItemName = "Áp suất lốp", Unit = "bar", StandardValue = "2.2 - 2.5", SortOrder = 1, FlagActive = true },
+                new MaintenanceTaskItem { OrgId = org, MtnTkCode = "TIRE", MtnTkItemCode = "TIRE_ROTATE", MtnTkItemName = "Dịch chuyển bánh chống méo lốp", Unit = "OK/NG", StandardValue = "OK", SortOrder = 2, FlagActive = true },
+                new MaintenanceTaskItem { OrgId = org, MtnTkCode = "ENGINE", MtnTkItemCode = "ENG_START", MtnTkItemName = "Nổ máy kiểm tra động cơ", Unit = "OK/NG", StandardValue = "OK", SortOrder = 1, FlagActive = true },
+                new MaintenanceTaskItem { OrgId = org, MtnTkCode = "FLUID", MtnTkItemCode = "FLUID_LEVEL", MtnTkItemName = "Mức dầu mỡ & nước làm mát", Unit = "OK/NG", StandardValue = "OK", SortOrder = 1, FlagActive = true },
+                new MaintenanceTaskItem { OrgId = org, MtnTkCode = "BODY", MtnTkItemCode = "BODY_CLEAN", MtnTkItemName = "Vệ sinh thân vỏ", Unit = "OK/NG", StandardValue = "OK", SortOrder = 1, FlagActive = true }
+            );
+        }
+
+        if (!await db.StorageMaintenanceChecklists.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var mtn = await db.StorageMaintenances.FirstOrDefaultAsync(m => m.OrgId == org && m.MtnNo == "MTN-202603-001");
+            if (mtn != null)
+            {
+                db.StorageMaintenanceChecklists.AddRange(
+                    new StorageMaintenanceChecklist { OrgId = org, StorageMaintenanceId = mtn.Id, MtnNo = mtn.MtnNo, Vin = "DEMOVIN00000001", Model = "Accent 1.4 AT", MtnTkCode = "BATTERY", MtnTkItemCode = "BAT_VOLT", MtnTkItemName = "Điện áp bình ắc quy", MtnVal = "12.7", IsPassed = true, Status = "Approved" },
+                    new StorageMaintenanceChecklist { OrgId = org, StorageMaintenanceId = mtn.Id, MtnNo = mtn.MtnNo, Vin = "DEMOVIN00000001", Model = "Accent 1.4 AT", MtnTkCode = "TIRE", MtnTkItemCode = "TIRE_PRESS", MtnTkItemName = "Áp suất lốp", MtnVal = "2.3", IsPassed = true, Status = "Approved" },
+                    new StorageMaintenanceChecklist { OrgId = org, StorageMaintenanceId = mtn.Id, MtnNo = mtn.MtnNo, Vin = "DEMOVIN00000001", Model = "Accent 1.4 AT", MtnTkCode = "ENGINE", MtnTkItemCode = "ENG_START", MtnTkItemName = "Nổ máy kiểm tra động cơ", MtnVal = "OK", IsPassed = true, Status = "Approved" },
+                    new StorageMaintenanceChecklist { OrgId = org, StorageMaintenanceId = mtn.Id, MtnNo = mtn.MtnNo, Vin = "DEMOVIN00000002", Model = "Creta 1.5 Cao cấp", MtnTkCode = "BATTERY", MtnTkItemCode = "BAT_VOLT", MtnTkItemName = "Điện áp bình ắc quy", MtnVal = "12.6", IsPassed = true, Status = "Approved" },
+                    new StorageMaintenanceChecklist { OrgId = org, StorageMaintenanceId = mtn.Id, MtnNo = mtn.MtnNo, Vin = "DEMOVIN00000002", Model = "Creta 1.5 Cao cấp", MtnTkCode = "TIRE", MtnTkItemCode = "TIRE_PRESS", MtnTkItemName = "Áp suất lốp", MtnVal = "2.4", IsPassed = true, Status = "Approved" }
+                );
+            }
+        }
+
         if (!await db.CustomsDeclarations.AnyAsync())
         {
             var org = TenantContext.DefaultOrgId;
@@ -8166,7 +8205,10 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"StoragePdiVins\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"VIN\" text NOT NULL DEFAULT '', \"ModelCode\" text NULL, \"SpecCode\" text NULL, \"ColorCode\" text NULL, \"OrderNoMMS\" text NULL, \"OrderNoMMSDelivery\" text NULL, \"EngineNo\" text NULL, \"KeyNo\" text NULL, \"AVNSerialNo\" text NULL, \"BatteryNo\" text NULL, \"FlagActive\" text NOT NULL DEFAULT '1', \"PDIStorageStatus\" text NULL, \"FinishDTime\" timestamp NULL, \"Remark\" text NULL, \"UpdatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE TABLE IF NOT EXISTS public.\"DealerContractCancelMinutes\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CancelMinutesNo\" text NOT NULL DEFAULT '', \"DlrCtrNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"DlrApprBy\" text NULL, \"DlrApprAt\" timestamp NULL, \"HTCAppr1By\" text NULL, \"HTCAppr1At\" timestamp NULL, \"HTCAppr2By\" text NULL, \"HTCAppr2At\" timestamp NULL, \"RejectBy\" text NULL, \"RejectAt\" timestamp NULL, \"CancelBy\" text NULL, \"CancelAt\" timestamp NULL, \"DlrSignCcMnStatus\" text NOT NULL DEFAULT 'P', \"HTCSignCcMnStatus\" text NOT NULL DEFAULT 'P', \"CancelMinutesStatus\" text NOT NULL DEFAULT 'NS')",
             "CREATE TABLE IF NOT EXISTS public.\"RearrangeTransportRequests\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SRTReqNo\" text NOT NULL DEFAULT '', \"TransporterCode\" text NULL, \"TransportContractNo\" text NULL, \"TruckPlateNo\" text NULL, \"DriverName\" text NULL, \"DriverPhone\" text NULL, \"FromStorage\" text NULL, \"ToStorage\" text NULL, \"EstimatedDeparture\" timestamp NULL, \"EstimatedArrival\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'P', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"RejectBy\" text NULL, \"RejectAt\" timestamp NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"RearrangeTransportRequestLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RearrangeTransportRequestId\" bigint NOT NULL, \"SRTReqNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"StorageRearrangeNo\" text NULL, \"StorageCodeFrom\" text NULL, \"StorageCodeTo\" text NULL, \"Status\" text NOT NULL DEFAULT 'P', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"RearrangeTransportRequestLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RearrangeTransportRequestId\" bigint NOT NULL, \"SRTReqNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"StorageRearrangeNo\" text NULL, \"StorageCodeFrom\" text NULL, \"StorageCodeTo\" text NULL, \"Status\" text NOT NULL DEFAULT 'P', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"MaintenanceTasks\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MtnTkCode\" text NOT NULL DEFAULT '', \"MtnTkName\" text NOT NULL DEFAULT '', \"MtnTp\" text NULL, \"SortOrder\" integer NOT NULL DEFAULT 0, \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS public.\"MaintenanceTaskItems\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MtnTkCode\" text NOT NULL DEFAULT '', \"MtnTkItemCode\" text NOT NULL DEFAULT '', \"MtnTkItemName\" text NOT NULL DEFAULT '', \"Unit\" text NULL, \"StandardValue\" text NULL, \"SortOrder\" integer NOT NULL DEFAULT 0, \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS public.\"StorageMaintenanceChecklists\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"StorageMaintenanceId\" bigint NOT NULL, \"MtnNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"MtnTkCode\" text NOT NULL DEFAULT '', \"MtnTkItemCode\" text NOT NULL DEFAULT '', \"MtnTkItemName\" text NULL, \"MtnVal\" text NULL, \"IsPassed\" boolean NOT NULL DEFAULT true, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

@@ -48,6 +48,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<DealerPaymentLine> PaymentLines => Set<DealerPaymentLine>();
     public DbSet<StorageMaintenance> StorageMaintenances => Set<StorageMaintenance>();
     public DbSet<StorageMaintenanceLine> StorageMaintenanceLines => Set<StorageMaintenanceLine>();
+    public DbSet<MaintenanceTask> MaintenanceTasks => Set<MaintenanceTask>();
+    public DbSet<MaintenanceTaskItem> MaintenanceTaskItems => Set<MaintenanceTaskItem>();
+    public DbSet<StorageMaintenanceChecklist> StorageMaintenanceChecklists => Set<StorageMaintenanceChecklist>();
     public DbSet<PackingList> PackingLists => Set<PackingList>();
     public DbSet<PackingListLine> PackingListLines => Set<PackingListLine>();
     public DbSet<CustomsDeclaration> CustomsDeclarations => Set<CustomsDeclaration>();
@@ -184,6 +187,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<TransportMinutes>().HasIndex(x => new { x.OrgId, x.TransportMinutesNo }).IsUnique();
         b.Entity<DealerPayment>().HasIndex(x => new { x.OrgId, x.PaymentNo }).IsUnique();
         b.Entity<StorageMaintenance>().HasIndex(x => new { x.OrgId, x.MtnNo }).IsUnique();
+        b.Entity<MaintenanceTask>().HasIndex(x => new { x.OrgId, x.MtnTkCode }).IsUnique();
+        b.Entity<MaintenanceTask>().HasIndex(x => new { x.OrgId, x.FlagActive });
+        b.Entity<MaintenanceTaskItem>().HasIndex(x => new { x.OrgId, x.MtnTkCode, x.MtnTkItemCode }).IsUnique();
+        b.Entity<MaintenanceTaskItem>().HasIndex(x => new { x.OrgId, x.MtnTkCode });
+        b.Entity<StorageMaintenanceChecklist>().HasIndex(x => new { x.OrgId, x.MtnNo, x.Vin, x.MtnTkCode, x.MtnTkItemCode }).IsUnique();
+        b.Entity<StorageMaintenanceChecklist>().HasIndex(x => new { x.OrgId, x.MtnNo });
+        b.Entity<StorageMaintenanceChecklist>().HasIndex(x => new { x.OrgId, x.Vin });
         b.Entity<PackingList>().HasIndex(x => new { x.OrgId, x.PackingListNo }).IsUnique();
         b.Entity<CustomsDeclaration>().HasIndex(x => new { x.OrgId, x.DeclarationNo }).IsUnique();
         b.Entity<CarBoxRequest>().HasIndex(x => new { x.OrgId, x.CBReqNo }).IsUnique();

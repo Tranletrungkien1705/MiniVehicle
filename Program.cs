@@ -914,6 +914,49 @@ app.MapDelete("/api/storage-maintenances/{mtnNo}/lines/{vin}", async (string mtn
     return r is null ? Results.NotFound(new { mtnNo, vin, error = "Không tìm thấy dòng xe trong phiếu bảo dưỡng hoặc phiếu đã chốt/hủy." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Danh mục hạng mục kiểm tra bảo dưỡng lưu kho (BizHTC.StorageFG.Mst_MaintainTask / Mst_MaintainTaskItem) ----
+app.MapPost("/api/maintenance-tasks", async (CreateMaintenanceTaskDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.MtnTkCode) || string.IsNullOrWhiteSpace(dto.MtnTkName))
+        return Results.BadRequest(new { error = "Cần MtnTkCode và MtnTkName." });
+    try { return Results.Ok(await svc.CreateMaintenanceTaskAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/maintenance-tasks", async (IVehicleService svc, string? mtnTp, bool? flagActive, string? keyword) =>
+    Results.Ok(await svc.ListMaintenanceTasksAsync(mtnTp, flagActive, keyword))).RequireAuthorization();
+
+app.MapGet("/api/maintenance-tasks/{mtnTkCode}", async (string mtnTkCode, IVehicleService svc) =>
+{
+    var r = await svc.GetMaintenanceTaskAsync(mtnTkCode);
+    return r is null ? Results.NotFound(new { mtnTkCode, error = "Không tìm thấy loại công việc bảo dưỡng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/maintenance-tasks/{mtnTkCode}", async (string mtnTkCode, UpdateMaintenanceTaskDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateMaintenanceTaskAsync(mtnTkCode, dto);
+    return r is null ? Results.NotFound(new { mtnTkCode, error = "Không tìm thấy loại công việc bảo dưỡng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+// ---- Checklist kết quả kiểm tra chi tiết theo VIN (BizHTC.StorageFG.StoF_MaintainMix) ----
+app.MapPost("/api/storage-maintenances/{mtnNo}/lines/{vin}/checklist", async (string mtnNo, string vin, SaveChecklistDto dto, IVehicleService svc) =>
+{
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách hạng mục kiểm tra Items." });
+    try
+    {
+        var r = await svc.SaveStorageMaintenanceChecklistAsync(mtnNo, vin, dto);
+        return r is null ? Results.NotFound(new { mtnNo, vin, error = "Không tìm thấy dòng xe trong phiếu bảo dưỡng hoặc phiếu đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/storage-maintenances/{mtnNo}/lines/{vin}/checklist", async (string mtnNo, string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetStorageMaintenanceChecklistAsync(mtnNo, vin);
+    return r is null ? Results.NotFound(new { mtnNo, vin, error = "Không tìm thấy dòng xe trong phiếu bảo dưỡng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 app.MapGet("/api/vehicles/{vin}/maintenance-history", async (string vin, IVehicleService svc) =>
 {
     var r = await svc.GetVehicleMaintenanceHistoryAsync(vin);

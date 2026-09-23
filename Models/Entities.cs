@@ -1004,6 +1004,55 @@ public sealed class StorageMaintenanceLine
     public string? Remark { get; set; }
 }
 
+/// <summary>Danh mục loại công việc bảo dưỡng lưu kho (BizHTC.StorageFG.Mst_MaintainTask / MaintenanceTask): nhóm hạng mục kiểm tra kỹ thuật chuẩn cho xe tồn bãi OEM (ắc quy, lốp, động cơ, chất lỏng, điện, vệ sinh...).</summary>
+public sealed class MaintenanceTask
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string MtnTkCode { get; set; } = "";          // Mã loại công việc bảo dưỡng (MtnTkCode)
+    public string MtnTkName { get; set; } = "";          // Tên loại công việc bảo dưỡng
+    public string? MtnTp { get; set; }                    // Loại bảo dưỡng áp dụng (PERMANENT / STOCK)
+    public int SortOrder { get; set; } = 0;               // Thứ tự hiển thị
+    public bool FlagActive { get; set; } = true;          // Đang áp dụng (FlagActive)
+    public string? Remark { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Danh mục hạng mục kiểm tra chi tiết trong 1 loại công việc bảo dưỡng (BizHTC.StorageFG.Mst_MaintainTaskItem / MaintenanceTaskItem): từng tiêu chí kiểm tra kèm đơn vị đo và giá trị chuẩn.</summary>
+public sealed class MaintenanceTaskItem
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string MtnTkCode { get; set; } = "";          // Mã loại công việc bảo dưỡng (FK MaintenanceTask)
+    public string MtnTkItemCode { get; set; } = "";      // Mã hạng mục kiểm tra (MtnTkItemCode)
+    public string MtnTkItemName { get; set; } = "";      // Tên hạng mục kiểm tra
+    public string? Unit { get; set; }                     // Đơn vị đo (V, bar, %, OK/NG...)
+    public string? StandardValue { get; set; }            // Giá trị / ngưỡng chuẩn kỹ thuật
+    public int SortOrder { get; set; } = 0;               // Thứ tự hiển thị
+    public bool FlagActive { get; set; } = true;          // Đang áp dụng (FlagActive)
+    public string? Remark { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Kết quả kiểm tra chi tiết từng hạng mục bảo dưỡng theo VIN (BizHTC.StorageFG.StoF_MaintainMix / StorageMaintenanceChecklist): giá trị đo thực tế (MtnVal) và kết luận đạt/không đạt cho từng tiêu chí kiểm tra của xe trong đợt bảo dưỡng.</summary>
+public sealed class StorageMaintenanceChecklist
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long StorageMaintenanceId { get; set; }
+    public string MtnNo { get; set; } = "";              // Mã phiếu bảo dưỡng (FK StorageMaintenance)
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string MtnTkCode { get; set; } = "";          // Mã loại công việc bảo dưỡng
+    public string MtnTkItemCode { get; set; } = "";      // Mã hạng mục kiểm tra
+    public string? MtnTkItemName { get; set; }            // Tên hạng mục kiểm tra (snapshot)
+    public string? MtnVal { get; set; }                   // Giá trị đo / kết quả thực tế (MtnVal)
+    public bool IsPassed { get; set; } = true;            // Kết luận đạt chuẩn cho hạng mục này
+    public string Status { get; set; } = "Pending";       // Pending → Approved (hoặc Rejected)
+    public string? Remark { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
 /// <summary>Packing List xuất xưởng nhà máy & Vận đơn nhập khẩu CBU/CKD (BizHTC.Contract.ContractPackingList / CT_PackingList): quản lý vận đơn đóng gói lô xe xuất xưởng từ nhà máy hoặc tàu biển cập cảng, liên kết hợp đồng/LC và tự động sinh nhập kho xe VIN khi phê duyệt.</summary>
 public sealed class PackingList
 {
