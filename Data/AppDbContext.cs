@@ -167,6 +167,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<CarPlanLine> CarPlanLines => Set<CarPlanLine>();
     public DbSet<StorageGlobal> StorageGlobals => Set<StorageGlobal>();
     public DbSet<StorageLocal> StorageLocals => Set<StorageLocal>();
+    public DbSet<VehicleDevice> VehicleDevices => Set<VehicleDevice>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -381,5 +382,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<StorageLocal>().HasIndex(x => new { x.OrgId, x.DealerCode, x.StorageCode }).IsUnique();
         b.Entity<StorageLocal>().HasIndex(x => new { x.OrgId, x.DealerCode });
         b.Entity<StorageLocal>().HasIndex(x => new { x.OrgId, x.FlagActive });
+        b.Entity<VehicleDevice>().HasIndex(x => new { x.OrgId, x.Vin, x.DeviceTypeCode, x.SpecCode }).IsUnique();
+        b.Entity<VehicleDevice>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<VehicleDevice>().HasIndex(x => new { x.OrgId, x.DeviceTypeCode });
     }
 }

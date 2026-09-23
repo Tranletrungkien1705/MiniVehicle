@@ -7767,3 +7767,22 @@ public sealed class StorageLocal
     public DateTime? LogLUDateTime { get; set; }    // Thời điểm cập nhật gần nhất
     public string? LogLUBy { get; set; }            // Người cập nhật gần nhất
 }
+
+/// <summary>Trang thiết bị gắn trên xe (BizHTC.WH.Mng_Device_Car): quản lý thiết bị/phụ kiện lắp trên từng
+/// số khung VIN (AVN, GPS, camera hành trình, bệ bước, giá nóc...) kèm hóa đơn đầu vào (InputInvoiceNo/Date).
+/// Khóa nghiệp vụ = (VIN, DeviceTypeCode, SpecCode).</summary>
+public sealed class VehicleDevice
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string Vin { get; set; } = "";              // Số khung xe gắn thiết bị
+    public string DeviceTypeCode { get; set; } = "";   // Mã loại thiết bị (AVN, GPS, CAMERA, BEBUOC...)
+    public string SpecCode { get; set; } = "";         // Mã phiên bản xe (SpecCode) tại thời điểm gắn
+    public string? ModelCode { get; set; }             // Dòng xe (suy ra từ hồ sơ VIN)
+    public string? ColorCode { get; set; }             // Màu xe (suy ra từ hồ sơ VIN)
+    public string? InputInvoiceNo { get; set; }        // Số hóa đơn đầu vào của thiết bị
+    public DateTime? InputInvoiceDate { get; set; }    // Ngày hóa đơn đầu vào
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? LogLUDateTime { get; set; }       // Thời điểm cập nhật gần nhất
+    public string? LogLUBy { get; set; }               // Người cập nhật gần nhất
+}

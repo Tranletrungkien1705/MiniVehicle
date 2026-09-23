@@ -1699,6 +1699,10 @@ public record CarPlanArrivalDto(string Vin, string? Model = null, string? SpecCo
 public record CreateStorageGlobalDto(string StorageCode, string ModelCode);
 public record UpdateStorageGlobalDto(string? ModelCode = null, bool? FlagActive = null, string? By = null);
 public record CreateStorageLocalDto(string DealerCode, string StorageCode);
+
+// Trang thiết bị gắn trên xe (BizHTC.WH.Mng_Device_Car)
+public record VehicleDeviceItemInputDto(string Vin, string DeviceTypeCode, string? SpecCode = null, string? InputInvoiceNo = null, DateTime? InputInvoiceDate = null);
+public record UpdateVehicleDeviceDto(string? InputInvoiceNo = null, DateTime? InputInvoiceDate = null, string? By = null);
 public record UpdateStorageLocalDto(string? StorageCode = null, bool? FlagActive = null, string? By = null);
 
 public interface IVehicleService
@@ -2475,6 +2479,12 @@ public interface IVehicleService
     Task<object?> GetStorageLocalAsync(string dealerCode, string storageCode);
     Task<object?> UpdateStorageLocalAsync(string dealerCode, string storageCode, UpdateStorageLocalDto dto);
     Task<object?> DeleteStorageLocalAsync(string dealerCode, string storageCode);
+
+    // ===== Trang thiết bị gắn trên xe (BizHTC.WH.Mng_Device_Car) =====
+    Task<object> ListVehicleDevicesAsync(string? vin, string? deviceTypeCode, string? inputInvoiceNo, DateTime? inputInvoiceDateFrom, DateTime? inputInvoiceDateTo);
+    Task<object?> GetVehicleDeviceAsync(string vin, string deviceTypeCode, string specCode);
+    Task<object> UpdateVehicleDeviceAsync(string vin, string deviceTypeCode, string specCode, UpdateVehicleDeviceDto dto);
+    Task<object> UpdateVehicleDevicesMultiAsync(List<VehicleDeviceItemInputDto> items, string? by);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -43328,5 +43338,112 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         db.StorageLocals.Remove(s);
         await db.SaveChangesAsync();
         return new { deleted = true, s.DealerCode, s.StorageCode };
+    }
+
+    // ===== Trang thiết bị gắn trên xe (BizHTC.WH.Mng_Device_Car) =====
+    // Khóa nghiệp vụ = (VIN, DeviceTypeCode, SpecCode). Thiết bị được sinh sẵn khi xe nhập kho (theo loại thiết bị
+    // chuẩn của phiên bản xe); nghiệp vụ chỉ cập nhật hóa đơn đầu vào (InputInvoiceNo/Date).
+    public async Task<object> ListVehicleDevicesAsync(string? vin, string? deviceTypeCode, string? inputInvoiceNo, DateTime? inputInvoiceDateFrom, DateTime? inputInvoiceDateTo)
+    {
+        var q = db.VehicleDevices.Where(d => d.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            q = q.Where(d => d.Vin == v);
+        }
+        if (!string.IsNullOrWhiteSpace(deviceTypeCode))
+        {
+            var dt = deviceTypeCode.Trim().ToUpperInvariant();
+            q = q.Where(d => d.DeviceTypeCode == dt);
+        }
+        if (!string.IsNullOrWhiteSpace(inputInvoiceNo))
+        {
+            var no = inputInvoiceNo.Trim();
+            q = q.Where(d => d.InputInvoiceNo == no);
+        }
+        if (inputInvoiceDateFrom.HasValue) q = q.Where(d => d.InputInvoiceDate >= inputInvoiceDateFrom.Value);
+        if (inputInvoiceDateTo.HasValue) q = q.Where(d => d.InputInvoiceDate <= inputInvoiceDateTo.Value);
+
+        var items = await q.OrderBy(d => d.Vin).ThenBy(d => d.DeviceTypeCode)
+            .Select(d => new { d.Id, d.Vin, d.DeviceTypeCode, d.SpecCode, d.ModelCode, d.ColorCode, d.InputInvoiceNo, d.InputInvoiceDate, d.LogLUDateTime, d.LogLUBy })
+            .ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetVehicleDeviceAsync(string vin, string deviceTypeCode, string specCode)
+    {
+        var v = vin.Trim().ToUpperInvariant();
+        var dt = deviceTypeCode.Trim().ToUpperInvariant();
+        var sp = specCode.Trim().ToUpperInvariant();
+        var d = await db.VehicleDevices.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == v && x.DeviceTypeCode == dt && x.SpecCode == sp);
+        if (d is null) return null;
+        return new { d.Id, d.Vin, d.DeviceTypeCode, d.SpecCode, d.ModelCode, d.ColorCode, d.InputInvoiceNo, d.InputInvoiceDate, d.LogLUDateTime, d.LogLUBy };
+    }
+
+    public async Task<object> UpdateVehicleDeviceAsync(string vin, string deviceTypeCode, string specCode, UpdateVehicleDeviceDto dto)
+    {
+        var v = vin.Trim().ToUpperInvariant();
+        var dt = deviceTypeCode.Trim().ToUpperInvariant();
+        var sp = specCode.Trim().ToUpperInvariant();
+        var d = await db.VehicleDevices.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == v && x.DeviceTypeCode == dt && x.SpecCode == sp);
+        if (d is null)
+            throw new InvalidOperationException($"Không có thiết bị {dt} trên xe {v} (phiên bản {sp}).");
+
+        // Đã nhập dữ liệu thì được sửa nhưng KHÔNG được xóa trắng (theo Mng_Device_Car_UpdateMulti).
+        if (!string.IsNullOrWhiteSpace(d.InputInvoiceNo) && string.IsNullOrWhiteSpace(dto.InputInvoiceNo))
+            throw new InvalidOperationException($"Thiết bị {dt} của xe {v} đã có số hóa đơn đầu vào, không được xóa trắng.");
+        if (d.InputInvoiceDate.HasValue && !dto.InputInvoiceDate.HasValue)
+            throw new InvalidOperationException($"Thiết bị {dt} của xe {v} đã có ngày hóa đơn đầu vào, không được xóa trắng.");
+
+        if (dto.InputInvoiceNo is not null) d.InputInvoiceNo = dto.InputInvoiceNo.Trim();
+        if (dto.InputInvoiceDate.HasValue) d.InputInvoiceDate = dto.InputInvoiceDate.Value;
+        d.LogLUDateTime = DateTime.Now;
+        d.LogLUBy = dto.By?.Trim();
+        await db.SaveChangesAsync();
+        return new { d.Vin, d.DeviceTypeCode, d.SpecCode, d.InputInvoiceNo, d.InputInvoiceDate, d.LogLUDateTime, d.LogLUBy };
+    }
+
+    public async Task<object> UpdateVehicleDevicesMultiAsync(List<VehicleDeviceItemInputDto> items, string? by)
+    {
+        if (items is null || items.Count == 0)
+            throw new InvalidOperationException("Cần danh sách thiết bị để cập nhật.");
+
+        // Kiểm tra lặp (VIN, DeviceTypeCode) trong cùng lô cập nhật.
+        var seen = new HashSet<string>();
+        foreach (var it in items)
+        {
+            var key = (it.Vin?.Trim().ToUpperInvariant() ?? "") + "\u0001" + (it.DeviceTypeCode?.Trim().ToUpperInvariant() ?? "");
+            if (!seen.Add(key))
+                throw new InvalidOperationException($"Số VIN '{it.Vin}' và loại thiết bị '{it.DeviceTypeCode}' bị lặp trong lô cập nhật.");
+        }
+
+        int updated = 0;
+        foreach (var it in items)
+        {
+            var v = it.Vin?.Trim().ToUpperInvariant() ?? "";
+            var dt = it.DeviceTypeCode?.Trim().ToUpperInvariant() ?? "";
+            if (string.IsNullOrWhiteSpace(v)) throw new InvalidOperationException("Số VIN không được trống.");
+            if (string.IsNullOrWhiteSpace(dt)) throw new InvalidOperationException("Loại thiết bị không được trống.");
+
+            var sp = it.SpecCode?.Trim().ToUpperInvariant();
+            var d = string.IsNullOrWhiteSpace(sp)
+                ? await db.VehicleDevices.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == v && x.DeviceTypeCode == dt)
+                : await db.VehicleDevices.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == v && x.DeviceTypeCode == dt && x.SpecCode == sp);
+            if (d is null)
+                throw new InvalidOperationException($"Số VIN '{v}' và loại thiết bị '{dt}' không có trong hệ thống.");
+
+            if (!string.IsNullOrWhiteSpace(d.InputInvoiceNo) && string.IsNullOrWhiteSpace(it.InputInvoiceNo))
+                throw new InvalidOperationException($"Thiết bị {dt} của xe {v} đã có số hóa đơn đầu vào, không được xóa trắng.");
+            if (d.InputInvoiceDate.HasValue && !it.InputInvoiceDate.HasValue)
+                throw new InvalidOperationException($"Thiết bị {dt} của xe {v} đã có ngày hóa đơn đầu vào, không được xóa trắng.");
+
+            if (it.InputInvoiceNo is not null) d.InputInvoiceNo = it.InputInvoiceNo.Trim();
+            if (it.InputInvoiceDate.HasValue) d.InputInvoiceDate = it.InputInvoiceDate.Value;
+            d.LogLUDateTime = DateTime.Now;
+            d.LogLUBy = by?.Trim();
+            updated++;
+        }
+        await db.SaveChangesAsync();
+        return new { updated, total = items.Count };
     }
 }

@@ -6242,6 +6242,28 @@ app.MapDelete("/api/storage-locals/{dealerCode}/{storageCode}", async (string de
     return r is null ? Results.NotFound(new { dealerCode, storageCode, error = "Không tìm thấy vị trí kho đại lý." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Trang thiết bị gắn trên xe (BizHTC.WH.Mng_Device_Car) ----
+app.MapGet("/api/vehicle-devices", async (IVehicleService svc, string? vin, string? deviceTypeCode, string? inputInvoiceNo, DateTime? inputInvoiceDateFrom, DateTime? inputInvoiceDateTo) =>
+    Results.Ok(await svc.ListVehicleDevicesAsync(vin, deviceTypeCode, inputInvoiceNo, inputInvoiceDateFrom, inputInvoiceDateTo))).RequireAuthorization();
+
+app.MapGet("/api/vehicle-devices/{vin}/{deviceTypeCode}/{specCode}", async (string vin, string deviceTypeCode, string specCode, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleDeviceAsync(vin, deviceTypeCode, specCode);
+    return r is null ? Results.NotFound(new { vin, deviceTypeCode, specCode, error = "Không tìm thấy thiết bị trên xe." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/vehicle-devices/{vin}/{deviceTypeCode}/{specCode}", async (string vin, string deviceTypeCode, string specCode, UpdateVehicleDeviceDto dto, IVehicleService svc) =>
+{
+    try { return Results.Ok(await svc.UpdateVehicleDeviceAsync(vin, deviceTypeCode, specCode, dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/vehicle-devices/update-multi", async (List<VehicleDeviceItemInputDto> items, IVehicleService svc, string? by) =>
+{
+    try { return Results.Ok(await svc.UpdateVehicleDevicesMultiAsync(items, by)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
