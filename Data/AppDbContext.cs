@@ -170,6 +170,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<VehicleDevice> VehicleDevices => Set<VehicleDevice>();
     public DbSet<BusinessPlan> BusinessPlans => Set<BusinessPlan>();
     public DbSet<BusinessPlanLine> BusinessPlanLines => Set<BusinessPlanLine>();
+    public DbSet<VehicleDocumentStatusLog> VehicleDocumentStatusLogs => Set<VehicleDocumentStatusLog>();
+    public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+    public DbSet<WorkOrderLine> WorkOrderLines => Set<WorkOrderLine>();
+    public DbSet<ConvertRule> ConvertRules => Set<ConvertRule>();
+    public DbSet<ConvertRuleLine> ConvertRuleLines => Set<ConvertRuleLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -393,5 +398,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<BusinessPlan>().HasIndex(x => new { x.OrgId, x.BusinessPlanStatus });
         b.Entity<BusinessPlanLine>().HasIndex(x => new { x.OrgId, x.BusinessPlanCode, x.ModelCode });
         b.Entity<BusinessPlanLine>().HasIndex(x => new { x.OrgId, x.BusinessPlanCode });
+        b.Entity<WorkOrder>().HasIndex(x => new { x.OrgId, x.WorkOrderNo }).IsUnique();
+        b.Entity<WorkOrder>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<WorkOrderLine>().HasIndex(x => new { x.OrgId, x.WorkOrderNo, x.Vin });
+        b.Entity<WorkOrderLine>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<WorkOrderLine>().HasIndex(x => new { x.OrgId, x.VinStatus });
+        b.Entity<ConvertRule>().HasIndex(x => new { x.OrgId, x.ConvertRuleCode }).IsUnique();
+        b.Entity<ConvertRule>().HasIndex(x => new { x.OrgId, x.FlagActive });
+        b.Entity<ConvertRuleLine>().HasIndex(x => new { x.OrgId, x.ConvertRuleCode, x.ShopCCCode, x.StationCCCode });
+        b.Entity<ConvertRuleLine>().HasIndex(x => new { x.OrgId, x.ConvertRuleCode });
+        b.Entity<VehicleDocumentStatusLog>().HasIndex(x => new { x.OrgId, x.DocStatusNo }).IsUnique();
+        b.Entity<VehicleDocumentStatusLog>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<VehicleDocumentStatusLog>().HasIndex(x => new { x.OrgId, x.DocumentStatus });
     }
 }

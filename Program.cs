@@ -6264,6 +6264,65 @@ app.MapPost("/api/vehicle-devices/update-multi", async (List<VehicleDeviceItemIn
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).RequireAuthorization();
 
+// ---- Lệnh sản xuất & Theo dõi tiến độ công đoạn nhà máy OEM (BizHTC.MMSIntergration / Mnf_WorkOrder, Mnf_VIN, Mnf_ConvertRule) ----
+app.MapPost("/api/work-orders", async (CreateWorkOrderDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.WorkOrderNo) || dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần WorkOrderNo và danh sách VIN." });
+    try { return Results.Ok(await svc.CreateWorkOrderAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/work-orders", async (IVehicleService svc, string? status, string? workOrderNo, string? lot, string? vin) =>
+    Results.Ok(await svc.ListWorkOrdersAsync(status, workOrderNo, lot, vin))).RequireAuthorization();
+
+app.MapGet("/api/work-orders/{workOrderNo}", async (string workOrderNo, IVehicleService svc) =>
+{
+    var r = await svc.GetWorkOrderAsync(workOrderNo);
+    return r is null ? Results.NotFound(new { workOrderNo, error = "Không tìm thấy lệnh sản xuất." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/work-orders/{workOrderNo}/{action}", async (string workOrderNo, string action, WorkOrderTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("start" or "complete" or "cancel"))
+        return Results.BadRequest(new { error = "action = start|complete|cancel" });
+    var r = await svc.WorkOrderTransitionAsync(workOrderNo, action, dto);
+    return r is null ? Results.NotFound(new { workOrderNo, error = "Không thấy lệnh sản xuất hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/work-orders/{workOrderNo}/lines/{vin}/working", async (string workOrderNo, string vin, WorkOrderWorkingDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.WorkOrderWorkingAsync(workOrderNo, vin, dto);
+        return r is null ? Results.NotFound(new { workOrderNo, vin, error = "Không tìm thấy dòng VIN trong lệnh sản xuất." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/work-order", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleWorkOrderInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy lịch sử sản xuất của VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/convert-rules", async (CreateConvertRuleDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.ConvertRuleCode) || dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần ConvertRuleCode và danh sách định mức trạm." });
+    try { return Results.Ok(await svc.CreateConvertRuleAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/convert-rules", async (IVehicleService svc, bool? activeOnly) =>
+    Results.Ok(await svc.ListConvertRulesAsync(activeOnly))).RequireAuthorization();
+
+app.MapGet("/api/convert-rules/{convertRuleCode}", async (string convertRuleCode, IVehicleService svc) =>
+{
+    var r = await svc.GetConvertRuleAsync(convertRuleCode);
+    return r is null ? Results.NotFound(new { convertRuleCode, error = "Không tìm thấy quy tắc chuyển đổi." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

@@ -7997,6 +7997,86 @@ public static class Seeder
             );
         }
 
+        if (!await db.ConvertRules.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var cr = new ConvertRule
+            {
+                OrgId = org,
+                ConvertRuleCode = "CR.001",
+                ConvertRuleDesc = "Quy tắc chuyển đổi thời gian công đoạn sản xuất xe du lịch (Hàn - Sơn - Lắp ráp - KCS)",
+                EffDateStart = DateTime.Now.AddDays(-30),
+                EffDateEnd = DateTime.Now.AddDays(335),
+                FlagActive = true,
+                Remark = "Định mức thời gian chuẩn (phút) cho từng trạm theo xưởng",
+                CreatedAt = DateTime.Now,
+                LogLUDateTime = DateTime.Now,
+                LogLUBy = "planner.oem"
+            };
+            db.ConvertRules.Add(cr);
+            await db.SaveChangesAsync();
+
+            db.ConvertRuleLines.AddRange(
+                new ConvertRuleLine { OrgId = org, ConvertRuleId = cr.Id, ConvertRuleCode = cr.ConvertRuleCode, ShopCCCode = "XH", StationCCCode = "XH.R1", PrdTime = 11.6m, StationOfShopRate = 0.12m, StationOfMnfRate = 0.05m, Seq = 1, Remark = "Trạm hàn R1" },
+                new ConvertRuleLine { OrgId = org, ConvertRuleId = cr.Id, ConvertRuleCode = cr.ConvertRuleCode, ShopCCCode = "XH", StationCCCode = "XH.R2", PrdTime = 16.3m, StationOfShopRate = 0.17m, StationOfMnfRate = 0.07m, Seq = 2, Remark = "Trạm hàn R2" },
+                new ConvertRuleLine { OrgId = org, ConvertRuleId = cr.Id, ConvertRuleCode = cr.ConvertRuleCode, ShopCCCode = "XS", StationCCCode = "XS.ED", PrdTime = 75m, StationOfShopRate = 0.30m, StationOfMnfRate = 0.15m, Seq = 3, Remark = "Buồng sơn ED" },
+                new ConvertRuleLine { OrgId = org, ConvertRuleId = cr.Id, ConvertRuleCode = cr.ConvertRuleCode, ShopCCCode = "XS", StationCCCode = "XS.TOPCOAT", PrdTime = 57m, StationOfShopRate = 0.23m, StationOfMnfRate = 0.11m, Seq = 4, Remark = "Sơn phủ bóng Topcoat" },
+                new ConvertRuleLine { OrgId = org, ConvertRuleId = cr.Id, ConvertRuleCode = cr.ConvertRuleCode, ShopCCCode = "XLR", StationCCCode = "XLR.TT1", PrdTime = 36.33m, StationOfShopRate = 0.20m, StationOfMnfRate = 0.09m, Seq = 5, Remark = "Trạm lắp ráp TT1" },
+                new ConvertRuleLine { OrgId = org, ConvertRuleId = cr.Id, ConvertRuleCode = cr.ConvertRuleCode, ShopCCCode = "XLR", StationCCCode = "XLR.TT2", PrdTime = 31.09m, StationOfShopRate = 0.17m, StationOfMnfRate = 0.08m, Seq = 6, Remark = "Trạm lắp ráp TT2" },
+                new ConvertRuleLine { OrgId = org, ConvertRuleId = cr.Id, ConvertRuleCode = cr.ConvertRuleCode, ShopCCCode = "XKTCL", StationCCCode = "XKTCL.QA", PrdTime = 20m, StationOfShopRate = 0.10m, StationOfMnfRate = 0.05m, Seq = 7, Remark = "Trạm kiểm tra chất lượng KCS" }
+            );
+        }
+
+        if (!await db.WorkOrders.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var wo = new WorkOrder
+            {
+                OrgId = org,
+                WorkOrderNo = "WO202603-001",
+                OrderNo = "ORD202603-001",
+                OrderNoUser = "LSX-2026/03-001",
+                PINo = "PI202603-001",
+                Lot = "LOT-2026-03-A",
+                Status = "InProduction",
+                Remark = "Lệnh sản xuất lô xe Accent & Creta tháng 03/2026 nhà máy Hyundai Ninh Bình",
+                CreatedBy = "planner.oem",
+                CreatedAt = DateTime.Now.AddDays(-5)
+            };
+            db.WorkOrders.Add(wo);
+            await db.SaveChangesAsync();
+
+            db.WorkOrderLines.AddRange(
+                new WorkOrderLine
+                {
+                    OrgId = org, WorkOrderId = wo.Id, WorkOrderNo = wo.WorkOrderNo, Vin = "DEMOVIN00000001",
+                    ModelCode = "ACCENT", SpecCode = "1.4 AT Đặc biệt", ColorCodeInit = "WHT", ColorCode = "WHT",
+                    EngineNoInit = "G4LC0001", EngineNo = "G4LC0001", VinYear = 2026,
+                    ShopCCCode = "XLR", StationCCCode = "XLR.TT2", ConvertRuleCode = "CR.001", WOStatusDtl = "XLR",
+                    VinStatus = "InProduction", VinShopStatus = "XLR",
+                    WkDTime = DateTime.Now.AddDays(-4), WkBy = "line.leader",
+                    EffDTimeStart_BS = DateTime.Now.AddDays(-4), EffDTimeEnd_BS = DateTime.Now.AddDays(-3),
+                    EffDTimeStart_PS = DateTime.Now.AddDays(-3), EffDTimeEnd_PS = DateTime.Now.AddDays(-2),
+                    EffDTimeStart_AS = DateTime.Now.AddDays(-2),
+                    Remark = "Đang ở trạm lắp ráp TT2", CreatedAt = DateTime.Now.AddDays(-5)
+                },
+                new WorkOrderLine
+                {
+                    OrgId = org, WorkOrderId = wo.Id, WorkOrderNo = wo.WorkOrderNo, Vin = "DEMOVIN00000002",
+                    ModelCode = "CRETA", SpecCode = "1.5 Cao cấp 2 tông màu", ColorCodeInit = "BLK", ColorCode = "BLK",
+                    EngineNoInit = "G4FL0002", EngineNo = "G4FL0002", VinYear = 2026,
+                    ShopCCCode = "XKTCL", StationCCCode = "XKTCL.QA", ConvertRuleCode = "CR.001", WOStatusDtl = "XKTCL",
+                    VinStatus = "Finished", VinShopStatus = "XKTCL",
+                    WkDTime = DateTime.Now.AddDays(-4), WkBy = "line.leader", FinishDTime = DateTime.Now.AddDays(-1), FinishBy = "qc.leader",
+                    EffDTimeStart_BS = DateTime.Now.AddDays(-4), EffDTimeEnd_BS = DateTime.Now.AddDays(-3),
+                    EffDTimeStart_PS = DateTime.Now.AddDays(-3), EffDTimeEnd_PS = DateTime.Now.AddDays(-2),
+                    EffDTimeStart_AS = DateTime.Now.AddDays(-2), EffDTimeEnd_AS = DateTime.Now.AddDays(-1),
+                    EffDTimeEnd_QA = DateTime.Now.AddDays(-1),
+                    Remark = "Đã hoàn tất KCS xuất xưởng", CreatedAt = DateTime.Now.AddDays(-5)
+                }
+            );
+        }
+
         await db.SaveChangesAsync();
     }
     private static async Task MigrateAsync(AppDbContext db)
@@ -8305,7 +8385,16 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"VehicleDevices\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"Vin\" text NOT NULL DEFAULT '', \"DeviceTypeCode\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"ModelCode\" text NULL, \"ColorCode\" text NULL, \"InputInvoiceNo\" text NULL, \"InputInvoiceDate\" timestamp NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"LogLUDateTime\" timestamp NULL, \"LogLUBy\" text NULL)",
             "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_VehicleDevices_Org_Vin_Device_Spec\" ON public.\"VehicleDevices\" (\"OrgId\", \"Vin\", \"DeviceTypeCode\", \"SpecCode\")",
             "CREATE INDEX IF NOT EXISTS \"IX_VehicleDevices_Org_Vin\" ON public.\"VehicleDevices\" (\"OrgId\", \"Vin\")",
-            "CREATE INDEX IF NOT EXISTS \"IX_VehicleDevices_Org_Device\" ON public.\"VehicleDevices\" (\"OrgId\", \"DeviceTypeCode\")"
+            "CREATE INDEX IF NOT EXISTS \"IX_VehicleDevices_Org_Device\" ON public.\"VehicleDevices\" (\"OrgId\", \"DeviceTypeCode\")",
+            "CREATE TABLE IF NOT EXISTS public.\"WorkOrders\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"WorkOrderNo\" text NOT NULL DEFAULT '', \"OrderNo\" text NULL, \"OrderNoUser\" text NULL, \"PINo\" text NULL, \"Lot\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"CompletedAt\" timestamp NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_WorkOrders_Org_WorkOrderNo\" ON public.\"WorkOrders\" (\"OrgId\", \"WorkOrderNo\")",
+            "CREATE TABLE IF NOT EXISTS public.\"WorkOrderLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"WorkOrderId\" bigint NOT NULL, \"WorkOrderNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"ModelCode\" text NULL, \"ColorCodeInit\" text NULL, \"ColorCode\" text NULL, \"EngineNoInit\" text NULL, \"EngineNo\" text NULL, \"VinYear\" integer NULL, \"ShopCCCode\" text NULL, \"StationCCCode\" text NULL, \"ConvertRuleCode\" text NULL, \"WOStatusDtl\" text NULL, \"VinStatus\" text NOT NULL DEFAULT 'Pending', \"VinShopStatus\" text NULL, \"WkDTime\" timestamp NULL, \"WkBy\" text NULL, \"FinishDTime\" timestamp NULL, \"FinishBy\" text NULL, \"EffDTimeStart_BS\" timestamp NULL, \"EffDTimeEnd_BS\" timestamp NULL, \"EffDTimeStart_PS\" timestamp NULL, \"EffDTimeEnd_PS\" timestamp NULL, \"EffDTimeStart_AS\" timestamp NULL, \"EffDTimeEnd_AS\" timestamp NULL, \"EffDTimeEnd_QA\" timestamp NULL, \"FlagRepair\" text NULL, \"Remark\" text NULL, \"RemarkSub\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"LogLUDateTime\" timestamp NULL, \"LogLUBy\" text NULL)",
+            "CREATE INDEX IF NOT EXISTS \"IX_WorkOrderLines_Org_WorkOrderNo_Vin\" ON public.\"WorkOrderLines\" (\"OrgId\", \"WorkOrderNo\", \"Vin\")",
+            "CREATE INDEX IF NOT EXISTS \"IX_WorkOrderLines_Org_Vin\" ON public.\"WorkOrderLines\" (\"OrgId\", \"Vin\")",
+            "CREATE TABLE IF NOT EXISTS public.\"ConvertRules\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ConvertRuleCode\" text NOT NULL DEFAULT '', \"ConvertRuleDesc\" text NULL, \"EffDateStart\" timestamp NULL, \"EffDateEnd\" timestamp NULL, \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"LogLUDateTime\" timestamp NULL, \"LogLUBy\" text NULL)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_ConvertRules_Org_Code\" ON public.\"ConvertRules\" (\"OrgId\", \"ConvertRuleCode\")",
+            "CREATE TABLE IF NOT EXISTS public.\"ConvertRuleLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ConvertRuleId\" bigint NOT NULL, \"ConvertRuleCode\" text NOT NULL DEFAULT '', \"ShopCCCode\" text NOT NULL DEFAULT '', \"StationCCCode\" text NOT NULL DEFAULT '', \"PrdTime\" numeric NOT NULL DEFAULT 0, \"StationOfShopRate\" numeric NOT NULL DEFAULT 0, \"StationOfMnfRate\" numeric NOT NULL DEFAULT 0, \"Seq\" integer NOT NULL DEFAULT 0, \"Remark\" text NULL)",
+            "CREATE INDEX IF NOT EXISTS \"IX_ConvertRuleLines_Org_Code\" ON public.\"ConvertRuleLines\" (\"OrgId\", \"ConvertRuleCode\")"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

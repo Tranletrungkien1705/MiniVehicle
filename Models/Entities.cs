@@ -162,6 +162,12 @@ public sealed class Vehicle
     public string? LastSalesKpiNo { get; set; }         // Mã kế hoạch chỉ tiêu KPI bán hàng gần nhất xe tham gia (SP_KPIMonth / SalesTargetKpi)
     public DateTime? LastSalesKpiDate { get; set; }     // Ngày phát sinh chỉ tiêu / ghi nhận KPI
     public int SalesKpiCount { get; set; } = 0;         // Tổng số lần xe được ghi nhận trong các kỳ đánh giá KPI bán hàng
+    public string? DocumentStatus { get; set; }     // Trạng thái hồ sơ xe (Car_VIN.DOCUMENTSTATUS): tình trạng giấy tờ/hồ sơ pháp lý của xe
+    public DateTime? FullDocDate { get; set; }      // Ngày đủ hồ sơ (Car_VIN.FULLDOCDATE): ngày hoàn tất đầy đủ hồ sơ giấy tờ xe
+    public string? DocRemarkDetail { get; set; }    // Ghi chú chi tiết tình trạng hồ sơ (Car_VIN.REMARKDETAIL)
+    public string? LastDocStatusNo { get; set; }    // Mã lần cập nhật trạng thái hồ sơ gần nhất (DSL...)
+    public DateTime? LastDocStatusDate { get; set; } // Ngày cập nhật trạng thái hồ sơ gần nhất
+    public int DocStatusUpdateCount { get; set; } = 0; // Tổng số lần cập nhật trạng thái hồ sơ của xe
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -7872,4 +7878,113 @@ public sealed class BusinessPlanLine
     public int BO_QtyM12 { get; set; } = 0;
 
     public string? Remark { get; set; }
+}
+
+/// <summary>Lệnh sản xuất / Work Order nhà máy OEM (BizHTC.MMSIntergration / Mnf_WorkOrder): 1 lệnh sản xuất gom nhiều số khung VIN theo lô (Lot) và PI.</summary>
+public sealed class WorkOrder
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string WorkOrderNo { get; set; } = "";      // Mã lệnh sản xuất (WORKORDERNO)
+    public string? OrderNo { get; set; }               // Số đơn đặt hàng sản xuất (ORDERNO)
+    public string? OrderNoUser { get; set; }           // Số đơn hàng do người dùng nhập (ORDERNOUSER)
+    public string? PINo { get; set; }                  // Proforma Invoice liên quan (PINO)
+    public string? Lot { get; set; }                   // Lô sản xuất (LOT)
+    public string Status { get; set; } = "Draft";      // Draft → InProduction → Completed (hoặc Cancelled)
+    public string? Remark { get; set; }
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>Dòng số khung VIN trong lệnh sản xuất (Mnf_VIN): theo dõi tiến độ qua các xưởng Hàn (BS) → Sơn (PS) → Lắp ráp (AS) → KCS (QA) → Hoàn tất.</summary>
+public sealed class WorkOrderLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long WorkOrderId { get; set; }
+    public string WorkOrderNo { get; set; } = "";
+    public string Vin { get; set; } = "";              // Số khung (VIN)
+    public string? SpecCode { get; set; }              // Phiên bản (SPECCODE)
+    public string? ModelCode { get; set; }             // Dòng xe (MODELCODE)
+    public string? ColorCodeInit { get; set; }         // Màu sơn kế hoạch ban đầu (COLORCODEINIT)
+    public string? ColorCode { get; set; }             // Màu sơn thực tế (COLORCODE)
+    public string? EngineNoInit { get; set; }          // Số máy kế hoạch (ENGINENOINIT)
+    public string? EngineNo { get; set; }              // Số máy thực tế (ENGINENO)
+    public int? VinYear { get; set; }                  // Năm sản xuất (VINYEAR)
+    public string? ShopCCCode { get; set; }            // Xưởng hiện tại: XH (Hàn), XS (Sơn), XLR (Lắp ráp), XKTCL (KCS)
+    public string? StationCCCode { get; set; }         // Trạm hiện tại (STATIONCCCODE)
+    public string? ConvertRuleCode { get; set; }       // Quy tắc chuyển đổi thời gian công đoạn áp dụng (CONVERTRULECODE)
+    public string? WOStatusDtl { get; set; }           // Trạng thái chi tiết công đoạn (WOSTATUSDTL)
+    public string VinStatus { get; set; } = "Pending"; // Pending → InProduction → Finished (hoặc Cancelled)
+    public string? VinShopStatus { get; set; }         // Trạng thái theo xưởng (VINSHOPSTATUS)
+    public DateTime? WkDTime { get; set; }             // Thời điểm bắt đầu vào xưởng (WKDTIME)
+    public string? WkBy { get; set; }                  // Người bắt đầu (WKBY)
+    public DateTime? FinishDTime { get; set; }         // Thời điểm hoàn tất xuất xưởng (FINISHDTIME)
+    public string? FinishBy { get; set; }              // Người hoàn tất (FINISHBY)
+    public DateTime? EffDTimeStart_BS { get; set; }    // Bắt đầu xưởng Hàn (EFFDTIMESTART_BS)
+    public DateTime? EffDTimeEnd_BS { get; set; }      // Kết thúc xưởng Hàn (EFFDTIMEEND_BS)
+    public DateTime? EffDTimeStart_PS { get; set; }    // Bắt đầu xưởng Sơn (EFFDTIMESTART_PS)
+    public DateTime? EffDTimeEnd_PS { get; set; }      // Kết thúc xưởng Sơn (EFFDTIMEEND_PS)
+    public DateTime? EffDTimeStart_AS { get; set; }    // Bắt đầu xưởng Lắp ráp (EFFDTIMESTART_AS)
+    public DateTime? EffDTimeEnd_AS { get; set; }      // Kết thúc xưởng Lắp ráp (EFFDTIMEEND_AS)
+    public DateTime? EffDTimeEnd_QA { get; set; }      // Kết thúc kiểm tra KCS (EFFDTIMEEND_QA)
+    public string? FlagRepair { get; set; }            // Cờ sửa chữa lại (FLAGREPAIR)
+    public string? Remark { get; set; }
+    public string? RemarkSub { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? LogLUDateTime { get; set; }
+    public string? LogLUBy { get; set; }
+}
+
+/// <summary>Quy tắc chuyển đổi thời gian công đoạn sản xuất (Mnf_ConvertRule): định mức thời gian chuẩn (phút) cho từng trạm theo xưởng.</summary>
+public sealed class ConvertRule
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ConvertRuleCode { get; set; } = "";  // Mã quy tắc (CONVERTRULECODE)
+    public string? ConvertRuleDesc { get; set; }       // Mô tả quy tắc (CONVERTRULEDESC)
+    public DateTime? EffDateStart { get; set; }        // Ngày hiệu lực bắt đầu (EFFDATESTART)
+    public DateTime? EffDateEnd { get; set; }          // Ngày hiệu lực kết thúc (EFFDATEEND)
+    public bool FlagActive { get; set; } = true;       // Còn hiệu lực (FLAGACTIVE)
+    public string? Remark { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? LogLUDateTime { get; set; }
+    public string? LogLUBy { get; set; }
+}
+
+/// <summary>Dòng định mức thời gian công đoạn theo trạm (Mnf_ConvertRuleDtl): thời gian sản xuất chuẩn (phút) cho từng trạm trong xưởng.</summary>
+public sealed class ConvertRuleLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ConvertRuleId { get; set; }
+    public string ConvertRuleCode { get; set; } = "";
+    public string ShopCCCode { get; set; } = "";       // Xưởng (SHOPCCCODE): XH, XS, XLR, XKTCL
+    public string StationCCCode { get; set; } = "";    // Trạm (STATIONCCCODE)
+    public decimal PrdTime { get; set; } = 0;          // Thời gian sản xuất chuẩn (phút) (PRDTIME)
+    public decimal StationOfShopRate { get; set; } = 0; // Tỷ lệ trạm/xưởng (STATIONOFSHOPRATE)
+    public decimal StationOfMnfRate { get; set; } = 0;  // Tỷ lệ trạm/nhà máy (STATIONOFMNFRATE)
+    public int Seq { get; set; } = 0;                  // Thứ tự trạm (SEQ)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Nhật ký cập nhật trạng thái hồ sơ xe (BizHTC.Car.Car_VIN.DOCUMENTSTATUS / FULLDOCDATE / REMARKDETAIL):
+/// ghi vết mỗi lần đại lý/hãng cập nhật tình trạng giấy tờ pháp lý của xe theo VIN.
+/// Quy tắc nghiệp vụ nguồn: khi xe đã giao bán (SellStatus = "A") thì cập nhật "Ngày đủ hồ sơ" (FullDocDate);
+/// ngược lại cập nhật "Trạng thái hồ sơ" (DocumentStatus).</summary>
+public sealed class VehicleDocumentStatusLog
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string DocStatusNo { get; set; } = "";        // Mã lần cập nhật (DSL...)
+    public string Vin { get; set; } = "";                // Số khung xe
+    public string? Model { get; set; }                   // Dòng xe (snapshot)
+    public string? DealerCode { get; set; }              // Đại lý quản lý xe
+    public string? DocumentStatus { get; set; }          // Trạng thái hồ sơ sau cập nhật
+    public DateTime? FullDocDate { get; set; }           // Ngày đủ hồ sơ sau cập nhật
+    public string? RemarkDetail { get; set; }            // Ghi chú chi tiết tình trạng hồ sơ
+    public bool IsDelivered { get; set; } = false;       // Xe đã giao bán tại thời điểm cập nhật (SellStatus = "A")
+    public string? UpdatedBy { get; set; }               // Người thực hiện cập nhật
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
 }

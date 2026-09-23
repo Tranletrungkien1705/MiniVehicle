@@ -1730,6 +1730,17 @@ public record UpdateBusinessPlanLineDto(
     int? BO_QtyM7 = null, int? BO_QtyM8 = null, int? BO_QtyM9 = null, int? BO_QtyM10 = null, int? BO_QtyM11 = null, int? BO_QtyM12 = null,
     string? Remark = null);
 
+// ===== Lệnh sản xuất & Theo dõi tiến độ công đoạn nhà máy OEM (BizHTC.MMSIntergration / Mnf_WorkOrder, Mnf_VIN, Mnf_ConvertRule) =====
+public record WorkOrderVinInputDto(string Vin, string? SpecCode = null, string? ModelCode = null, string? ColorCodeInit = null, string? EngineNoInit = null, int? VinYear = null, string? Remark = null);
+public record CreateWorkOrderDto(string WorkOrderNo, List<WorkOrderVinInputDto> Items, string? OrderNo = null, string? OrderNoUser = null, string? PINo = null, string? Lot = null, string? Remark = null, string? CreatedBy = null);
+public record WorkOrderTransitionDto(string? Note = null, string? By = null);
+public record WorkOrderWorkingDto(string ShopCCCode, string? StationCCCode = null, string? ConvertRuleCode = null, string? FlagRepair = null, string? Remark = null, string? By = null);
+public record ConvertRuleLineInputDto(string ShopCCCode, string StationCCCode, decimal PrdTime = 0, decimal StationOfShopRate = 0, decimal StationOfMnfRate = 0, int Seq = 0, string? Remark = null);
+public record CreateConvertRuleDto(string ConvertRuleCode, List<ConvertRuleLineInputDto> Items, string? ConvertRuleDesc = null, DateTime? EffDateStart = null, DateTime? EffDateEnd = null, string? Remark = null, string? By = null);
+
+// ===== Trạng thái hồ sơ xe (BizHTC.Car.Car_VIN.DOCUMENTSTATUS / FULLDOCDATE / REMARKDETAIL) =====
+public record UpdateVehicleDocStatusDto(string? DocumentStatus = null, DateTime? FullDocDate = null, string? RemarkDetail = null, string? UpdatedBy = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2510,6 +2521,24 @@ public interface IVehicleService
     Task<object?> GetVehicleDeviceAsync(string vin, string deviceTypeCode, string specCode);
     Task<object> UpdateVehicleDeviceAsync(string vin, string deviceTypeCode, string specCode, UpdateVehicleDeviceDto dto);
     Task<object> UpdateVehicleDevicesMultiAsync(List<VehicleDeviceItemInputDto> items, string? by);
+
+    // ===== Lệnh sản xuất & Theo dõi tiến độ công đoạn nhà máy OEM (Mnf_WorkOrder / Mnf_VIN / Mnf_ConvertRule) =====
+    Task<object> CreateWorkOrderAsync(CreateWorkOrderDto dto);
+    Task<object> ListWorkOrdersAsync(string? status, string? workOrderNo, string? lot, string? vin);
+    Task<object?> GetWorkOrderAsync(string workOrderNo);
+    Task<object?> WorkOrderTransitionAsync(string workOrderNo, string action, WorkOrderTransitionDto? dto);
+    Task<object?> WorkOrderWorkingAsync(string workOrderNo, string vin, WorkOrderWorkingDto dto);
+    Task<object?> GetVehicleWorkOrderInfoAsync(string vin);
+    Task<object> CreateConvertRuleAsync(CreateConvertRuleDto dto);
+    Task<object> ListConvertRulesAsync(bool? activeOnly);
+    Task<object?> GetConvertRuleAsync(string convertRuleCode);
+
+    // ===== Trạng thái hồ sơ xe (BizHTC.Car.Car_VIN.DOCUMENTSTATUS / FULLDOCDATE / REMARKDETAIL) =====
+    Task<object?> UpdateVehicleDocStatusAsync(string vin, UpdateVehicleDocStatusDto dto);
+    Task<object> ListVehicleDocStatusesAsync(string? documentStatus, string? dealer, string? model, string? vin, bool? deliveredOnly);
+    Task<object?> GetVehicleDocStatusInfoAsync(string vin);
+    Task<object?> GetVehicleDocStatusHistoryAsync(string vin);
+    Task<object> GetVehicleDocStatusSummaryAsync(string? dealerCode);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -43470,5 +43499,613 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         }
         await db.SaveChangesAsync();
         return new { updated, total = items.Count };
+    }
+
+    // ===== Lệnh sản xuất & Theo dõi tiến độ công đoạn nhà máy OEM (Mnf_WorkOrder / Mnf_VIN / Mnf_ConvertRule) =====
+    private static readonly string[] ShopOrder = { "XH", "XS", "XLR", "XKTCL" };
+
+    public async Task<object> CreateWorkOrderAsync(CreateWorkOrderDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.WorkOrderNo))
+            throw new InvalidOperationException("Cần mã lệnh sản xuất WorkOrderNo.");
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 số khung VIN trong lệnh sản xuất.");
+
+        var woNo = dto.WorkOrderNo.Trim().ToUpperInvariant();
+        if (await db.WorkOrders.AnyAsync(w => w.OrgId == Org && w.WorkOrderNo == woNo))
+            throw new InvalidOperationException($"Mã lệnh sản xuất {woNo} đã tồn tại.");
+
+        var distinct = dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+            .GroupBy(i => i.Vin.Trim().ToUpperInvariant())
+            .Select(g => g.First())
+            .ToList();
+        if (distinct.Count == 0)
+            throw new InvalidOperationException("Danh sách VIN không hợp lệ.");
+
+        var wo = new WorkOrder
+        {
+            OrgId = Org,
+            WorkOrderNo = woNo,
+            OrderNo = dto.OrderNo?.Trim(),
+            OrderNoUser = dto.OrderNoUser?.Trim(),
+            PINo = dto.PINo?.Trim(),
+            Lot = dto.Lot?.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.WorkOrders.Add(wo);
+        await db.SaveChangesAsync();
+
+        foreach (var it in distinct)
+        {
+            var vin = it.Vin.Trim().ToUpperInvariant();
+            db.WorkOrderLines.Add(new WorkOrderLine
+            {
+                OrgId = Org,
+                WorkOrderId = wo.Id,
+                WorkOrderNo = woNo,
+                Vin = vin,
+                SpecCode = it.SpecCode?.Trim(),
+                ModelCode = it.ModelCode?.Trim(),
+                ColorCodeInit = it.ColorCodeInit?.Trim(),
+                EngineNoInit = it.EngineNoInit?.Trim(),
+                VinYear = it.VinYear,
+                VinStatus = "Pending",
+                Remark = it.Remark?.Trim(),
+                CreatedAt = DateTime.Now
+            });
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            wo.WorkOrderNo,
+            wo.OrderNo,
+            wo.Lot,
+            wo.Status,
+            totalVins = distinct.Count,
+            items = distinct.Select(i => new { i.Vin, i.ModelCode, i.SpecCode })
+        };
+    }
+
+    public async Task<object> ListWorkOrdersAsync(string? status, string? workOrderNo, string? lot, string? vin)
+    {
+        var q = db.WorkOrders.Where(w => w.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(w => w.Status == status);
+        if (!string.IsNullOrWhiteSpace(workOrderNo))
+        {
+            var k = workOrderNo.Trim().ToUpperInvariant();
+            q = q.Where(w => w.WorkOrderNo.Contains(k));
+        }
+        if (!string.IsNullOrWhiteSpace(lot))
+        {
+            var k = lot.Trim();
+            q = q.Where(w => w.Lot != null && w.Lot.Contains(k));
+        }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matched = await db.WorkOrderLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.WorkOrderNo).Distinct().ToListAsync();
+            q = q.Where(w => matched.Contains(w.WorkOrderNo));
+        }
+
+        var items = await q.OrderByDescending(w => w.Id).Take(500).Select(w => new
+        {
+            w.WorkOrderNo,
+            w.OrderNo,
+            w.OrderNoUser,
+            w.PINo,
+            w.Lot,
+            w.Status,
+            w.Remark,
+            w.CreatedBy,
+            w.CreatedAt,
+            w.CompletedAt,
+            vinCount = db.WorkOrderLines.Count(l => l.OrgId == Org && l.WorkOrderId == w.Id),
+            finishedCount = db.WorkOrderLines.Count(l => l.OrgId == Org && l.WorkOrderId == w.Id && l.VinStatus == "Finished")
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetWorkOrderAsync(string workOrderNo)
+    {
+        workOrderNo = workOrderNo.Trim().ToUpperInvariant();
+        var wo = await db.WorkOrders.FirstOrDefaultAsync(w => w.OrgId == Org && w.WorkOrderNo == workOrderNo);
+        if (wo is null) return null;
+
+        var lines = await db.WorkOrderLines.Where(l => l.OrgId == Org && l.WorkOrderId == wo.Id).ToListAsync();
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.ModelCode,
+            l.SpecCode,
+            l.ColorCodeInit,
+            l.ColorCode,
+            l.EngineNoInit,
+            l.EngineNo,
+            l.VinYear,
+            l.ShopCCCode,
+            l.StationCCCode,
+            l.ConvertRuleCode,
+            l.WOStatusDtl,
+            l.VinStatus,
+            l.VinShopStatus,
+            l.WkDTime,
+            l.WkBy,
+            l.FinishDTime,
+            l.FinishBy,
+            l.EffDTimeStart_BS,
+            l.EffDTimeEnd_BS,
+            l.EffDTimeStart_PS,
+            l.EffDTimeEnd_PS,
+            l.EffDTimeStart_AS,
+            l.EffDTimeEnd_AS,
+            l.EffDTimeEnd_QA,
+            l.FlagRepair,
+            l.Remark
+        }).ToList();
+
+        return new
+        {
+            wo.WorkOrderNo,
+            wo.OrderNo,
+            wo.OrderNoUser,
+            wo.PINo,
+            wo.Lot,
+            wo.Status,
+            wo.Remark,
+            wo.CreatedBy,
+            wo.CreatedAt,
+            wo.CompletedAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> WorkOrderTransitionAsync(string workOrderNo, string action, WorkOrderTransitionDto? dto)
+    {
+        workOrderNo = workOrderNo.Trim().ToUpperInvariant();
+        var wo = await db.WorkOrders.FirstOrDefaultAsync(w => w.OrgId == Org && w.WorkOrderNo == workOrderNo);
+        if (wo is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.WorkOrderLines.Where(l => l.OrgId == Org && l.WorkOrderId == wo.Id).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "start":
+                if (wo.Status != "Draft") return null;
+                wo.Status = "InProduction";
+                foreach (var l in lines)
+                {
+                    if (l.VinStatus == "Pending")
+                    {
+                        l.VinStatus = "InProduction";
+                        l.WkDTime ??= now;
+                        l.WkBy = dto?.By?.Trim();
+                    }
+                }
+                break;
+
+            case "complete":
+                if (wo.Status is not ("Draft" or "InProduction")) return null;
+                wo.Status = "Completed";
+                wo.CompletedAt = now;
+                foreach (var l in lines)
+                {
+                    if (l.VinStatus != "Finished")
+                    {
+                        l.VinStatus = "Finished";
+                        l.WkDTime ??= now;
+                        l.FinishDTime ??= now;
+                        l.FinishBy = dto?.By?.Trim();
+                    }
+                }
+                break;
+
+            case "cancel":
+                if (wo.Status == "Completed") return null;
+                wo.Status = "Cancelled";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    wo.Remark = string.IsNullOrWhiteSpace(wo.Remark) ? dto.Note : $"{wo.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) if (l.VinStatus != "Finished") l.VinStatus = "Cancelled";
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { wo.WorkOrderNo, status = wo.Status, wo.CompletedAt };
+    }
+
+    public async Task<object?> WorkOrderWorkingAsync(string workOrderNo, string vin, WorkOrderWorkingDto dto)
+    {
+        workOrderNo = workOrderNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(dto.ShopCCCode))
+            throw new InvalidOperationException("Cần mã xưởng ShopCCCode (XH/XS/XLR/XKTCL).");
+
+        var wo = await db.WorkOrders.FirstOrDefaultAsync(w => w.OrgId == Org && w.WorkOrderNo == workOrderNo);
+        if (wo is null || wo.Status is "Cancelled") return null;
+
+        var line = await db.WorkOrderLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.WorkOrderId == wo.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        var shop = dto.ShopCCCode.Trim().ToUpperInvariant();
+        if (!ShopOrder.Contains(shop))
+            throw new InvalidOperationException("Mã xưởng không hợp lệ. Chỉ nhận XH (Hàn), XS (Sơn), XLR (Lắp ráp), XKTCL (KCS).");
+
+        var now = DateTime.Now;
+        line.ShopCCCode = shop;
+        line.StationCCCode = dto.StationCCCode?.Trim().ToUpperInvariant();
+        line.ConvertRuleCode = dto.ConvertRuleCode?.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.FlagRepair)) line.FlagRepair = dto.FlagRepair.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark))
+            line.Remark = string.IsNullOrWhiteSpace(line.Remark) ? dto.Remark : $"{line.Remark} | {dto.Remark}";
+        line.WkDTime ??= now;
+        line.WkBy = dto.By?.Trim();
+        line.LogLUDateTime = now;
+        line.LogLUBy = dto.By?.Trim();
+
+        // Ghi nhận mốc thời gian bắt đầu/kết thúc theo từng xưởng (BS/PS/AS/QA)
+        switch (shop)
+        {
+            case "XH":
+                line.EffDTimeStart_BS ??= now;
+                break;
+            case "XS":
+                line.EffDTimeEnd_BS ??= now;
+                line.EffDTimeStart_PS ??= now;
+                break;
+            case "XLR":
+                line.EffDTimeEnd_PS ??= now;
+                line.EffDTimeStart_AS ??= now;
+                break;
+            case "XKTCL":
+                line.EffDTimeEnd_AS ??= now;
+                line.EffDTimeEnd_QA ??= now;
+                break;
+        }
+
+        line.VinShopStatus = shop;
+        line.WOStatusDtl = shop;
+        if (line.VinStatus == "Pending") line.VinStatus = "InProduction";
+        if (wo.Status == "Draft") wo.Status = "InProduction";
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            wo.WorkOrderNo,
+            line.Vin,
+            line.ShopCCCode,
+            line.StationCCCode,
+            line.ConvertRuleCode,
+            line.VinStatus,
+            line.VinShopStatus,
+            line.WkDTime,
+            line.EffDTimeStart_BS,
+            line.EffDTimeEnd_BS,
+            line.EffDTimeStart_PS,
+            line.EffDTimeEnd_PS,
+            line.EffDTimeStart_AS,
+            line.EffDTimeEnd_AS,
+            line.EffDTimeEnd_QA
+        };
+    }
+
+    public async Task<object?> GetVehicleWorkOrderInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var lines = await db.WorkOrderLines.Where(l => l.OrgId == Org && l.Vin == vin).OrderByDescending(l => l.Id).ToListAsync();
+        if (lines.Count == 0) return null;
+
+        var woNos = lines.Select(l => l.WorkOrderNo).Distinct().ToList();
+        var wos = await db.WorkOrders.Where(w => w.OrgId == Org && woNos.Contains(w.WorkOrderNo)).ToDictionaryAsync(w => w.WorkOrderNo);
+
+        var history = lines.Select(l => new
+        {
+            l.WorkOrderNo,
+            l.ModelCode,
+            l.SpecCode,
+            l.ColorCodeInit,
+            l.ColorCode,
+            l.EngineNoInit,
+            l.EngineNo,
+            l.VinYear,
+            l.ShopCCCode,
+            l.StationCCCode,
+            l.ConvertRuleCode,
+            l.VinStatus,
+            l.VinShopStatus,
+            l.WkDTime,
+            l.WkBy,
+            l.FinishDTime,
+            l.FinishBy,
+            l.EffDTimeStart_BS,
+            l.EffDTimeEnd_BS,
+            l.EffDTimeStart_PS,
+            l.EffDTimeEnd_PS,
+            l.EffDTimeStart_AS,
+            l.EffDTimeEnd_AS,
+            l.EffDTimeEnd_QA,
+            l.FlagRepair,
+            l.Remark,
+            workOrderStatus = wos.TryGetValue(l.WorkOrderNo, out var w) ? w.Status : null,
+            lot = wos.TryGetValue(l.WorkOrderNo, out var w2) ? w2.Lot : null
+        }).ToList();
+
+        return new { vin, count = history.Count, history };
+    }
+
+    public async Task<object> CreateConvertRuleAsync(CreateConvertRuleDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.ConvertRuleCode))
+            throw new InvalidOperationException("Cần mã quy tắc ConvertRuleCode.");
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng định mức thời gian công đoạn.");
+
+        var code = dto.ConvertRuleCode.Trim().ToUpperInvariant();
+        if (await db.ConvertRules.AnyAsync(r => r.OrgId == Org && r.ConvertRuleCode == code))
+            throw new InvalidOperationException($"Mã quy tắc chuyển đổi {code} đã tồn tại.");
+
+        var rule = new ConvertRule
+        {
+            OrgId = Org,
+            ConvertRuleCode = code,
+            ConvertRuleDesc = dto.ConvertRuleDesc?.Trim(),
+            EffDateStart = dto.EffDateStart,
+            EffDateEnd = dto.EffDateEnd,
+            FlagActive = true,
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now,
+            LogLUDateTime = DateTime.Now,
+            LogLUBy = dto.By?.Trim()
+        };
+        db.ConvertRules.Add(rule);
+        await db.SaveChangesAsync();
+
+        foreach (var it in dto.Items)
+        {
+            if (string.IsNullOrWhiteSpace(it.ShopCCCode) || string.IsNullOrWhiteSpace(it.StationCCCode))
+                throw new InvalidOperationException("Mỗi dòng định mức cần ShopCCCode và StationCCCode.");
+            db.ConvertRuleLines.Add(new ConvertRuleLine
+            {
+                OrgId = Org,
+                ConvertRuleId = rule.Id,
+                ConvertRuleCode = code,
+                ShopCCCode = it.ShopCCCode.Trim().ToUpperInvariant(),
+                StationCCCode = it.StationCCCode.Trim().ToUpperInvariant(),
+                PrdTime = it.PrdTime,
+                StationOfShopRate = it.StationOfShopRate,
+                StationOfMnfRate = it.StationOfMnfRate,
+                Seq = it.Seq,
+                Remark = it.Remark?.Trim()
+            });
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            rule.ConvertRuleCode,
+            rule.ConvertRuleDesc,
+            rule.EffDateStart,
+            rule.EffDateEnd,
+            rule.FlagActive,
+            totalStations = dto.Items.Count,
+            totalPrdTime = dto.Items.Sum(i => i.PrdTime)
+        };
+    }
+
+    public async Task<object> ListConvertRulesAsync(bool? activeOnly)
+    {
+        var q = db.ConvertRules.Where(r => r.OrgId == Org);
+        if (activeOnly == true) q = q.Where(r => r.FlagActive);
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.ConvertRuleCode,
+            r.ConvertRuleDesc,
+            r.EffDateStart,
+            r.EffDateEnd,
+            r.FlagActive,
+            r.Remark,
+            r.CreatedAt,
+            stationCount = db.ConvertRuleLines.Count(l => l.OrgId == Org && l.ConvertRuleId == r.Id),
+            totalPrdTime = db.ConvertRuleLines.Where(l => l.OrgId == Org && l.ConvertRuleId == r.Id).Sum(l => (decimal?)l.PrdTime) ?? 0
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetConvertRuleAsync(string convertRuleCode)
+    {
+        convertRuleCode = convertRuleCode.Trim().ToUpperInvariant();
+        var rule = await db.ConvertRules.FirstOrDefaultAsync(r => r.OrgId == Org && r.ConvertRuleCode == convertRuleCode);
+        if (rule is null) return null;
+
+        var lines = await db.ConvertRuleLines.Where(l => l.OrgId == Org && l.ConvertRuleId == rule.Id)
+            .OrderBy(l => l.Seq).ToListAsync();
+
+        return new
+        {
+            rule.ConvertRuleCode,
+            rule.ConvertRuleDesc,
+            rule.EffDateStart,
+            rule.EffDateEnd,
+            rule.FlagActive,
+            rule.Remark,
+            rule.CreatedAt,
+            totalPrdTime = lines.Sum(l => l.PrdTime),
+            stations = lines.Select(l => new
+            {
+                l.ShopCCCode,
+                l.StationCCCode,
+                l.PrdTime,
+                l.StationOfShopRate,
+                l.StationOfMnfRate,
+                l.Seq,
+                l.Remark
+            })
+        };
+    }
+
+    // ===== Trạng thái hồ sơ xe (BizHTC.Car.Car_VIN.DOCUMENTSTATUS / FULLDOCDATE / REMARKDETAIL) =====
+    public async Task<object?> UpdateVehicleDocStatusAsync(string vin, UpdateVehicleDocStatusDto dto)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        // Quy tắc nghiệp vụ nguồn (CarVINController.UpdateDocStt):
+        // - Xe đã giao bán (SellStatus = "A") → cập nhật "Ngày đủ hồ sơ" (FullDocDate).
+        // - Xe chưa giao → cập nhật "Trạng thái hồ sơ" (DocumentStatus).
+        var isDelivered = v.Status == VehicleStatus.Delivered;
+        if (isDelivered)
+        {
+            if (!dto.FullDocDate.HasValue)
+                throw new InvalidOperationException("Xe đã giao bán: cần cung cấp Ngày đủ hồ sơ (FullDocDate).");
+            v.FullDocDate = dto.FullDocDate.Value;
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(dto.DocumentStatus))
+                throw new InvalidOperationException("Xe chưa giao bán: cần cung cấp Trạng thái hồ sơ (DocumentStatus).");
+            v.DocumentStatus = dto.DocumentStatus.Trim();
+        }
+        if (dto.RemarkDetail is not null) v.DocRemarkDetail = dto.RemarkDetail.Trim();
+
+        var now = DateTime.Now;
+        var no = "DSL" + now.ToString("yyMMddHHmmssfff");
+        v.LastDocStatusNo = no;
+        v.LastDocStatusDate = now;
+        v.DocStatusUpdateCount += 1;
+
+        db.VehicleDocumentStatusLogs.Add(new VehicleDocumentStatusLog
+        {
+            OrgId = Org,
+            DocStatusNo = no,
+            Vin = vin,
+            Model = v.Model,
+            DealerCode = v.DealerCode,
+            DocumentStatus = v.DocumentStatus,
+            FullDocDate = v.FullDocDate,
+            RemarkDetail = v.DocRemarkDetail,
+            IsDelivered = isDelivered,
+            UpdatedBy = dto.UpdatedBy?.Trim(),
+            CreatedAt = now
+        });
+        Log(vin, "DocStatusUpdated", $"No={no} Delivered={isDelivered} Status={v.DocumentStatus} FullDocDate={v.FullDocDate:yyyy-MM-dd}");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.DealerCode,
+            isDelivered,
+            v.DocumentStatus,
+            v.FullDocDate,
+            v.DocRemarkDetail,
+            v.LastDocStatusNo,
+            v.LastDocStatusDate,
+            v.DocStatusUpdateCount
+        };
+    }
+
+    public async Task<object> ListVehicleDocStatusesAsync(string? documentStatus, string? dealer, string? model, string? vin, bool? deliveredOnly)
+    {
+        var q = db.Vehicles.Where(v => v.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(documentStatus)) q = q.Where(v => v.DocumentStatus == documentStatus);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(v => v.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(model)) q = q.Where(v => v.Model.Contains(model));
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var k = vin.Trim().ToUpperInvariant();
+            q = q.Where(v => v.Vin.Contains(k));
+        }
+        if (deliveredOnly == true) q = q.Where(v => v.Status == VehicleStatus.Delivered);
+
+        var items = await q.OrderByDescending(v => v.Id).Take(500).Select(v => new
+        {
+            v.Vin,
+            v.Model,
+            v.DealerCode,
+            status = v.Status.ToString(),
+            v.DocumentStatus,
+            v.FullDocDate,
+            v.DocRemarkDetail,
+            v.LastDocStatusNo,
+            v.LastDocStatusDate,
+            v.DocStatusUpdateCount
+        }).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetVehicleDocStatusInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.DealerCode,
+            status = v.Status.ToString(),
+            v.DocumentStatus,
+            v.FullDocDate,
+            v.DocRemarkDetail,
+            v.LastDocStatusNo,
+            v.LastDocStatusDate,
+            v.DocStatusUpdateCount
+        };
+    }
+
+    public async Task<object?> GetVehicleDocStatusHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+        var history = await db.VehicleDocumentStatusLogs.Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .Select(l => new
+            {
+                l.DocStatusNo,
+                l.DocumentStatus,
+                l.FullDocDate,
+                l.RemarkDetail,
+                l.IsDelivered,
+                l.UpdatedBy,
+                l.CreatedAt
+            }).ToListAsync();
+        return new { vin, count = history.Count, history };
+    }
+
+    public async Task<object> GetVehicleDocStatusSummaryAsync(string? dealerCode)
+    {
+        var q = db.Vehicles.Where(v => v.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode)) q = q.Where(v => v.DealerCode == dealerCode);
+
+        var total = await q.CountAsync();
+        var delivered = await q.CountAsync(v => v.Status == VehicleStatus.Delivered);
+        var withFullDoc = await q.CountAsync(v => v.FullDocDate != null);
+        var pendingDoc = await q.CountAsync(v => v.FullDocDate == null);
+        var byStatus = await q.Where(v => v.DocumentStatus != null)
+            .GroupBy(v => v.DocumentStatus)
+            .Select(g => new { documentStatus = g.Key, count = g.Count() })
+            .ToListAsync();
+
+        return new
+        {
+            dealerCode,
+            total,
+            delivered,
+            withFullDoc,
+            pendingDoc,
+            byDocumentStatus = byStatus
+        };
     }
 }
