@@ -3199,6 +3199,289 @@ app.MapGet("/api/vehicles/{vin}/policy-support-history", async (string vin, IVeh
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Quản lý Thiết bị Định vị GPS & Giám sát Vị trí Xe (BizHTC.StorageFG / Sto_StoBalanceGPS, StoF_GPSIn, StoF_GPSOut, GPSF_GPSClaim) ----
+
+app.MapPost("/api/gps/devices", async (RegisterGpsDeviceDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.GpsCode))
+        return Results.BadRequest(new { error = "Cần mã thiết bị GpsCode." });
+    try { return Results.Ok(await svc.RegisterGpsDeviceAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/gps/devices", async (IVehicleService svc, string? status, string? provider, string? storageCode, string? q) =>
+    Results.Ok(await svc.ListGpsDevicesAsync(status, provider, storageCode, q))).RequireAuthorization();
+
+app.MapGet("/api/gps/devices/{gpsCode}", async (string gpsCode, IVehicleService svc) =>
+{
+    var r = await svc.GetGpsDeviceAsync(gpsCode);
+    return r is null ? Results.NotFound(new { gpsCode, error = "Không tìm thấy thiết bị định vị GPS." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/gps/devices/{gpsCode}", async (string gpsCode, UpdateGpsDeviceDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsDeviceAsync(gpsCode, dto);
+        return r is null ? Results.NotFound(new { gpsCode, error = "Không tìm thấy thiết bị định vị GPS." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/gps/devices/{gpsCode}", async (string gpsCode, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.DeleteGpsDeviceAsync(gpsCode);
+        return r is null ? Results.NotFound(new { gpsCode, error = "Không tìm thấy thiết bị định vị GPS hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps/devices/{gpsCode}/location", async (string gpsCode, UpdateGpsLocationDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsLocationAsync(gpsCode, dto);
+        return r is null ? Results.NotFound(new { gpsCode, error = "Không tìm thấy thiết bị định vị GPS." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps/installations", async (CreateGpsInstallationDto dto, IVehicleService svc) =>
+{
+    try { return Results.Ok(await svc.CreateGpsInstallationAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/gps/installations", async (IVehicleService svc, string? status, string? gpsInType, string? vin, string? gpsCode) =>
+    Results.Ok(await svc.ListGpsInstallationsAsync(status, gpsInType, vin, gpsCode))).RequireAuthorization();
+
+app.MapGet("/api/gps/installations/{gpsInNo}", async (string gpsInNo, IVehicleService svc) =>
+{
+    var r = await svc.GetGpsInstallationAsync(gpsInNo);
+    return r is null ? Results.NotFound(new { gpsInNo, error = "Không tìm thấy phiếu lắp đặt GPS." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/gps/installations/{gpsInNo}", async (string gpsInNo, UpdateGpsInstallationHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsInstallationHeaderAsync(gpsInNo, dto);
+        return r is null ? Results.NotFound(new { gpsInNo, error = "Không tìm thấy phiếu lắp đặt GPS." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps/installations/{gpsInNo}/{action}", async (string gpsInNo, string action, GpsInstallationTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "install" or "complete" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|install|complete|cancel" });
+    try
+    {
+        var r = await svc.GpsInstallationTransitionAsync(gpsInNo, action, dto);
+        return r is null ? Results.NotFound(new { gpsInNo, error = "Không tìm thấy phiếu lắp đặt GPS hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps/installations/{gpsInNo}/lines", async (string gpsInNo, List<GpsInstallationItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách xe & thiết bị items." });
+    try
+    {
+        var r = await svc.AddGpsInstallationLinesAsync(gpsInNo, items);
+        return r is null ? Results.NotFound(new { gpsInNo, error = "Không tìm thấy phiếu lắp đặt GPS hoặc không thể thêm dòng." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/gps/installations/{gpsInNo}/lines/{lineId:long}", async (string gpsInNo, long lineId, UpdateGpsInstallationLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsInstallationLineAsync(gpsInNo, lineId, dto);
+        return r is null ? Results.NotFound(new { gpsInNo, lineId, error = "Không tìm thấy dòng chi tiết lắp đặt." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/gps/installations/{gpsInNo}/lines/{lineId:long}", async (string gpsInNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveGpsInstallationLineAsync(gpsInNo, lineId);
+        return r is null ? Results.NotFound(new { gpsInNo, lineId, error = "Không tìm thấy dòng chi tiết lắp đặt hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/gps/installations/{gpsInNo}", async (string gpsInNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveGpsInstallationAsync(gpsInNo);
+        return r is null ? Results.NotFound(new { gpsInNo, error = "Không tìm thấy phiếu lắp đặt hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps/uninstallations", async (CreateGpsUninstallationDto dto, IVehicleService svc) =>
+{
+    try { return Results.Ok(await svc.CreateGpsUninstallationAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/gps/uninstallations", async (IVehicleService svc, string? status, string? reason, string? vin, string? gpsCode) =>
+    Results.Ok(await svc.ListGpsUninstallationsAsync(status, reason, vin, gpsCode))).RequireAuthorization();
+
+app.MapGet("/api/gps/uninstallations/{gpsOutNo}", async (string gpsOutNo, IVehicleService svc) =>
+{
+    var r = await svc.GetGpsUninstallationAsync(gpsOutNo);
+    return r is null ? Results.NotFound(new { gpsOutNo, error = "Không tìm thấy phiếu tháo gỡ GPS." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/gps/uninstallations/{gpsOutNo}", async (string gpsOutNo, UpdateGpsUninstallationHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsUninstallationHeaderAsync(gpsOutNo, dto);
+        return r is null ? Results.NotFound(new { gpsOutNo, error = "Không tìm thấy phiếu tháo gỡ GPS." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps/uninstallations/{gpsOutNo}/{action}", async (string gpsOutNo, string action, GpsUninstallationTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "complete" or "finish" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|complete|finish|cancel" });
+    try
+    {
+        var r = await svc.GpsUninstallationTransitionAsync(gpsOutNo, action, dto);
+        return r is null ? Results.NotFound(new { gpsOutNo, error = "Không tìm thấy phiếu tháo gỡ GPS hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps/uninstallations/{gpsOutNo}/lines", async (string gpsOutNo, List<GpsUninstallationItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách xe items." });
+    try
+    {
+        var r = await svc.AddGpsUninstallationLinesAsync(gpsOutNo, items);
+        return r is null ? Results.NotFound(new { gpsOutNo, error = "Không tìm thấy phiếu tháo gỡ GPS hoặc không thể thêm dòng." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/gps/uninstallations/{gpsOutNo}/lines/{lineId:long}", async (string gpsOutNo, long lineId, UpdateGpsUninstallationLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsUninstallationLineAsync(gpsOutNo, lineId, dto);
+        return r is null ? Results.NotFound(new { gpsOutNo, lineId, error = "Không tìm thấy dòng chi tiết tháo gỡ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/gps/uninstallations/{gpsOutNo}/lines/{lineId:long}", async (string gpsOutNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveGpsUninstallationLineAsync(gpsOutNo, lineId);
+        return r is null ? Results.NotFound(new { gpsOutNo, lineId, error = "Không tìm thấy dòng chi tiết tháo gỡ hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/gps/uninstallations/{gpsOutNo}", async (string gpsOutNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveGpsUninstallationAsync(gpsOutNo);
+        return r is null ? Results.NotFound(new { gpsOutNo, error = "Không tìm thấy phiếu tháo gỡ hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps/claims", async (CreateGpsClaimDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.GpsCode))
+        return Results.BadRequest(new { error = "Cần mã thiết bị GpsCode." });
+    try { return Results.Ok(await svc.CreateGpsClaimAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/gps/claims", async (IVehicleService svc, string? status, string? vendor, string? faultType, string? gpsCode, string? vin) =>
+    Results.Ok(await svc.ListGpsClaimsAsync(status, vendor, faultType, gpsCode, vin))).RequireAuthorization();
+
+app.MapGet("/api/gps/claims/{gpsClaimNo}", async (string gpsClaimNo, IVehicleService svc) =>
+{
+    var r = await svc.GetGpsClaimAsync(gpsClaimNo);
+    return r is null ? Results.NotFound(new { gpsClaimNo, error = "Không tìm thấy phiếu yêu cầu bảo hành GPS." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/gps/claims/{gpsClaimNo}", async (string gpsClaimNo, UpdateGpsClaimDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsClaimAsync(gpsClaimNo, dto);
+        return r is null ? Results.NotFound(new { gpsClaimNo, error = "Không tìm thấy phiếu yêu cầu bảo hành GPS." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps/claims/{gpsClaimNo}/{action}", async (string gpsClaimNo, string action, GpsClaimTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "send_to_vendor" or "send" or "repair" or "replace" or "receive" or "settle" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|send_to_vendor|repair|replace|settle|reject|cancel" });
+    try
+    {
+        var r = await svc.GpsClaimTransitionAsync(gpsClaimNo, action, dto);
+        return r is null ? Results.NotFound(new { gpsClaimNo, error = "Không tìm thấy phiếu yêu cầu bảo hành GPS hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/gps/claims/{gpsClaimNo}", async (string gpsClaimNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveGpsClaimAsync(gpsClaimNo);
+        return r is null ? Results.NotFound(new { gpsClaimNo, error = "Không tìm thấy phiếu bảo hành hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/gps/summary", async (IVehicleService svc, string? provider, string? storageCode) =>
+    Results.Ok(await svc.GetGpsFleetSummaryAsync(provider, storageCode))).RequireAuthorization();
+
+app.MapGet("/api/gps/vehicles/{vin}", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVinGpsLocationAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/gps/vehicles/{vin}/history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleGpsHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/gps", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVinGpsLocationAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/gps-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleGpsHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

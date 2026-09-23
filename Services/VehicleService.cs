@@ -1947,6 +1947,41 @@ public interface IVehicleService
     Task<object?> GetVehiclePolicySupportInfoAsync(string vin);
     Task<object?> GetVehiclePolicySupportHistoryAsync(string vin);
     Task<object> GetSalesPolicySummaryAsync(string? spsrCode, string? dealerCode);
+
+    // Quản lý Thiết bị Định vị GPS & Giám sát Vị trí Xe (BizHTC.StorageFG / Sto_StoBalanceGPS, StoF_GPSIn, StoF_GPSOut, GPSF_GPSClaim)
+    Task<object> RegisterGpsDeviceAsync(RegisterGpsDeviceDto dto);
+    Task<object> ListGpsDevicesAsync(string? status, string? provider, string? storageCode, string? q);
+    Task<object?> GetGpsDeviceAsync(string gpsCode);
+    Task<object?> UpdateGpsDeviceAsync(string gpsCode, UpdateGpsDeviceDto dto);
+    Task<object?> DeleteGpsDeviceAsync(string gpsCode);
+    Task<object> CreateGpsInstallationAsync(CreateGpsInstallationDto dto);
+    Task<object> ListGpsInstallationsAsync(string? status, string? gpsInType, string? vin, string? gpsCode);
+    Task<object?> GetGpsInstallationAsync(string gpsInNo);
+    Task<object?> UpdateGpsInstallationHeaderAsync(string gpsInNo, UpdateGpsInstallationHeaderDto dto);
+    Task<object?> GpsInstallationTransitionAsync(string gpsInNo, string action, GpsInstallationTransitionDto? dto);
+    Task<object?> AddGpsInstallationLinesAsync(string gpsInNo, List<GpsInstallationItemInputDto> items);
+    Task<object?> UpdateGpsInstallationLineAsync(string gpsInNo, long lineId, UpdateGpsInstallationLineDto dto);
+    Task<object?> RemoveGpsInstallationLineAsync(string gpsInNo, long lineId);
+    Task<object?> RemoveGpsInstallationAsync(string gpsInNo);
+    Task<object> CreateGpsUninstallationAsync(CreateGpsUninstallationDto dto);
+    Task<object> ListGpsUninstallationsAsync(string? status, string? reason, string? vin, string? gpsCode);
+    Task<object?> GetGpsUninstallationAsync(string gpsOutNo);
+    Task<object?> UpdateGpsUninstallationHeaderAsync(string gpsOutNo, UpdateGpsUninstallationHeaderDto dto);
+    Task<object?> GpsUninstallationTransitionAsync(string gpsOutNo, string action, GpsUninstallationTransitionDto? dto);
+    Task<object?> AddGpsUninstallationLinesAsync(string gpsOutNo, List<GpsUninstallationItemInputDto> items);
+    Task<object?> UpdateGpsUninstallationLineAsync(string gpsOutNo, long lineId, UpdateGpsUninstallationLineDto dto);
+    Task<object?> RemoveGpsUninstallationLineAsync(string gpsOutNo, long lineId);
+    Task<object?> RemoveGpsUninstallationAsync(string gpsOutNo);
+    Task<object> CreateGpsClaimAsync(CreateGpsClaimDto dto);
+    Task<object> ListGpsClaimsAsync(string? status, string? vendor, string? faultType, string? gpsCode, string? vin);
+    Task<object?> GetGpsClaimAsync(string gpsClaimNo);
+    Task<object?> UpdateGpsClaimAsync(string gpsClaimNo, UpdateGpsClaimDto dto);
+    Task<object?> GpsClaimTransitionAsync(string gpsClaimNo, string action, GpsClaimTransitionDto? dto);
+    Task<object?> RemoveGpsClaimAsync(string gpsClaimNo);
+    Task<object?> UpdateGpsLocationAsync(string gpsCode, UpdateGpsLocationDto dto);
+    Task<object?> GetVinGpsLocationAsync(string vin);
+    Task<object?> GetVehicleGpsHistoryAsync(string vin);
+    Task<object> GetGpsFleetSummaryAsync(string? provider, string? storageCode);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -25634,6 +25669,998 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             settlementRatePercent,
             byModel,
             byDealer
+        );
+    }
+
+    // ===== Quản lý Thiết bị Định vị GPS & Giám sát Vị trí Xe (BizHTC.StorageFG / Sto_StoBalanceGPS, StoF_GPSIn, StoF_GPSOut, GPSF_GPSClaim) =====
+
+    public async Task<object> RegisterGpsDeviceAsync(RegisterGpsDeviceDto dto)
+    {
+        var code = dto.GpsCode.Trim().ToUpperInvariant();
+        if (await db.GpsDevices.AnyAsync(d => d.OrgId == Org && d.GpsCode == code))
+            throw new InvalidOperationException($"Mã thiết bị GPS {code} đã tồn tại trong hệ thống.");
+
+        var device = new GpsDevice
+        {
+            OrgId = Org,
+            GpsCode = code,
+            GpsBoxNo = dto.GpsBoxNo?.Trim(),
+            SerialNo = dto.SerialNo?.Trim(),
+            ImeiNo = dto.ImeiNo?.Trim(),
+            SimNo = dto.SimNo?.Trim(),
+            Provider = string.IsNullOrWhiteSpace(dto.Provider) ? "Viettel" : dto.Provider.Trim(),
+            ModelName = string.IsNullOrWhiteSpace(dto.ModelName) ? "OBD-4G" : dto.ModelName.Trim(),
+            StorageCodeGps = string.IsNullOrWhiteSpace(dto.StorageCodeGps) ? "KHO_GPS_NINHBINH" : dto.StorageCodeGps.Trim(),
+            DeviceStatus = "InStock",
+            BatteryVolt = dto.BatteryVolt ?? 12.6m,
+            BatteryPercent = dto.BatteryPercent ?? 100,
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.GpsDevices.Add(device);
+        await db.SaveChangesAsync();
+        return device;
+    }
+
+    public async Task<object> ListGpsDevicesAsync(string? status, string? provider, string? storageCode, string? q)
+    {
+        var query = db.GpsDevices.Where(d => d.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(d => d.DeviceStatus == status.Trim());
+        if (!string.IsNullOrWhiteSpace(provider)) query = query.Where(d => d.Provider == provider.Trim());
+        if (!string.IsNullOrWhiteSpace(storageCode)) query = query.Where(d => d.StorageCodeGps == storageCode.Trim());
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var match = q.Trim().ToUpperInvariant();
+            query = query.Where(d => d.GpsCode.Contains(match) || (d.CurrentVin != null && d.CurrentVin.Contains(match)) || (d.ImeiNo != null && d.ImeiNo.Contains(match)) || (d.SimNo != null && d.SimNo.Contains(match)));
+        }
+        var items = await query.OrderByDescending(d => d.Id).Take(500).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetGpsDeviceAsync(string gpsCode)
+    {
+        gpsCode = gpsCode.Trim().ToUpperInvariant();
+        var dev = await db.GpsDevices.FirstOrDefaultAsync(d => d.OrgId == Org && d.GpsCode == gpsCode);
+        if (dev is null) return null;
+        var logs = await db.GpsLocationLogs.Where(l => l.OrgId == Org && l.GpsCode == gpsCode).OrderByDescending(l => l.RecordedAt).Take(50).ToListAsync();
+        return new { device = dev, recentLogs = logs };
+    }
+
+    public async Task<object?> UpdateGpsDeviceAsync(string gpsCode, UpdateGpsDeviceDto dto)
+    {
+        gpsCode = gpsCode.Trim().ToUpperInvariant();
+        var dev = await db.GpsDevices.FirstOrDefaultAsync(d => d.OrgId == Org && d.GpsCode == gpsCode);
+        if (dev is null) return null;
+        if (dto.GpsBoxNo != null) dev.GpsBoxNo = dto.GpsBoxNo.Trim();
+        if (dto.SerialNo != null) dev.SerialNo = dto.SerialNo.Trim();
+        if (dto.ImeiNo != null) dev.ImeiNo = dto.ImeiNo.Trim();
+        if (dto.SimNo != null) dev.SimNo = dto.SimNo.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Provider)) dev.Provider = dto.Provider.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.ModelName)) dev.ModelName = dto.ModelName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.StorageCodeGps)) dev.StorageCodeGps = dto.StorageCodeGps.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DeviceStatus)) dev.DeviceStatus = dto.DeviceStatus.Trim();
+        if (dto.BatteryVolt.HasValue) dev.BatteryVolt = dto.BatteryVolt.Value;
+        if (dto.BatteryPercent.HasValue) dev.BatteryPercent = dto.BatteryPercent.Value;
+        if (dto.Remark != null) dev.Remark = dto.Remark.Trim();
+        dev.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return dev;
+    }
+
+    public async Task<object?> DeleteGpsDeviceAsync(string gpsCode)
+    {
+        gpsCode = gpsCode.Trim().ToUpperInvariant();
+        var dev = await db.GpsDevices.FirstOrDefaultAsync(d => d.OrgId == Org && d.GpsCode == gpsCode);
+        if (dev is null) return null;
+        if (dev.DeviceStatus == "Installed" || !string.IsNullOrWhiteSpace(dev.CurrentVin))
+            throw new InvalidOperationException($"Không thể xóa thiết bị {gpsCode} đang gắn trên xe VIN {dev.CurrentVin}.");
+        db.GpsDevices.Remove(dev);
+        await db.SaveChangesAsync();
+        return new { gpsCode, deleted = true };
+    }
+
+    public async Task<object> CreateGpsInstallationAsync(CreateGpsInstallationDto dto)
+    {
+        var inNo = string.IsNullOrWhiteSpace(dto.GpsInNo)
+            ? $"GPSIN-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}"
+            : dto.GpsInNo.Trim().ToUpperInvariant();
+
+        if (await db.GpsInstallations.AnyAsync(x => x.OrgId == Org && x.GpsInNo == inNo))
+            throw new InvalidOperationException($"Mã phiếu lắp đặt GPS {inNo} đã tồn tại.");
+
+        var install = new GpsInstallation
+        {
+            OrgId = Org,
+            GpsInNo = inNo,
+            GpsInNoUser = dto.GpsInNoUser?.Trim(),
+            GpsInType = string.IsNullOrWhiteSpace(dto.GpsInType) ? "First_In" : dto.GpsInType.Trim(),
+            StorageCodeGps = string.IsNullOrWhiteSpace(dto.StorageCodeGps) ? "KHO_GPS_NINHBINH" : dto.StorageCodeGps.Trim(),
+            InstallationDate = dto.InstallationDate ?? DateTime.Now,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.GpsInstallations.Add(install);
+        await db.SaveChangesAsync();
+
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            int idx = 1;
+            foreach (var it in dto.Items)
+            {
+                var vin = it.Vin.Trim().ToUpperInvariant();
+                var gpsCode = it.GpsCode.Trim().ToUpperInvariant();
+                var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+                var d = await db.GpsDevices.FirstOrDefaultAsync(x => x.OrgId == Org && x.GpsCode == gpsCode);
+
+                db.GpsInstallationLines.Add(new GpsInstallationLine
+                {
+                    OrgId = Org,
+                    GpsInstallationId = install.Id,
+                    GpsInNo = inNo,
+                    LineIndex = idx++,
+                    Vin = vin,
+                    Model = v?.Model ?? "N/A",
+                    EngineNo = v?.EngineNo,
+                    Color = v?.Color,
+                    StorageCode = it.StorageCode?.Trim() ?? v?.StorageCode,
+                    GpsCode = gpsCode,
+                    ImeiNo = d?.ImeiNo,
+                    SimNo = d?.SimNo,
+                    BatteryVolt = d?.BatteryVolt ?? 12.6m,
+                    Technician = it.Technician?.Trim(),
+                    InstalledAt = DateTime.Now,
+                    InitialSignalStatus = string.IsNullOrWhiteSpace(it.InitialSignalStatus) ? "SignalOK" : it.InitialSignalStatus.Trim(),
+                    Status = "Pending",
+                    Remark = it.Remark?.Trim()
+                });
+            }
+            install.TotalVehicleCount = dto.Items.Count;
+            await db.SaveChangesAsync();
+        }
+
+        return install;
+    }
+
+    public async Task<object> ListGpsInstallationsAsync(string? status, string? gpsInType, string? vin, string? gpsCode)
+    {
+        var query = db.GpsInstallations.Where(i => i.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(i => i.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(gpsInType)) query = query.Where(i => i.GpsInType == gpsInType.Trim());
+
+        if (!string.IsNullOrWhiteSpace(vin) || !string.IsNullOrWhiteSpace(gpsCode))
+        {
+            var lineQuery = db.GpsInstallationLines.Where(l => l.OrgId == Org);
+            if (!string.IsNullOrWhiteSpace(vin)) lineQuery = lineQuery.Where(l => l.Vin == vin.Trim().ToUpperInvariant());
+            if (!string.IsNullOrWhiteSpace(gpsCode)) lineQuery = lineQuery.Where(l => l.GpsCode == gpsCode.Trim().ToUpperInvariant());
+            var matchedNos = await lineQuery.Select(l => l.GpsInNo).Distinct().ToListAsync();
+            query = query.Where(i => matchedNos.Contains(i.GpsInNo));
+        }
+
+        var items = await query.OrderByDescending(i => i.Id).Take(500).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetGpsInstallationAsync(string gpsInNo)
+    {
+        gpsInNo = gpsInNo.Trim().ToUpperInvariant();
+        var install = await db.GpsInstallations.FirstOrDefaultAsync(i => i.OrgId == Org && i.GpsInNo == gpsInNo);
+        if (install is null) return null;
+        var lines = await db.GpsInstallationLines.Where(l => l.OrgId == Org && l.GpsInstallationId == install.Id).OrderBy(l => l.LineIndex).ToListAsync();
+        return new { installation = install, lines };
+    }
+
+    public async Task<object?> UpdateGpsInstallationHeaderAsync(string gpsInNo, UpdateGpsInstallationHeaderDto dto)
+    {
+        gpsInNo = gpsInNo.Trim().ToUpperInvariant();
+        var install = await db.GpsInstallations.FirstOrDefaultAsync(i => i.OrgId == Org && i.GpsInNo == gpsInNo);
+        if (install is null) return null;
+        if (install.Status != "Draft")
+            throw new InvalidOperationException($"Chỉ có thể sửa phiếu lắp đặt ở trạng thái Draft.");
+
+        if (dto.GpsInNoUser != null) install.GpsInNoUser = dto.GpsInNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.GpsInType)) install.GpsInType = dto.GpsInType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.StorageCodeGps)) install.StorageCodeGps = dto.StorageCodeGps.Trim();
+        if (dto.InstallationDate.HasValue) install.InstallationDate = dto.InstallationDate.Value;
+        if (dto.Remark != null) install.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return install;
+    }
+
+    public async Task<object?> GpsInstallationTransitionAsync(string gpsInNo, string action, GpsInstallationTransitionDto? dto)
+    {
+        gpsInNo = gpsInNo.Trim().ToUpperInvariant();
+        var install = await db.GpsInstallations.FirstOrDefaultAsync(i => i.OrgId == Org && i.GpsInNo == gpsInNo);
+        if (install is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var lines = await db.GpsInstallationLines.Where(l => l.OrgId == Org && l.GpsInstallationId == install.Id).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+                if (install.Status != "Draft") return null;
+                install.Status = "Submitted";
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Submitted";
+                break;
+
+            case "approve":
+            case "install":
+            case "complete":
+                if (install.Status is not ("Draft" or "Submitted")) return null;
+                install.Status = "Approved";
+                install.ApprovedBy = dto?.Actor?.Trim() ?? "StorageManager";
+                install.ApprovedAt = now;
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Installed";
+                    line.InstalledAt = now;
+
+                    // Cập nhật Vehicle
+                    var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == line.Vin);
+                    if (veh != null)
+                    {
+                        veh.IsGpsInstalled = true;
+                        veh.GpsCode = line.GpsCode;
+                        veh.GpsInstallDate = now;
+                        veh.LastGpsBatteryVolt = line.BatteryVolt;
+                        veh.LastGpsSignalTime = now;
+                        veh.GpsDeviceCount += 1;
+                        Log(veh.Vin, "GpsInstalled", $"Phiếu {install.GpsInNo}: Gắn thiết bị GPS {line.GpsCode} ({line.Technician ?? "KTV"})");
+                    }
+
+                    // Cập nhật GpsDevice
+                    var dev = await db.GpsDevices.FirstOrDefaultAsync(d => d.OrgId == Org && d.GpsCode == line.GpsCode);
+                    if (dev != null)
+                    {
+                        dev.DeviceStatus = "Installed";
+                        dev.CurrentVin = line.Vin;
+                        dev.CurrentModel = line.Model;
+                        dev.LastGpsInNo = install.GpsInNo;
+                        dev.BatteryVolt = line.BatteryVolt;
+                        dev.LastSignalAt = now;
+                        dev.UpdatedAt = now;
+                    }
+                }
+                break;
+
+            case "cancel":
+                if (install.Status == "Approved")
+                    throw new InvalidOperationException("Không thể hủy phiếu lắp đặt đã phê duyệt hoàn tất.");
+                install.Status = "Cancelled";
+                install.CancelledBy = dto?.Actor?.Trim() ?? "User";
+                install.CancelledAt = now;
+                install.CancelReason = dto?.Reason?.Trim();
+                foreach (var l in lines) l.Status = "Cancelled";
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return install;
+    }
+
+    public async Task<object?> AddGpsInstallationLinesAsync(string gpsInNo, List<GpsInstallationItemInputDto> items)
+    {
+        gpsInNo = gpsInNo.Trim().ToUpperInvariant();
+        var install = await db.GpsInstallations.FirstOrDefaultAsync(i => i.OrgId == Org && i.GpsInNo == gpsInNo);
+        if (install is null || install.Status != "Draft") return null;
+
+        int nextIdx = await db.GpsInstallationLines.Where(l => l.OrgId == Org && l.GpsInstallationId == install.Id).Select(l => l.LineIndex).DefaultIfEmpty(0).MaxAsync() + 1;
+
+        foreach (var it in items)
+        {
+            var vin = it.Vin.Trim().ToUpperInvariant();
+            var gpsCode = it.GpsCode.Trim().ToUpperInvariant();
+            var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+            var d = await db.GpsDevices.FirstOrDefaultAsync(x => x.OrgId == Org && x.GpsCode == gpsCode);
+
+            db.GpsInstallationLines.Add(new GpsInstallationLine
+            {
+                OrgId = Org,
+                GpsInstallationId = install.Id,
+                GpsInNo = gpsInNo,
+                LineIndex = nextIdx++,
+                Vin = vin,
+                Model = v?.Model ?? "N/A",
+                EngineNo = v?.EngineNo,
+                Color = v?.Color,
+                StorageCode = it.StorageCode?.Trim() ?? v?.StorageCode,
+                GpsCode = gpsCode,
+                ImeiNo = d?.ImeiNo,
+                SimNo = d?.SimNo,
+                BatteryVolt = d?.BatteryVolt ?? 12.6m,
+                Technician = it.Technician?.Trim(),
+                InstalledAt = DateTime.Now,
+                InitialSignalStatus = string.IsNullOrWhiteSpace(it.InitialSignalStatus) ? "SignalOK" : it.InitialSignalStatus.Trim(),
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            });
+        }
+
+        install.TotalVehicleCount = await db.GpsInstallationLines.CountAsync(l => l.OrgId == Org && l.GpsInstallationId == install.Id) + items.Count;
+        await db.SaveChangesAsync();
+        return install;
+    }
+
+    public async Task<object?> UpdateGpsInstallationLineAsync(string gpsInNo, long lineId, UpdateGpsInstallationLineDto dto)
+    {
+        gpsInNo = gpsInNo.Trim().ToUpperInvariant();
+        var line = await db.GpsInstallationLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.GpsInNo == gpsInNo && l.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.GpsCode)) line.GpsCode = dto.GpsCode.Trim().ToUpperInvariant();
+        if (dto.StorageCode != null) line.StorageCode = dto.StorageCode.Trim();
+        if (dto.Technician != null) line.Technician = dto.Technician.Trim();
+        if (dto.InstalledAt.HasValue) line.InstalledAt = dto.InstalledAt.Value;
+        if (!string.IsNullOrWhiteSpace(dto.InitialSignalStatus)) line.InitialSignalStatus = dto.InitialSignalStatus.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> RemoveGpsInstallationLineAsync(string gpsInNo, long lineId)
+    {
+        gpsInNo = gpsInNo.Trim().ToUpperInvariant();
+        var install = await db.GpsInstallations.FirstOrDefaultAsync(i => i.OrgId == Org && i.GpsInNo == gpsInNo);
+        if (install is null || install.Status != "Draft") return null;
+
+        var line = await db.GpsInstallationLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.GpsInNo == gpsInNo && l.Id == lineId);
+        if (line is null) return null;
+
+        db.GpsInstallationLines.Remove(line);
+        install.TotalVehicleCount = Math.Max(0, install.TotalVehicleCount - 1);
+        await db.SaveChangesAsync();
+        return new { lineId, deleted = true };
+    }
+
+    public async Task<object?> RemoveGpsInstallationAsync(string gpsInNo)
+    {
+        gpsInNo = gpsInNo.Trim().ToUpperInvariant();
+        var install = await db.GpsInstallations.FirstOrDefaultAsync(i => i.OrgId == Org && i.GpsInNo == gpsInNo);
+        if (install is null) return null;
+        if (install.Status != "Draft")
+            throw new InvalidOperationException("Chỉ có thể xóa phiếu lắp đặt ở trạng thái Draft.");
+
+        var lines = await db.GpsInstallationLines.Where(l => l.OrgId == Org && l.GpsInstallationId == install.Id).ToListAsync();
+        db.GpsInstallationLines.RemoveRange(lines);
+        db.GpsInstallations.Remove(install);
+        await db.SaveChangesAsync();
+        return new { gpsInNo, deleted = true };
+    }
+
+    public async Task<object> CreateGpsUninstallationAsync(CreateGpsUninstallationDto dto)
+    {
+        var outNo = string.IsNullOrWhiteSpace(dto.GpsOutNo)
+            ? $"GPSOUT-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}"
+            : dto.GpsOutNo.Trim().ToUpperInvariant();
+
+        if (await db.GpsUninstallations.AnyAsync(x => x.OrgId == Org && x.GpsOutNo == outNo))
+            throw new InvalidOperationException($"Mã phiếu tháo gỡ GPS {outNo} đã tồn tại.");
+
+        var uninst = new GpsUninstallation
+        {
+            OrgId = Org,
+            GpsOutNo = outNo,
+            GpsOutNoUser = dto.GpsOutNoUser?.Trim(),
+            Reason = string.IsNullOrWhiteSpace(dto.Reason) ? "DeliveryToDealer" : dto.Reason.Trim(),
+            StorageCodeGps = string.IsNullOrWhiteSpace(dto.StorageCodeGps) ? "KHO_GPS_NINHBINH" : dto.StorageCodeGps.Trim(),
+            ReceiverName = dto.ReceiverName?.Trim(),
+            UninstallDate = dto.UninstallDate ?? DateTime.Now,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.GpsUninstallations.Add(uninst);
+        await db.SaveChangesAsync();
+
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            int idx = 1;
+            foreach (var it in dto.Items)
+            {
+                var vin = it.Vin.Trim().ToUpperInvariant();
+                var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+                var gpsCode = !string.IsNullOrWhiteSpace(it.GpsCode) ? it.GpsCode.Trim().ToUpperInvariant() : v?.GpsCode;
+
+                db.GpsUninstallationLines.Add(new GpsUninstallationLine
+                {
+                    OrgId = Org,
+                    GpsUninstallationId = uninst.Id,
+                    GpsOutNo = outNo,
+                    LineIndex = idx++,
+                    Vin = vin,
+                    Model = v?.Model ?? "N/A",
+                    GpsCode = gpsCode,
+                    OdoKm = it.OdoKm ?? v?.LastOdoKm ?? 10,
+                    DeviceCondition = string.IsNullOrWhiteSpace(it.DeviceCondition) ? "Good" : it.DeviceCondition.Trim(),
+                    Technician = it.Technician?.Trim(),
+                    UninstalledAt = DateTime.Now,
+                    Status = "Pending",
+                    Remark = it.Remark?.Trim()
+                });
+            }
+            uninst.TotalVehicleCount = dto.Items.Count;
+            await db.SaveChangesAsync();
+        }
+
+        return uninst;
+    }
+
+    public async Task<object> ListGpsUninstallationsAsync(string? status, string? reason, string? vin, string? gpsCode)
+    {
+        var query = db.GpsUninstallations.Where(u => u.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(u => u.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(reason)) query = query.Where(u => u.Reason == reason.Trim());
+
+        if (!string.IsNullOrWhiteSpace(vin) || !string.IsNullOrWhiteSpace(gpsCode))
+        {
+            var lineQuery = db.GpsUninstallationLines.Where(l => l.OrgId == Org);
+            if (!string.IsNullOrWhiteSpace(vin)) lineQuery = lineQuery.Where(l => l.Vin == vin.Trim().ToUpperInvariant());
+            if (!string.IsNullOrWhiteSpace(gpsCode)) lineQuery = lineQuery.Where(l => l.GpsCode == gpsCode.Trim().ToUpperInvariant());
+            var matchedNos = await lineQuery.Select(l => l.GpsOutNo).Distinct().ToListAsync();
+            query = query.Where(u => matchedNos.Contains(u.GpsOutNo));
+        }
+
+        var items = await query.OrderByDescending(u => u.Id).Take(500).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetGpsUninstallationAsync(string gpsOutNo)
+    {
+        gpsOutNo = gpsOutNo.Trim().ToUpperInvariant();
+        var uninst = await db.GpsUninstallations.FirstOrDefaultAsync(u => u.OrgId == Org && u.GpsOutNo == gpsOutNo);
+        if (uninst is null) return null;
+        var lines = await db.GpsUninstallationLines.Where(l => l.OrgId == Org && l.GpsUninstallationId == uninst.Id).OrderBy(l => l.LineIndex).ToListAsync();
+        return new { uninstallation = uninst, lines };
+    }
+
+    public async Task<object?> UpdateGpsUninstallationHeaderAsync(string gpsOutNo, UpdateGpsUninstallationHeaderDto dto)
+    {
+        gpsOutNo = gpsOutNo.Trim().ToUpperInvariant();
+        var uninst = await db.GpsUninstallations.FirstOrDefaultAsync(u => u.OrgId == Org && u.GpsOutNo == gpsOutNo);
+        if (uninst is null) return null;
+        if (uninst.Status != "Draft")
+            throw new InvalidOperationException($"Chỉ có thể sửa phiếu tháo gỡ ở trạng thái Draft.");
+
+        if (dto.GpsOutNoUser != null) uninst.GpsOutNoUser = dto.GpsOutNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Reason)) uninst.Reason = dto.Reason.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.StorageCodeGps)) uninst.StorageCodeGps = dto.StorageCodeGps.Trim();
+        if (dto.ReceiverName != null) uninst.ReceiverName = dto.ReceiverName.Trim();
+        if (dto.UninstallDate.HasValue) uninst.UninstallDate = dto.UninstallDate.Value;
+        if (dto.Remark != null) uninst.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return uninst;
+    }
+
+    public async Task<object?> GpsUninstallationTransitionAsync(string gpsOutNo, string action, GpsUninstallationTransitionDto? dto)
+    {
+        gpsOutNo = gpsOutNo.Trim().ToUpperInvariant();
+        var uninst = await db.GpsUninstallations.FirstOrDefaultAsync(u => u.OrgId == Org && u.GpsOutNo == gpsOutNo);
+        if (uninst is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var lines = await db.GpsUninstallationLines.Where(l => l.OrgId == Org && l.GpsUninstallationId == uninst.Id).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+                if (uninst.Status != "Draft") return null;
+                uninst.Status = "Submitted";
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Submitted";
+                break;
+
+            case "approve":
+            case "complete":
+            case "finish":
+                if (uninst.Status is not ("Draft" or "Submitted")) return null;
+                uninst.Status = "Approved";
+                uninst.ApprovedBy = dto?.Actor?.Trim() ?? "StorageManager";
+                uninst.ApprovedAt = now;
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Completed";
+                    line.UninstalledAt = now;
+
+                    // Cập nhật Vehicle
+                    var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == line.Vin);
+                    if (veh != null)
+                    {
+                        veh.IsGpsInstalled = false;
+                        veh.GpsCode = null;
+                        veh.GpsUninstallDate = now;
+                        Log(veh.Vin, "GpsUninstalled", $"Phiếu {uninst.GpsOutNo}: Tháo thiết bị GPS {line.GpsCode} ({line.DeviceCondition})");
+                    }
+
+                    // Cập nhật GpsDevice
+                    if (!string.IsNullOrWhiteSpace(line.GpsCode))
+                    {
+                        var dev = await db.GpsDevices.FirstOrDefaultAsync(d => d.OrgId == Org && d.GpsCode == line.GpsCode);
+                        if (dev != null)
+                        {
+                            dev.CurrentVin = null;
+                            dev.CurrentModel = null;
+                            dev.LastGpsOutNo = uninst.GpsOutNo;
+                            dev.DeviceStatus = line.DeviceCondition.Equals("Good", StringComparison.OrdinalIgnoreCase)
+                                ? "InStock"
+                                : (line.DeviceCondition.Equals("Faulty", StringComparison.OrdinalIgnoreCase) ? "ClaimFaulty" : "InStock");
+                            dev.StorageCodeGps = uninst.StorageCodeGps;
+                            dev.UpdatedAt = now;
+                        }
+                    }
+                }
+                break;
+
+            case "cancel":
+                if (uninst.Status == "Approved")
+                    throw new InvalidOperationException("Không thể hủy phiếu tháo gỡ đã phê duyệt hoàn tất.");
+                uninst.Status = "Cancelled";
+                uninst.CancelledBy = dto?.Actor?.Trim() ?? "User";
+                uninst.CancelledAt = now;
+                uninst.CancelReason = dto?.Reason?.Trim();
+                foreach (var l in lines) l.Status = "Cancelled";
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return uninst;
+    }
+
+    public async Task<object?> AddGpsUninstallationLinesAsync(string gpsOutNo, List<GpsUninstallationItemInputDto> items)
+    {
+        gpsOutNo = gpsOutNo.Trim().ToUpperInvariant();
+        var uninst = await db.GpsUninstallations.FirstOrDefaultAsync(u => u.OrgId == Org && u.GpsOutNo == gpsOutNo);
+        if (uninst is null || uninst.Status != "Draft") return null;
+
+        int nextIdx = await db.GpsUninstallationLines.Where(l => l.OrgId == Org && l.GpsUninstallationId == uninst.Id).Select(l => l.LineIndex).DefaultIfEmpty(0).MaxAsync() + 1;
+
+        foreach (var it in items)
+        {
+            var vin = it.Vin.Trim().ToUpperInvariant();
+            var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+            var gpsCode = !string.IsNullOrWhiteSpace(it.GpsCode) ? it.GpsCode.Trim().ToUpperInvariant() : v?.GpsCode;
+
+            db.GpsUninstallationLines.Add(new GpsUninstallationLine
+            {
+                OrgId = Org,
+                GpsUninstallationId = uninst.Id,
+                GpsOutNo = gpsOutNo,
+                LineIndex = nextIdx++,
+                Vin = vin,
+                Model = v?.Model ?? "N/A",
+                GpsCode = gpsCode,
+                OdoKm = it.OdoKm ?? v?.LastOdoKm ?? 10,
+                DeviceCondition = string.IsNullOrWhiteSpace(it.DeviceCondition) ? "Good" : it.DeviceCondition.Trim(),
+                Technician = it.Technician?.Trim(),
+                UninstalledAt = DateTime.Now,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            });
+        }
+
+        uninst.TotalVehicleCount = await db.GpsUninstallationLines.CountAsync(l => l.OrgId == Org && l.GpsUninstallationId == uninst.Id) + items.Count;
+        await db.SaveChangesAsync();
+        return uninst;
+    }
+
+    public async Task<object?> UpdateGpsUninstallationLineAsync(string gpsOutNo, long lineId, UpdateGpsUninstallationLineDto dto)
+    {
+        gpsOutNo = gpsOutNo.Trim().ToUpperInvariant();
+        var line = await db.GpsUninstallationLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.GpsOutNo == gpsOutNo && l.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.GpsCode)) line.GpsCode = dto.GpsCode.Trim().ToUpperInvariant();
+        if (dto.OdoKm.HasValue) line.OdoKm = dto.OdoKm.Value;
+        if (!string.IsNullOrWhiteSpace(dto.DeviceCondition)) line.DeviceCondition = dto.DeviceCondition.Trim();
+        if (dto.Technician != null) line.Technician = dto.Technician.Trim();
+        if (dto.UninstalledAt.HasValue) line.UninstalledAt = dto.UninstalledAt.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> RemoveGpsUninstallationLineAsync(string gpsOutNo, long lineId)
+    {
+        gpsOutNo = gpsOutNo.Trim().ToUpperInvariant();
+        var uninst = await db.GpsUninstallations.FirstOrDefaultAsync(u => u.OrgId == Org && u.GpsOutNo == gpsOutNo);
+        if (uninst is null || uninst.Status != "Draft") return null;
+
+        var line = await db.GpsUninstallationLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.GpsOutNo == gpsOutNo && l.Id == lineId);
+        if (line is null) return null;
+
+        db.GpsUninstallationLines.Remove(line);
+        uninst.TotalVehicleCount = Math.Max(0, uninst.TotalVehicleCount - 1);
+        await db.SaveChangesAsync();
+        return new { lineId, deleted = true };
+    }
+
+    public async Task<object?> RemoveGpsUninstallationAsync(string gpsOutNo)
+    {
+        gpsOutNo = gpsOutNo.Trim().ToUpperInvariant();
+        var uninst = await db.GpsUninstallations.FirstOrDefaultAsync(u => u.OrgId == Org && u.GpsOutNo == gpsOutNo);
+        if (uninst is null) return null;
+        if (uninst.Status != "Draft")
+            throw new InvalidOperationException("Chỉ có thể xóa phiếu tháo gỡ ở trạng thái Draft.");
+
+        var lines = await db.GpsUninstallationLines.Where(l => l.OrgId == Org && l.GpsUninstallationId == uninst.Id).ToListAsync();
+        db.GpsUninstallationLines.RemoveRange(lines);
+        db.GpsUninstallations.Remove(uninst);
+        await db.SaveChangesAsync();
+        return new { gpsOutNo, deleted = true };
+    }
+
+    public async Task<object> CreateGpsClaimAsync(CreateGpsClaimDto dto)
+    {
+        var claimNo = string.IsNullOrWhiteSpace(dto.GpsClaimNo)
+            ? $"CLM-GPS-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}"
+            : dto.GpsClaimNo.Trim().ToUpperInvariant();
+
+        if (await db.GpsClaims.AnyAsync(c => c.OrgId == Org && c.GpsClaimNo == claimNo))
+            throw new InvalidOperationException($"Mã phiếu yêu cầu bảo hành GPS {claimNo} đã tồn tại.");
+
+        var gpsCode = dto.GpsCode.Trim().ToUpperInvariant();
+        var dev = await db.GpsDevices.FirstOrDefaultAsync(d => d.OrgId == Org && d.GpsCode == gpsCode);
+
+        var claim = new GpsClaim
+        {
+            OrgId = Org,
+            GpsClaimNo = claimNo,
+            GpsClaimNoUser = dto.GpsClaimNoUser?.Trim(),
+            GpsCode = gpsCode,
+            ImeiNo = dev?.ImeiNo,
+            SimNo = dev?.SimNo,
+            VendorCode = string.IsNullOrWhiteSpace(dto.VendorCode) ? "VELOCA" : dto.VendorCode.Trim().ToUpperInvariant(),
+            VendorName = dto.VendorName?.Trim() ?? "Công ty CP Định vị Veloca",
+            FaultType = string.IsNullOrWhiteSpace(dto.FaultType) ? "PowerLoss" : dto.FaultType.Trim(),
+            FaultDescription = dto.FaultDescription?.Trim(),
+            Vin = dto.Vin?.Trim().ToUpperInvariant(),
+            RepairCost = dto.RepairCost ?? 0,
+            ReplacementGpsCode = dto.ReplacementGpsCode?.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.GpsClaims.Add(claim);
+
+        if (dev != null)
+        {
+            dev.DeviceStatus = "ClaimFaulty";
+            dev.LastClaimNo = claimNo;
+            dev.UpdatedAt = DateTime.Now;
+        }
+
+        await db.SaveChangesAsync();
+        return claim;
+    }
+
+    public async Task<object> ListGpsClaimsAsync(string? status, string? vendor, string? faultType, string? gpsCode, string? vin)
+    {
+        var query = db.GpsClaims.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(c => c.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(vendor)) query = query.Where(c => c.VendorCode == vendor.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(faultType)) query = query.Where(c => c.FaultType == faultType.Trim());
+        if (!string.IsNullOrWhiteSpace(gpsCode)) query = query.Where(c => c.GpsCode == gpsCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(vin)) query = query.Where(c => c.Vin == vin.Trim().ToUpperInvariant());
+
+        var items = await query.OrderByDescending(c => c.Id).Take(500).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetGpsClaimAsync(string gpsClaimNo)
+    {
+        gpsClaimNo = gpsClaimNo.Trim().ToUpperInvariant();
+        return await db.GpsClaims.FirstOrDefaultAsync(c => c.OrgId == Org && c.GpsClaimNo == gpsClaimNo);
+    }
+
+    public async Task<object?> UpdateGpsClaimAsync(string gpsClaimNo, UpdateGpsClaimDto dto)
+    {
+        gpsClaimNo = gpsClaimNo.Trim().ToUpperInvariant();
+        var claim = await db.GpsClaims.FirstOrDefaultAsync(c => c.OrgId == Org && c.GpsClaimNo == gpsClaimNo);
+        if (claim is null) return null;
+        if (claim.Status != "Draft")
+            throw new InvalidOperationException("Chỉ có thể sửa phiếu bảo hành ở trạng thái Draft.");
+
+        if (dto.GpsClaimNoUser != null) claim.GpsClaimNoUser = dto.GpsClaimNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.VendorCode)) claim.VendorCode = dto.VendorCode.Trim().ToUpperInvariant();
+        if (dto.VendorName != null) claim.VendorName = dto.VendorName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.FaultType)) claim.FaultType = dto.FaultType.Trim();
+        if (dto.FaultDescription != null) claim.FaultDescription = dto.FaultDescription.Trim();
+        if (dto.Vin != null) claim.Vin = dto.Vin.Trim().ToUpperInvariant();
+        if (dto.RepairCost.HasValue) claim.RepairCost = dto.RepairCost.Value;
+        if (dto.ReplacementGpsCode != null) claim.ReplacementGpsCode = dto.ReplacementGpsCode.Trim().ToUpperInvariant();
+        if (dto.Remark != null) claim.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return claim;
+    }
+
+    public async Task<object?> GpsClaimTransitionAsync(string gpsClaimNo, string action, GpsClaimTransitionDto? dto)
+    {
+        gpsClaimNo = gpsClaimNo.Trim().ToUpperInvariant();
+        var claim = await db.GpsClaims.FirstOrDefaultAsync(c => c.OrgId == Org && c.GpsClaimNo == gpsClaimNo);
+        if (claim is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+                if (claim.Status != "Draft") return null;
+                claim.Status = "Submitted";
+                claim.SubmittedBy = dto?.Actor?.Trim() ?? "User";
+                claim.SubmittedAt = now;
+                break;
+
+            case "send_to_vendor":
+            case "send":
+                if (claim.Status is not ("Draft" or "Submitted")) return null;
+                claim.Status = "SentToVendor";
+                claim.SentBy = dto?.Actor?.Trim() ?? "User";
+                claim.SentAt = now;
+                break;
+
+            case "repair":
+                if (claim.Status is not ("Submitted" or "SentToVendor")) return null;
+                claim.Status = "Repaired";
+                claim.RepairedBy = dto?.Actor?.Trim() ?? "VendorTech";
+                claim.RepairedAt = now;
+                if (dto?.RepairCost.HasValue == true) claim.RepairCost = dto.RepairCost.Value;
+                break;
+
+            case "replace":
+                if (claim.Status is not ("Submitted" or "SentToVendor")) return null;
+                claim.Status = "Replaced";
+                claim.RepairedBy = dto?.Actor?.Trim() ?? "VendorTech";
+                claim.RepairedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.ReplacementGpsCode)) claim.ReplacementGpsCode = dto.ReplacementGpsCode.Trim().ToUpperInvariant();
+                break;
+
+            case "receive":
+            case "settle":
+            case "complete":
+                if (claim.Status is not ("Repaired" or "Replaced" or "SentToVendor")) return null;
+                claim.Status = "Settled";
+                claim.ReceivedBy = dto?.Actor?.Trim() ?? "Receiver";
+                claim.ReceivedAt = now;
+
+                var targetCode = !string.IsNullOrWhiteSpace(claim.ReplacementGpsCode) ? claim.ReplacementGpsCode : claim.GpsCode;
+                var dev = await db.GpsDevices.FirstOrDefaultAsync(d => d.OrgId == Org && d.GpsCode == targetCode);
+                if (dev != null)
+                {
+                    dev.DeviceStatus = "InStock";
+                    dev.LastClaimNo = claim.GpsClaimNo;
+                    dev.UpdatedAt = now;
+                }
+                break;
+
+            case "reject":
+                claim.Status = "Rejected";
+                claim.RejectedBy = dto?.Actor?.Trim() ?? "Vendor";
+                claim.RejectedAt = now;
+                claim.RejectReason = dto?.Reason?.Trim();
+                break;
+
+            case "cancel":
+                claim.Status = "Cancelled";
+                claim.CancelledBy = dto?.Actor?.Trim() ?? "User";
+                claim.CancelledAt = now;
+                claim.CancelReason = dto?.Reason?.Trim();
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return claim;
+    }
+
+    public async Task<object?> RemoveGpsClaimAsync(string gpsClaimNo)
+    {
+        gpsClaimNo = gpsClaimNo.Trim().ToUpperInvariant();
+        var claim = await db.GpsClaims.FirstOrDefaultAsync(c => c.OrgId == Org && c.GpsClaimNo == gpsClaimNo);
+        if (claim is null) return null;
+        if (claim.Status != "Draft")
+            throw new InvalidOperationException("Chỉ có thể xóa phiếu bảo hành ở trạng thái Draft.");
+
+        db.GpsClaims.Remove(claim);
+        await db.SaveChangesAsync();
+        return new { gpsClaimNo, deleted = true };
+    }
+
+    public async Task<object?> UpdateGpsLocationAsync(string gpsCode, UpdateGpsLocationDto dto)
+    {
+        gpsCode = gpsCode.Trim().ToUpperInvariant();
+        var dev = await db.GpsDevices.FirstOrDefaultAsync(d => d.OrgId == Org && d.GpsCode == gpsCode);
+        if (dev is null) return null;
+
+        var now = dto.RecordedAt ?? DateTime.Now;
+        var vin = dev.CurrentVin;
+
+        var log = new GpsLocationLog
+        {
+            OrgId = Org,
+            GpsCode = gpsCode,
+            Vin = vin,
+            Latitude = dto.Latitude,
+            Longitude = dto.Longitude,
+            SpeedKmH = dto.SpeedKmH ?? 0,
+            BatteryVolt = dto.BatteryVolt ?? dev.BatteryVolt,
+            EngineStatus = dto.EngineStatus?.Trim() ?? "Off",
+            Address = dto.Address?.Trim(),
+            IsInGeofence = dto.IsInGeofence ?? true,
+            RecordedAt = now
+        };
+        db.GpsLocationLogs.Add(log);
+
+        dev.Latitude = dto.Latitude;
+        dev.Longitude = dto.Longitude;
+        dev.SpeedKmH = dto.SpeedKmH ?? 0;
+        if (dto.BatteryVolt.HasValue) dev.BatteryVolt = dto.BatteryVolt.Value;
+        dev.IsInGeofence = dto.IsInGeofence ?? true;
+        dev.CurrentLocation = dto.Address?.Trim() ?? dev.CurrentLocation;
+        dev.LastSignalAt = now;
+        dev.UpdatedAt = now;
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+            if (veh != null)
+            {
+                veh.LastGpsLatitude = dto.Latitude;
+                veh.LastGpsLongitude = dto.Longitude;
+                veh.LastGpsSpeed = dto.SpeedKmH ?? 0;
+                if (dto.BatteryVolt.HasValue) veh.LastGpsBatteryVolt = dto.BatteryVolt.Value;
+                veh.LastGpsAddress = dto.Address?.Trim() ?? veh.LastGpsAddress;
+                veh.LastGpsSignalTime = now;
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return log;
+    }
+
+    public async Task<object?> GetVinGpsLocationAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        GpsDevice? dev = null;
+        if (!string.IsNullOrWhiteSpace(veh.GpsCode))
+            dev = await db.GpsDevices.FirstOrDefaultAsync(d => d.OrgId == Org && d.GpsCode == veh.GpsCode);
+
+        var recentLogs = await db.GpsLocationLogs
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.RecordedAt)
+            .Take(30)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.Color,
+                veh.EngineNo,
+                veh.StorageCode,
+                veh.IsGpsInstalled,
+                veh.GpsCode,
+                veh.GpsInstallDate,
+                veh.LastGpsLatitude,
+                veh.LastGpsLongitude,
+                veh.LastGpsSpeed,
+                veh.LastGpsBatteryVolt,
+                veh.LastGpsAddress,
+                veh.LastGpsSignalTime
+            },
+            device = dev,
+            recentLogs
+        };
+    }
+
+    public async Task<object?> GetVehicleGpsHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var installLines = await db.GpsInstallationLines.Where(l => l.OrgId == Org && l.Vin == vin).OrderByDescending(l => l.Id).ToListAsync();
+        var uninstLines = await db.GpsUninstallationLines.Where(l => l.OrgId == Org && l.Vin == vin).OrderByDescending(l => l.Id).ToListAsync();
+        var events = await db.Events.Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind == "GpsInstalled" || e.Kind == "GpsUninstalled")).OrderByDescending(e => e.At).ToListAsync();
+        var logs = await db.GpsLocationLogs.Where(l => l.OrgId == Org && l.Vin == vin).OrderByDescending(l => l.RecordedAt).Take(50).ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.EngineNo,
+                veh.Color,
+                veh.IsGpsInstalled,
+                veh.GpsCode,
+                veh.GpsInstallDate,
+                veh.GpsUninstallDate,
+                veh.GpsDeviceCount
+            },
+            installations = installLines,
+            uninstallations = uninstLines,
+            events,
+            recentLogs = logs
+        };
+    }
+
+    public async Task<object> GetGpsFleetSummaryAsync(string? provider, string? storageCode)
+    {
+        var query = db.GpsDevices.Where(d => d.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(provider)) query = query.Where(d => d.Provider == provider.Trim());
+        if (!string.IsNullOrWhiteSpace(storageCode)) query = query.Where(d => d.StorageCodeGps == storageCode.Trim());
+
+        var devices = await query.ToListAsync();
+        var threshold24h = DateTime.Now.AddHours(-24);
+
+        int totalDevices = devices.Count;
+        int totalInStock = devices.Count(d => d.DeviceStatus == "InStock");
+        int totalInstalled = devices.Count(d => d.DeviceStatus == "Installed");
+        int totalInTransit = devices.Count(d => d.DeviceStatus == "InTransit");
+        int totalClaimFaulty = devices.Count(d => d.DeviceStatus == "ClaimFaulty");
+        int totalDecommissioned = devices.Count(d => d.DeviceStatus == "Decommissioned");
+
+        int totalVehiclesWithGps = await db.Vehicles.CountAsync(v => v.OrgId == Org && v.IsGpsInstalled);
+        int totalActiveSignals24h = devices.Count(d => d.LastSignalAt.HasValue && d.LastSignalAt.Value >= threshold24h);
+        int totalGeofenceAlerts = devices.Count(d => !d.IsInGeofence);
+
+        var byProvider = devices
+            .GroupBy(d => d.Provider)
+            .Select(g => new GpsProviderStatsDto(
+                g.Key,
+                g.Count(),
+                g.Count(x => x.DeviceStatus == "Installed"),
+                g.Count(x => x.DeviceStatus == "InStock")
+            ))
+            .OrderByDescending(x => x.TotalCount)
+            .ToList();
+
+        var byStorage = devices
+            .GroupBy(d => d.StorageCodeGps)
+            .Select(g => new GpsStorageStatsDto(
+                g.Key,
+                g.Count(),
+                g.Count(x => x.DeviceStatus == "InStock")
+            ))
+            .OrderByDescending(x => x.TotalCount)
+            .ToList();
+
+        return new GpsFleetSummaryDto(
+            totalDevices,
+            totalInStock,
+            totalInstalled,
+            totalInTransit,
+            totalClaimFaulty,
+            totalDecommissioned,
+            totalVehiclesWithGps,
+            totalActiveSignals24h,
+            totalGeofenceAlerts,
+            byProvider,
+            byStorage
         );
     }
 }

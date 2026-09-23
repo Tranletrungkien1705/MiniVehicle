@@ -90,6 +90,17 @@ public sealed class Vehicle
     public string? LastPolicyCode { get; set; }       // Mã chính sách hỗ trợ bán lẻ gần nhất (SPSRCode)
     public DateTime? LastPolicyDate { get; set; }     // Ngày hưởng chính sách hỗ trợ gần nhất
     public int PolicySupportCount { get; set; } = 0;   // Số lần đã được duyệt hưởng chính sách hỗ trợ bán lẻ
+    public bool IsGpsInstalled { get; set; } = false; // Đang gắn thiết bị định vị GPS giám sát (BizHTC.StorageFG.Sto_StoBalanceGPS)
+    public string? GpsCode { get; set; }             // Mã thiết bị GPS đang gắn trên xe (GPSDvNo / GPSCode)
+    public DateTime? GpsInstallDate { get; set; }    // Ngày lắp đặt thiết bị GPS gần nhất
+    public DateTime? GpsUninstallDate { get; set; }  // Ngày tháo gỡ thiết bị GPS gần nhất
+    public decimal? LastGpsLatitude { get; set; }    // Tọa độ vĩ độ GPS hiện tại
+    public decimal? LastGpsLongitude { get; set; }   // Tọa độ kinh độ GPS hiện tại
+    public string? LastGpsAddress { get; set; }      // Địa chỉ / vị trí GPS ghi nhận gần nhất
+    public decimal? LastGpsSpeed { get; set; }       // Vận tốc di chuyển gần nhất (km/h)
+    public decimal? LastGpsBatteryVolt { get; set; } // Điện áp nguồn thiết bị GPS / ắc quy xe (V)
+    public DateTime? LastGpsSignalTime { get; set; } // Thời điểm cập nhật tín hiệu GPS gần nhất
+    public int GpsDeviceCount { get; set; } = 0;     // Tổng số lần xe đã từng gắn / đổi thiết bị định vị
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -2896,5 +2907,387 @@ public sealed record VehiclePolicySupportInfoDto(
     int PolicySupportCount,
     List<SalesPolicySupport> Supports
 );
+
+/// <summary>Thiết bị định vị GPS giám sát vị trí xe tồn kho &amp; vận chuyển (BizHTC.StorageFG.Sto_StoBalanceGPS / GpsDevice): quản lý danh mục thiết bị định vị, số SIM, IMEI, nhà cung cấp, dung lượng pin và tọa độ thời gian thực.</summary>
+public sealed class GpsDevice
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string GpsCode { get; set; } = "";             // Mã định danh thiết bị GPS (GPSDvNo: GPS-2026-0001, DEV-...)
+    public string? GpsBoxNo { get; set; }                 // Mã lô / thùng thiết bị (GPSBoxNo)
+    public string? SerialNo { get; set; }                 // Số sê-ri nhà sản xuất
+    public string? ImeiNo { get; set; }                   // Số IMEI viễn thông
+    public string? SimNo { get; set; }                    // Số thuê bao SIM 4G
+    public string Provider { get; set; } = "Viettel";     // Nhà mạng / đối tác cung cấp: Viettel, Veloca, VNPT, MobiFone
+    public string ModelName { get; set; } = "OBD-4G";     // Chủng loại: OBD-4G, VT-03D, GT06N, AT4, Solar-GPS
+    public string StorageCodeGps { get; set; } = "KHO_GPS_NINHBINH"; // Kho lưu thiết bị: KHO_GPS_NINHBINH, KHO_GPS_HN, KHO_GPS_HCM
+    public string DeviceStatus { get; set; } = "InStock"; // InStock (Trong kho sẵn sàng lắp), Installed (Đang gắn trên xe), InTransit (Đang vận chuyển), ClaimFaulty (Đang bảo hành hỏng lỗi), Decommissioned (Đã thanh lý)
+    public decimal BatteryVolt { get; set; } = 12.6m;     // Điện áp pin (V)
+    public int BatteryPercent { get; set; } = 100;        // % dung lượng pin (0 - 100%)
+    public string? CurrentVin { get; set; }               // Số khung xe VIN đang gắn thiết bị
+    public string? CurrentModel { get; set; }             // Dòng xe đang gắn
+    public string? CurrentLocation { get; set; }          // Vị trí / địa chỉ hiện tại
+    public decimal? Latitude { get; set; }                // Vĩ độ GPS hiện tại
+    public decimal? Longitude { get; set; }               // Kinh độ GPS hiện tại
+    public decimal SpeedKmH { get; set; } = 0;            // Vận tốc di chuyển hiện tại (km/h)
+    public bool IsInGeofence { get; set; } = true;        // Nằm trong bãi đỗ / lộ trình cho phép (Geofence)
+    public DateTime? LastSignalAt { get; set; }           // Thời điểm nhận tín hiệu định vị cuối cùng
+    public string? LastGpsInNo { get; set; }              // Mã phiếu lắp đặt gần nhất (StoF_GPSIn)
+    public string? LastGpsOutNo { get; set; }             // Mã phiếu tháo gỡ gần nhất (StoF_GPSOut)
+    public string? LastClaimNo { get; set; }              // Mã phiếu claim bảo hành gần nhất (GPSF_GPSClaim)
+    public string? Remark { get; set; }                   // Ghi chú thiết bị
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+}
+
+/// <summary>Lệnh Lắp đặt &amp; Gắn thiết bị định vị GPS vào xe ô tô VIN (BizHTC.StorageFG.StoF_GPSIn / GpsInstallation): quy trình xuất kho và kích hoạt gắn thiết bị định vị GPS lên xe tồn bãi nhà máy OEM hoặc xe chuẩn bị vận chuyển.</summary>
+public sealed class GpsInstallation
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string GpsInNo { get; set; } = "";             // Mã phiếu lắp đặt GPS (GPSIN-2026-03-0001, SF_GPSInNo)
+    public string? GpsInNoUser { get; set; }            // Mã số phiếu tham chiếu nội bộ
+    public string GpsInType { get; set; } = "First_In";   // Loại lắp đặt: First_In (Lắp mới xe xuất xưởng), Re_In (Lắp lại xe tồn kho), Replacement (Lắp thay thế lỗi)
+    public string StorageCodeGps { get; set; } = "KHO_GPS_NINHBINH"; // Kho xuất thiết bị GPS
+    public DateTime InstallationDate { get; set; } = DateTime.Now; // Ngày thực hiện lắp đặt
+    public int TotalVehicleCount { get; set; } = 0;       // Tổng số lượng xe lắp đặt trong đợt
+    public string Status { get; set; } = "Draft";         // Draft → Submitted → Approved / Installed (hoặc Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú lệnh lắp đặt
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }               // Quản đốc kỹ thuật / Trưởng kho duyệt
+    public DateTime? ApprovedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe &amp; thiết bị trong Phiếu lắp đặt GPS (BizHTC.StorageFG.StoF_GPSInDtl / GpsInstallationLine): số khung VIN, mã thiết bị GPS, thông tin SIM/IMEI, người lắp và kiểm tra tín hiệu ban đầu.</summary>
+public sealed class GpsInstallationLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long GpsInstallationId { get; set; }
+    public string GpsInNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;               // Thứ tự dòng
+    public string Vin { get; set; } = "";                 // Số khung VIN được gắn GPS
+    public string Model { get; set; } = "";               // Dòng xe
+    public string? EngineNo { get; set; }                 // Số máy
+    public string? Color { get; set; }                    // Màu sơn
+    public string? StorageCode { get; set; }              // Vị trí bãi ô đỗ của xe (YARD-A1...)
+    public string GpsCode { get; set; } = "";             // Mã thiết bị GPS được lắp (GPSDvNo)
+    public string? ImeiNo { get; set; }                   // IMEI chip
+    public string? SimNo { get; set; }                    // Số SIM
+    public decimal BatteryVolt { get; set; } = 12.6m;     // Điện áp pin lúc lắp (V)
+    public string? Technician { get; set; }               // Kỹ thuật viên thực hiện lắp đặt
+    public DateTime? InstalledAt { get; set; }            // Thời điểm hoàn tất lắp đặt
+    public string InitialSignalStatus { get; set; } = "SignalOK"; // Trạng thái tín hiệu: SignalOK, GPSLocked, WeakSignal, Offline
+    public string Status { get; set; } = "Pending";       // Pending → Approved / Installed (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Lệnh Tháo gỡ &amp; Thu hồi thiết bị định vị GPS từ xe VIN (BizHTC.StorageFG.StoF_GPSOut / GpsUninstallation): quy trình tháo gỡ thiết bị GPS khi xuất kho bàn giao xe cho Đại lý/khách hàng hoặc bảo dưỡng xe.</summary>
+public sealed class GpsUninstallation
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string GpsOutNo { get; set; } = "";            // Mã phiếu tháo gỡ thiết bị (GPSOUT-2026-03-0001, SF_GPSOutNo)
+    public string? GpsOutNoUser { get; set; }           // Mã số phiếu tham chiếu nội bộ
+    public string Reason { get; set; } = "DeliveryToDealer"; // Lý do tháo gỡ: DeliveryToDealer (Giao xe đại lý), CustomerDelivery (Giao xe khách), FaultyReplacement (Tháo thiết bị hỏng), StorageMaintenance (Bảo dưỡng), Decommission (Thanh lý xe)
+    public string StorageCodeGps { get; set; } = "KHO_GPS_NINHBINH"; // Kho tiếp nhận lại thiết bị thu hồi
+    public string? ReceiverName { get; set; }             // Thủ kho / Cán bộ tiếp nhận thiết bị
+    public DateTime UninstallDate { get; set; } = DateTime.Now; // Ngày tháo gỡ
+    public int TotalVehicleCount { get; set; } = 0;       // Tổng số lượng thiết bị thu hồi trong đợt
+    public string Status { get; set; } = "Draft";         // Draft → Submitted → Approved / Completed (hoặc Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú lệnh tháo gỡ
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }               // Quản đốc kỹ thuật / Trưởng kho duyệt thu hồi
+    public DateTime? ApprovedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết tháo gỡ thiết bị GPS từ xe VIN (BizHTC.StorageFG.StoF_GPSOutDtl / GpsUninstallationLine): số khung VIN, mã thiết bị, ODO lúc tháo và tình trạng kỹ thuật của thiết bị khi thu hồi.</summary>
+public sealed class GpsUninstallationLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long GpsUninstallationId { get; set; }
+    public string GpsOutNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;               // Thứ tự dòng
+    public string Vin { get; set; } = "";                 // Số khung VIN được tháo GPS
+    public string Model { get; set; } = "";               // Dòng xe
+    public string? GpsCode { get; set; }                  // Mã thiết bị GPS tháo ra
+    public int? OdoKm { get; set; }                       // Số km ODO xe tại thời điểm tháo
+    public string DeviceCondition { get; set; } = "Good"; // Tình trạng thiết bị: Good (Tốt - Tái sử dụng InStock), Faulty (Hỏng - Chuyển Claim bảo hành), LowBattery (Hết pin - Cần nạp điện)
+    public string? Technician { get; set; }               // Kỹ thuật viên thực hiện tháo gỡ
+    public DateTime? UninstalledAt { get; set; }          // Thời điểm hoàn tất tháo
+    public string Status { get; set; } = "Pending";       // Pending → Approved / Completed (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+/// <summary>Phiếu Yêu cầu Bảo hành &amp; Sửa chữa Đổi trả Thiết bị GPS hỏng lỗi (BizHTC.StorageFG.GPSF_GPSClaim / GpsClaim): quy trình gửi thiết bị định vị hư hỏng sang đối tác nhà cung cấp bảo hành, sửa chữa hoặc đổi mới.</summary>
+public sealed class GpsClaim
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string GpsClaimNo { get; set; } = "";          // Mã phiếu claim bảo hành (CLM-GPS-2026-0001, GPSClaimNo)
+    public string? GpsClaimNoUser { get; set; }         // Số tham chiếu nội bộ
+    public string GpsCode { get; set; } = "";             // Mã thiết bị GPS bị hư hỏng (GPSDvNo)
+    public string? ImeiNo { get; set; }                   // Số IMEI của thiết bị
+    public string? SimNo { get; set; }                    // Số SIM của thiết bị
+    public string VendorCode { get; set; } = "VELOCA";    // Nhà cung cấp thiết bị: VELOCA, VIETTEL_TELECOM, VNPT_TRACKING
+    public string? VendorName { get; set; }               // Tên nhà cung cấp
+    public string FaultType { get; set; } = "PowerLoss";  // Loại sự cố: PowerLoss (Mất nguồn), SimCardError (Lỗi SIM/mất sóng), GpsSignalLoss (Mất tín hiệu GPS), AntennaDefect (Hỏng ăng ten), PhysicalDamage (Vỡ vỏ/vào nước), BatteryFailure (Chai pin)
+    public string? FaultDescription { get; set; }         // Mô tả chi tiết hiện tượng hư hỏng
+    public string? Vin { get; set; }                      // Số khung VIN phát hiện lỗi (nếu có)
+    public decimal RepairCost { get; set; } = 0;          // Chi phí sửa chữa phát sinh (VNĐ)
+    public string? ReplacementGpsCode { get; set; }       // Mã thiết bị mới đổi trả (nếu đổi mới 1-1)
+    public string Status { get; set; } = "Draft";         // Draft → Submitted → SentToVendor → Repaired / Replaced → Received / Settled (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú hồ sơ bảo hành
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? SubmittedBy { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public string? SentBy { get; set; }                   // Người gửi thiết bị sang NCC
+    public DateTime? SentAt { get; set; }
+    public string? RepairedBy { get; set; }               // Kỹ sư NCC xác nhận sửa xong/đổi mới
+    public DateTime? RepairedAt { get; set; }
+    public string? ReceivedBy { get; set; }               // Thủ kho OEM nhận lại thiết bị về kho
+    public DateTime? ReceivedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Nhật ký Tọa độ &amp; Vị trí Định vị GPS của xe VIN / Thiết bị (GpsLocationLog): lưu vết lịch sử di chuyển, cảnh báo địa giới bãi xe và điện áp bình.</summary>
+public sealed class GpsLocationLog
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string GpsCode { get; set; } = "";             // Mã thiết bị định vị
+    public string? Vin { get; set; }                      // Số khung xe VIN (nếu đang gắn trên xe)
+    public decimal Latitude { get; set; }                 // Vĩ độ GPS
+    public decimal Longitude { get; set; }                // Kinh độ GPS
+    public decimal SpeedKmH { get; set; } = 0;            // Vận tốc di chuyển (km/h)
+    public decimal BatteryVolt { get; set; } = 12.6m;     // Điện áp ắc quy / pin (V)
+    public string? EngineStatus { get; set; } = "Off";    // Trạng thái động cơ: On, Off, Idle
+    public string? Address { get; set; }                  // Tên địa chỉ / vị trí bãi đỗ
+    public bool IsInGeofence { get; set; } = true;        // Trong khu vực bãi đỗ hợp lệ
+    public DateTime RecordedAt { get; set; } = DateTime.Now; // Thời điểm ghi nhận tọa độ
+}
+
+// ===== DTOs cho Quản lý Thiết bị Định vị GPS & Giám sát Vị trí Xe (BizHTC.StorageFG / Sto_StoBalanceGPS, StoF_GPSIn, StoF_GPSOut, GPSF_GPSClaim) =====
+
+public sealed record RegisterGpsDeviceDto(
+    string GpsCode,
+    string? GpsBoxNo,
+    string? SerialNo,
+    string? ImeiNo,
+    string? SimNo,
+    string? Provider,
+    string? ModelName,
+    string? StorageCodeGps,
+    decimal? BatteryVolt,
+    int? BatteryPercent,
+    string? Remark
+);
+
+public sealed record UpdateGpsDeviceDto(
+    string? GpsBoxNo,
+    string? SerialNo,
+    string? ImeiNo,
+    string? SimNo,
+    string? Provider,
+    string? ModelName,
+    string? StorageCodeGps,
+    string? DeviceStatus,
+    decimal? BatteryVolt,
+    int? BatteryPercent,
+    string? Remark
+);
+
+public sealed record CreateGpsInstallationDto(
+    string? GpsInNo,
+    string? GpsInNoUser,
+    string? GpsInType,
+    string? StorageCodeGps,
+    DateTime? InstallationDate,
+    string? Remark,
+    string? CreatedBy,
+    List<GpsInstallationItemInputDto>? Items
+);
+
+public sealed record GpsInstallationItemInputDto(
+    string Vin,
+    string GpsCode,
+    string? StorageCode,
+    string? Technician,
+    string? InitialSignalStatus,
+    string? Remark
+);
+
+public sealed record UpdateGpsInstallationHeaderDto(
+    string? GpsInNoUser,
+    string? GpsInType,
+    string? StorageCodeGps,
+    DateTime? InstallationDate,
+    string? Remark
+);
+
+public sealed record UpdateGpsInstallationLineDto(
+    string? GpsCode,
+    string? StorageCode,
+    string? Technician,
+    DateTime? InstalledAt,
+    string? InitialSignalStatus,
+    string? Status,
+    string? Remark
+);
+
+public sealed record GpsInstallationTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record CreateGpsUninstallationDto(
+    string? GpsOutNo,
+    string? GpsOutNoUser,
+    string? Reason,
+    string? StorageCodeGps,
+    string? ReceiverName,
+    DateTime? UninstallDate,
+    string? Remark,
+    string? CreatedBy,
+    List<GpsUninstallationItemInputDto>? Items
+);
+
+public sealed record GpsUninstallationItemInputDto(
+    string Vin,
+    string? GpsCode,
+    int? OdoKm,
+    string? DeviceCondition,
+    string? Technician,
+    string? Remark
+);
+
+public sealed record UpdateGpsUninstallationHeaderDto(
+    string? GpsOutNoUser,
+    string? Reason,
+    string? StorageCodeGps,
+    string? ReceiverName,
+    DateTime? UninstallDate,
+    string? Remark
+);
+
+public sealed record UpdateGpsUninstallationLineDto(
+    string? GpsCode,
+    int? OdoKm,
+    string? DeviceCondition,
+    string? Technician,
+    DateTime? UninstalledAt,
+    string? Status,
+    string? Remark
+);
+
+public sealed record GpsUninstallationTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record CreateGpsClaimDto(
+    string? GpsClaimNo,
+    string? GpsClaimNoUser,
+    string GpsCode,
+    string? VendorCode,
+    string? VendorName,
+    string? FaultType,
+    string? FaultDescription,
+    string? Vin,
+    decimal? RepairCost,
+    string? ReplacementGpsCode,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record UpdateGpsClaimDto(
+    string? GpsClaimNoUser,
+    string? VendorCode,
+    string? VendorName,
+    string? FaultType,
+    string? FaultDescription,
+    string? Vin,
+    decimal? RepairCost,
+    string? ReplacementGpsCode,
+    string? Remark
+);
+
+public sealed record GpsClaimTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    string? ReplacementGpsCode,
+    decimal? RepairCost,
+    DateTime? TransitionDate
+);
+
+public sealed record UpdateGpsLocationDto(
+    decimal Latitude,
+    decimal Longitude,
+    decimal? SpeedKmH,
+    decimal? BatteryVolt,
+    string? EngineStatus,
+    string? Address,
+    bool? IsInGeofence,
+    DateTime? RecordedAt
+);
+
+public sealed record GpsFleetSummaryDto(
+    int TotalDevices,
+    int TotalInStock,
+    int TotalInstalled,
+    int TotalInTransit,
+    int TotalClaimFaulty,
+    int TotalDecommissioned,
+    int TotalVehiclesWithGps,
+    int TotalActiveSignals24h,
+    int TotalGeofenceAlerts,
+    List<GpsProviderStatsDto> ByProvider,
+    List<GpsStorageStatsDto> ByStorage
+);
+
+public sealed record GpsProviderStatsDto(string Provider, int TotalCount, int InstalledCount, int InStockCount);
+public sealed record GpsStorageStatsDto(string StorageCodeGps, int TotalCount, int InStockCount);
+
+public sealed record VehicleGpsInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    int? ModelYear,
+    string? StorageCode,
+    bool IsGpsInstalled,
+    string? GpsCode,
+    DateTime? GpsInstallDate,
+    DateTime? GpsUninstallDate,
+    decimal? LastGpsLatitude,
+    decimal? LastGpsLongitude,
+    string? LastGpsAddress,
+    decimal? LastGpsSpeed,
+    decimal? LastGpsBatteryVolt,
+    DateTime? LastGpsSignalTime,
+    int GpsDeviceCount,
+    GpsDevice? GpsDevice
+);
+
 
 

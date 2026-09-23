@@ -3329,6 +3329,223 @@ public static class Seeder
                 v2Policy.PolicySupportCount = 1;
             }
         }
+
+        if (!await db.GpsDevices.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var dev1 = new GpsDevice
+            {
+                OrgId = org,
+                GpsCode = "GPS-2026-0001",
+                GpsBoxNo = "BOX-2026-01",
+                SerialNo = "VT-4G-9901001",
+                ImeiNo = "868901020304001",
+                SimNo = "0987654321",
+                Provider = "Viettel",
+                ModelName = "OBD-4G",
+                StorageCodeGps = "KHO_GPS_NINHBINH",
+                DeviceStatus = "Installed",
+                BatteryVolt = 12.8m,
+                BatteryPercent = 98,
+                CurrentVin = "DEMOVIN00000001",
+                CurrentModel = "Accent 1.4 AT",
+                CurrentLocation = "Bãi lưu kho YARD-A1 Nhà máy Ninh Bình",
+                Latitude = 20.2520m,
+                Longitude = 105.9750m,
+                SpeedKmH = 0,
+                IsInGeofence = true,
+                LastSignalAt = DateTime.Now.AddMinutes(-5),
+                LastGpsInNo = "GPSIN-202603-0001",
+                Remark = "Thiết bị định vị 4G lắp trên xe Accent tồn bãi",
+                CreatedAt = DateTime.Now.AddDays(-10)
+            };
+            var dev2 = new GpsDevice
+            {
+                OrgId = org,
+                GpsCode = "GPS-2026-0002",
+                GpsBoxNo = "BOX-2026-01",
+                SerialNo = "VLC-4G-9901002",
+                ImeiNo = "868901020304002",
+                SimNo = "0987654322",
+                Provider = "Veloca",
+                ModelName = "VT-03D",
+                StorageCodeGps = "KHO_GPS_NINHBINH",
+                DeviceStatus = "Installed",
+                BatteryVolt = 12.6m,
+                BatteryPercent = 95,
+                CurrentVin = "DEMOVIN00000002",
+                CurrentModel = "Creta 1.5 Cao cấp",
+                CurrentLocation = "Bãi lưu kho YARD-B2 Nhà máy Ninh Bình",
+                Latitude = 20.2535m,
+                Longitude = 105.9762m,
+                SpeedKmH = 0,
+                IsInGeofence = true,
+                LastSignalAt = DateTime.Now.AddMinutes(-12),
+                LastGpsInNo = "GPSIN-202603-0001",
+                Remark = "Thiết bị định vị Veloca gắn trên xe Creta",
+                CreatedAt = DateTime.Now.AddDays(-10)
+            };
+            var dev3 = new GpsDevice
+            {
+                OrgId = org,
+                GpsCode = "GPS-2026-0003",
+                GpsBoxNo = "BOX-2026-02",
+                SerialNo = "VT-4G-9901003",
+                ImeiNo = "868901020304003",
+                SimNo = "0987654323",
+                Provider = "Viettel",
+                ModelName = "OBD-4G",
+                StorageCodeGps = "KHO_GPS_NINHBINH",
+                DeviceStatus = "InStock",
+                BatteryVolt = 12.9m,
+                BatteryPercent = 100,
+                Remark = "Thiết bị trong kho sẵn sàng lắp đặt cho xe mới xuất xưởng",
+                CreatedAt = DateTime.Now.AddDays(-5)
+            };
+            var dev4 = new GpsDevice
+            {
+                OrgId = org,
+                GpsCode = "GPS-2026-0004",
+                GpsBoxNo = "BOX-2026-02",
+                SerialNo = "VLC-4G-9901004",
+                ImeiNo = "868901020304004",
+                SimNo = "0987654324",
+                Provider = "Veloca",
+                ModelName = "VT-03D",
+                StorageCodeGps = "KHO_GPS_NINHBINH",
+                DeviceStatus = "InStock",
+                BatteryVolt = 12.8m,
+                BatteryPercent = 100,
+                Remark = "Thiết bị trong kho dự phòng",
+                CreatedAt = DateTime.Now.AddDays(-5)
+            };
+            db.GpsDevices.AddRange(dev1, dev2, dev3, dev4);
+
+            var install = new GpsInstallation
+            {
+                OrgId = org,
+                GpsInNo = "GPSIN-202603-0001",
+                GpsInNoUser = "SF-GPSIN-2026/03-01",
+                GpsInType = "First_In",
+                StorageCodeGps = "KHO_GPS_NINHBINH",
+                InstallationDate = DateTime.Now.AddDays(-8),
+                TotalVehicleCount = 2,
+                Status = "Approved",
+                Remark = "Lắp đặt thiết bị định vị GPS cho lô xe Accent và Creta hoàn tất KCS xuất xưởng",
+                CreatedBy = "planner.oem",
+                CreatedAt = DateTime.Now.AddDays(-8),
+                ApprovedBy = "StorageLead.NguyenVanDinh",
+                ApprovedAt = DateTime.Now.AddDays(-8)
+            };
+            db.GpsInstallations.Add(install);
+            await db.SaveChangesAsync();
+
+            db.GpsInstallationLines.AddRange(
+                new GpsInstallationLine
+                {
+                    OrgId = org,
+                    GpsInstallationId = install.Id,
+                    GpsInNo = install.GpsInNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    EngineNo = "G4LC0001",
+                    Color = "Trắng",
+                    StorageCode = "YARD-A1",
+                    GpsCode = "GPS-2026-0001",
+                    ImeiNo = "868901020304001",
+                    SimNo = "0987654321",
+                    BatteryVolt = 12.8m,
+                    Technician = "KTV Lắp Đặt Bùi Văn Hải",
+                    InstalledAt = DateTime.Now.AddDays(-8),
+                    InitialSignalStatus = "SignalOK",
+                    Status = "Installed",
+                    Remark = "Tín hiệu GPS & 4G đạt chuẩn 100%"
+                },
+                new GpsInstallationLine
+                {
+                    OrgId = org,
+                    GpsInstallationId = install.Id,
+                    GpsInNo = install.GpsInNo,
+                    LineIndex = 2,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    EngineNo = "G4FL0002",
+                    Color = "Đen",
+                    StorageCode = "YARD-B2",
+                    GpsCode = "GPS-2026-0002",
+                    ImeiNo = "868901020304002",
+                    SimNo = "0987654322",
+                    BatteryVolt = 12.6m,
+                    Technician = "KTV Lắp Đặt Bùi Văn Hải",
+                    InstalledAt = DateTime.Now.AddDays(-8),
+                    InitialSignalStatus = "SignalOK",
+                    Status = "Installed",
+                    Remark = "Tín hiệu GPS & 4G đạt chuẩn 100%"
+                }
+            );
+
+            db.GpsLocationLogs.AddRange(
+                new GpsLocationLog
+                {
+                    OrgId = org,
+                    GpsCode = "GPS-2026-0001",
+                    Vin = "DEMOVIN00000001",
+                    Latitude = 20.2520m,
+                    Longitude = 105.9750m,
+                    SpeedKmH = 0,
+                    BatteryVolt = 12.8m,
+                    EngineStatus = "Off",
+                    Address = "Bãi lưu kho YARD-A1 Nhà máy Ninh Bình",
+                    IsInGeofence = true,
+                    RecordedAt = DateTime.Now.AddMinutes(-5)
+                },
+                new GpsLocationLog
+                {
+                    OrgId = org,
+                    GpsCode = "GPS-2026-0002",
+                    Vin = "DEMOVIN00000002",
+                    Latitude = 20.2535m,
+                    Longitude = 105.9762m,
+                    SpeedKmH = 0,
+                    BatteryVolt = 12.6m,
+                    EngineStatus = "Off",
+                    Address = "Bãi lưu kho YARD-B2 Nhà máy Ninh Bình",
+                    IsInGeofence = true,
+                    RecordedAt = DateTime.Now.AddMinutes(-12)
+                }
+            );
+
+            var v1Gps = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Gps != null)
+            {
+                v1Gps.IsGpsInstalled = true;
+                v1Gps.GpsCode = "GPS-2026-0001";
+                v1Gps.GpsInstallDate = DateTime.Now.AddDays(-8);
+                v1Gps.LastGpsLatitude = 20.2520m;
+                v1Gps.LastGpsLongitude = 105.9750m;
+                v1Gps.LastGpsAddress = "Bãi lưu kho YARD-A1 Nhà máy Ninh Bình";
+                v1Gps.LastGpsSpeed = 0;
+                v1Gps.LastGpsBatteryVolt = 12.8m;
+                v1Gps.LastGpsSignalTime = DateTime.Now.AddMinutes(-5);
+                v1Gps.GpsDeviceCount = 1;
+            }
+
+            var v2Gps = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Gps != null)
+            {
+                v2Gps.IsGpsInstalled = true;
+                v2Gps.GpsCode = "GPS-2026-0002";
+                v2Gps.GpsInstallDate = DateTime.Now.AddDays(-8);
+                v2Gps.LastGpsLatitude = 20.2535m;
+                v2Gps.LastGpsLongitude = 105.9762m;
+                v2Gps.LastGpsAddress = "Bãi lưu kho YARD-B2 Nhà máy Ninh Bình";
+                v2Gps.LastGpsSpeed = 0;
+                v2Gps.LastGpsBatteryVolt = 12.6m;
+                v2Gps.LastGpsSignalTime = DateTime.Now.AddMinutes(-12);
+                v2Gps.GpsDeviceCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -3493,7 +3710,25 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PolicySupportCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"SalesPolicies\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SPSRCode\" text NOT NULL DEFAULT '', \"SPNo\" text NOT NULL DEFAULT '', \"SPSRType\" text NULL DEFAULT 'RetailSupport', \"SPSRRoot\" text NULL, \"FormBusinessSupportCode\" text NULL DEFAULT 'DirectCash', \"StartDate\" timestamp NOT NULL DEFAULT now(), \"EndDate\" timestamp NOT NULL DEFAULT now(), \"TotalModelsCount\" integer NOT NULL DEFAULT 0, \"TotalSupportBudget\" numeric NOT NULL DEFAULT 0, \"TotalVinApplied\" integer NOT NULL DEFAULT 0, \"TotalActualPaidAmount\" numeric NOT NULL DEFAULT 0, \"FilePath\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SuspendedBy\" text NULL, \"SuspendedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"SalesPolicyLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SalesPolicyId\" bigint NOT NULL, \"SPSRCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"SpecDescription\" text NULL, \"DealerCode\" text NULL, \"ModelYear\" integer NULL DEFAULT 2026, \"AmountSupport\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Active', \"Remark\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"SalesPolicySupports\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SupportNo\" text NOT NULL DEFAULT '', \"SPSRCode\" text NOT NULL DEFAULT '', \"SPNo\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"DateSupport\" timestamp NOT NULL DEFAULT now(), \"DateFullStatus\" timestamp NULL, \"AmountSupport\" numeric NOT NULL DEFAULT 0, \"HTCInvoiceNo\" text NULL, \"HTCInvoiceDate\" timestamp NULL, \"HTCDatePayment\" timestamp NULL, \"BankRefNo\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"SalesPolicySupports\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SupportNo\" text NOT NULL DEFAULT '', \"SPSRCode\" text NOT NULL DEFAULT '', \"SPNo\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"DateSupport\" timestamp NOT NULL DEFAULT now(), \"DateFullStatus\" timestamp NULL, \"AmountSupport\" numeric NOT NULL DEFAULT 0, \"HTCInvoiceNo\" text NULL, \"HTCInvoiceDate\" timestamp NULL, \"HTCDatePayment\" timestamp NULL, \"BankRefNo\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsGpsInstalled\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"GpsCode\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"GpsInstallDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"GpsUninstallDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastGpsLatitude\" numeric NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastGpsLongitude\" numeric NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastGpsAddress\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastGpsSpeed\" numeric NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastGpsBatteryVolt\" numeric NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastGpsSignalTime\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"GpsDeviceCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"GpsDevices\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"GpsBoxNo\" text NULL, \"SerialNo\" text NULL, \"ImeiNo\" text NULL, \"SimNo\" text NULL, \"Provider\" text NOT NULL DEFAULT 'Viettel', \"ModelName\" text NOT NULL DEFAULT 'OBD-4G', \"StorageCodeGps\" text NOT NULL DEFAULT 'KHO_GPS_NINHBINH', \"DeviceStatus\" text NOT NULL DEFAULT 'InStock', \"BatteryVolt\" numeric NOT NULL DEFAULT 12.6, \"BatteryPercent\" integer NOT NULL DEFAULT 100, \"CurrentVin\" text NULL, \"CurrentModel\" text NULL, \"CurrentLocation\" text NULL, \"Latitude\" numeric NULL, \"Longitude\" numeric NULL, \"SpeedKmH\" numeric NOT NULL DEFAULT 0, \"IsInGeofence\" boolean NOT NULL DEFAULT true, \"LastSignalAt\" timestamp NULL, \"LastGpsInNo\" text NULL, \"LastGpsOutNo\" text NULL, \"LastClaimNo\" text NULL, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"GpsInstallations\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsInNo\" text NOT NULL DEFAULT '', \"GpsInNoUser\" text NULL, \"GpsInType\" text NOT NULL DEFAULT 'First_In', \"StorageCodeGps\" text NOT NULL DEFAULT 'KHO_GPS_NINHBINH', \"InstallationDate\" timestamp NOT NULL DEFAULT now(), \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"GpsInstallationLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsInstallationId\" bigint NOT NULL, \"GpsInNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCode\" text NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"ImeiNo\" text NULL, \"SimNo\" text NULL, \"BatteryVolt\" numeric NOT NULL DEFAULT 12.6, \"Technician\" text NULL, \"InstalledAt\" timestamp NULL, \"InitialSignalStatus\" text NOT NULL DEFAULT 'SignalOK', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"GpsUninstallations\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsOutNo\" text NOT NULL DEFAULT '', \"GpsOutNoUser\" text NULL, \"Reason\" text NOT NULL DEFAULT 'DeliveryToDealer', \"StorageCodeGps\" text NOT NULL DEFAULT 'KHO_GPS_NINHBINH', \"ReceiverName\" text NULL, \"UninstallDate\" timestamp NOT NULL DEFAULT now(), \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"GpsUninstallationLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsUninstallationId\" bigint NOT NULL, \"GpsOutNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"GpsCode\" text NULL, \"OdoKm\" integer NULL, \"DeviceCondition\" text NOT NULL DEFAULT 'Good', \"Technician\" text NULL, \"UninstalledAt\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"GpsClaims\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsClaimNo\" text NOT NULL DEFAULT '', \"GpsClaimNoUser\" text NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"ImeiNo\" text NULL, \"SimNo\" text NULL, \"VendorCode\" text NOT NULL DEFAULT 'VELOCA', \"VendorName\" text NULL, \"FaultType\" text NOT NULL DEFAULT 'PowerLoss', \"FaultDescription\" text NULL, \"Vin\" text NULL, \"RepairCost\" numeric NOT NULL DEFAULT 0, \"ReplacementGpsCode\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"SubmittedBy\" text NULL, \"SubmittedAt\" timestamp NULL, \"SentBy\" text NULL, \"SentAt\" timestamp NULL, \"RepairedBy\" text NULL, \"RepairedAt\" timestamp NULL, \"ReceivedBy\" text NULL, \"ReceivedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"GpsLocationLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"Latitude\" numeric NOT NULL DEFAULT 0, \"Longitude\" numeric NOT NULL DEFAULT 0, \"SpeedKmH\" numeric NOT NULL DEFAULT 0, \"BatteryVolt\" numeric NOT NULL DEFAULT 12.6, \"EngineStatus\" text NULL DEFAULT 'Off', \"Address\" text NULL, \"IsInGeofence\" boolean NOT NULL DEFAULT true, \"RecordedAt\" timestamp NOT NULL DEFAULT now())"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

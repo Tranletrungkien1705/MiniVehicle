@@ -98,6 +98,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<SalesPolicy> SalesPolicies => Set<SalesPolicy>();
     public DbSet<SalesPolicyLine> SalesPolicyLines => Set<SalesPolicyLine>();
     public DbSet<SalesPolicySupport> SalesPolicySupports => Set<SalesPolicySupport>();
+    public DbSet<GpsDevice> GpsDevices => Set<GpsDevice>();
+    public DbSet<GpsInstallation> GpsInstallations => Set<GpsInstallation>();
+    public DbSet<GpsInstallationLine> GpsInstallationLines => Set<GpsInstallationLine>();
+    public DbSet<GpsUninstallation> GpsUninstallations => Set<GpsUninstallation>();
+    public DbSet<GpsUninstallationLine> GpsUninstallationLines => Set<GpsUninstallationLine>();
+    public DbSet<GpsClaim> GpsClaims => Set<GpsClaim>();
+    public DbSet<GpsLocationLog> GpsLocationLogs => Set<GpsLocationLog>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -146,5 +153,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<PdiPayment>().HasIndex(x => new { x.OrgId, x.PmtPdiNo }).IsUnique();
         b.Entity<SalesPolicy>().HasIndex(x => new { x.OrgId, x.SPSRCode }).IsUnique();
         b.Entity<SalesPolicySupport>().HasIndex(x => new { x.OrgId, x.SupportNo }).IsUnique();
+        b.Entity<GpsDevice>().HasIndex(x => new { x.OrgId, x.GpsCode }).IsUnique();
+        b.Entity<GpsInstallation>().HasIndex(x => new { x.OrgId, x.GpsInNo }).IsUnique();
+        b.Entity<GpsUninstallation>().HasIndex(x => new { x.OrgId, x.GpsOutNo }).IsUnique();
+        b.Entity<GpsClaim>().HasIndex(x => new { x.OrgId, x.GpsClaimNo }).IsUnique();
     }
 }
