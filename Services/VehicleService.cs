@@ -2059,6 +2059,20 @@ public interface IVehicleService
     Task<TransportPlanSummaryDto> GetTransportPlanSummaryAsync(string? planMonth, string? storageCode);
     Task<object?> GetVehicleTransportPlanInfoAsync(string vin);
     Task<object?> GetVehicleTransportPlanHistoryAsync(string vin);
+
+    // Bảng kê & Quyết toán chi phí Mua sắm/Thuê thiết bị định vị GPS & Dịch vụ SIM 4G data viễn thông theo lô xe VIN (BizHTC.Payment / Pmt_PaymentGPS & GpsPayment / FrmQuanLyThanhToanGPS, FrmTaoThanhToanGPS)
+    Task<object> CreateGpsPaymentAsync(CreateGpsPaymentDto dto);
+    Task<object> ListGpsPaymentsAsync(string? status, string? supplierCode, string? pmtMonth, string? paymentGPSNo, string? vin);
+    Task<object?> GetGpsPaymentAsync(string paymentGPSNo);
+    Task<object?> UpdateGpsPaymentHeaderAsync(string paymentGPSNo, UpdateGpsPaymentHeaderDto dto);
+    Task<object?> GpsPaymentTransitionAsync(string paymentGPSNo, string action, GpsPaymentTransitionDto? dto);
+    Task<object?> UpdateGpsPaymentLineAsync(string paymentGPSNo, string vin, UpdateGpsPaymentLineDto dto);
+    Task<object?> AddGpsPaymentLinesAsync(string paymentGPSNo, List<GpsPaymentLineInputDto> items);
+    Task<object?> RemoveGpsPaymentLineAsync(string paymentGPSNo, string vin);
+    Task<object?> RemoveGpsPaymentAsync(string paymentGPSNo);
+    Task<object> GetGpsPaymentSummaryAsync(string? supplierCode, string? pmtMonth);
+    Task<object?> GetVehicleGpsPaymentInfoAsync(string vin);
+    Task<object?> GetVehicleGpsPaymentHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -30601,6 +30615,789 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 veh.TranspPlanCount
             },
             plans,
+            lines,
+            events
+        };
+    }
+
+    // ===== Bảng kê & Quyết toán chi phí Thiết bị định vị GPS & Dịch vụ SIM 4G data viễn thông theo lô xe VIN (BizHTC.Payment / Pmt_PaymentGPS & GpsPayment / FrmQuanLyThanhToanGPS, FrmTaoThanhToanGPS, FrmTaoThanhToanGPS_AddCar) =====
+
+    public async Task<object> CreateGpsPaymentAsync(CreateGpsPaymentDto dto)
+    {
+        var pmtMonth = string.IsNullOrWhiteSpace(dto.PmtMonth) ? DateTime.Now.ToString("yyyy-MM") : dto.PmtMonth.Trim();
+        var supplierCode = string.IsNullOrWhiteSpace(dto.SupplierCode) ? "VELOCA" : dto.SupplierCode.Trim().ToUpperInvariant();
+        var supplierName = string.IsNullOrWhiteSpace(dto.SupplierName)
+            ? (supplierCode == "VELOCA" ? "Công ty Cổ phần Công nghệ Veloca"
+              : supplierCode == "VIETTEL" ? "Viettel Telecom - Chi nhánh Doanh nghiệp"
+              : supplierCode == "VNPT" ? "VNPT Vinaphone IoT Fleet"
+              : supplierCode == "MOBIS" ? "Mobis Auto Parts Vietnam"
+              : $"{supplierCode} GPS Solutions")
+            : dto.SupplierName.Trim();
+
+        var cleanMonthStr = pmtMonth.Replace("-", "");
+        var paymentNo = string.IsNullOrWhiteSpace(dto.PaymentGPSNo)
+            ? $"GPS-{cleanMonthStr}-{(await db.GpsPayments.CountAsync(p => p.OrgId == Org && p.PmtMonth == pmtMonth) + 1):000}"
+            : dto.PaymentGPSNo.Trim().ToUpperInvariant();
+
+        if (await db.GpsPayments.AnyAsync(p => p.OrgId == Org && p.PaymentGPSNo == paymentNo))
+            throw new InvalidOperationException($"Số bảng kê quyết toán GPS {paymentNo} đã tồn tại.");
+
+        var distinctItems = new List<GpsPaymentLineInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (dto.Items is { Count: > 0 })
+        {
+            foreach (var it in dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+            {
+                var cleanVin = it.Vin.Trim().ToUpperInvariant();
+                if (cleanVin.Length != 17)
+                    throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+                if (seenVins.Add(cleanVin))
+                {
+                    distinctItems.Add(it with { Vin = cleanVin });
+                }
+            }
+        }
+
+        var vatRate = dto.VatRate ?? 10m;
+        var payment = new GpsPayment
+        {
+            OrgId = Org,
+            PaymentGPSNo = paymentNo,
+            PaymentGPSNoUser = dto.PaymentGPSNoUser?.Trim(),
+            PmtMonth = pmtMonth,
+            SupplierCode = supplierCode,
+            SupplierName = supplierName,
+            TotalVehicleCount = distinctItems.Count,
+            TotalBeforeVAT = 0,
+            VatRate = vatRate,
+            TotalVatAmount = 0,
+            TotalAmount = 0,
+            Status = "Draft",
+            TCMSSignStatus = "Unsigned",
+            HTVSignStatus = "Unsigned",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "GPS.Specialist",
+            CreatedAt = DateTime.Now
+        };
+
+        db.GpsPayments.Add(payment);
+        await db.SaveChangesAsync();
+
+        var lines = new List<GpsPaymentLine>();
+        var lineIndex = 1;
+
+        foreach (var it in distinctItems)
+        {
+            var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == it.Vin);
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : (veh?.Model ?? "SantaFe");
+            var spec = !string.IsNullOrWhiteSpace(it.SpecCode) ? it.SpecCode.Trim() : null;
+            var engine = !string.IsNullOrWhiteSpace(it.EngineNo) ? it.EngineNo.Trim() : veh?.EngineNo;
+            var color = !string.IsNullOrWhiteSpace(it.Color) ? it.Color.Trim() : veh?.Color;
+
+            var gpsCode = !string.IsNullOrWhiteSpace(it.GpsCode) ? it.GpsCode.Trim().ToUpperInvariant() : (veh?.GpsCode ?? $"GPS-{cleanMonthStr}-{lineIndex:0000}");
+            var simCardNo = !string.IsNullOrWhiteSpace(it.SimCardNo) ? it.SimCardNo.Trim() : $"098{cleanMonthStr}{lineIndex:0000}";
+            var imeiNo = !string.IsNullOrWhiteSpace(it.ImeiNo) ? it.ImeiNo.Trim() : $"86{cleanMonthStr}{lineIndex:00000000}";
+
+            DateTime startDate = it.CostGPSStartDate ?? (DateTime.TryParse($"{pmtMonth}-01", out var d) ? d : DateTime.Now);
+            DateTime endDate = it.CostGPSEndDate ?? startDate.AddMonths(1).AddDays(-1);
+            if (endDate < startDate) endDate = startDate;
+
+            var planDays = (endDate.Date - startDate.Date).Days + 1;
+            var deductDays = it.DeductDate ?? 0;
+            var actualDays = Math.Max(0, planDays - deductDays);
+
+            var dailyRate = it.DailyRate ?? 15000m;
+            var simDataFee = it.SimDataFee ?? 50000m;
+            var amountGps = (actualDays * dailyRate) + simDataFee;
+
+            var line = new GpsPaymentLine
+            {
+                OrgId = Org,
+                GpsPaymentId = payment.Id,
+                PaymentGPSNo = paymentNo,
+                LineIndex = lineIndex++,
+                Vin = it.Vin,
+                Model = model,
+                SpecCode = spec,
+                EngineNo = engine,
+                Color = color,
+                GpsCode = gpsCode,
+                SimCardNo = simCardNo,
+                ImeiNo = imeiNo,
+                CostGPSStartDate = startDate,
+                CostGPSEndDate = endDate,
+                PlanCostGPSDate = planDays,
+                DeductDate = deductDays,
+                ActualCostGPSDate = actualDays,
+                DailyRate = dailyRate,
+                SimDataFee = simDataFee,
+                AmountGPS = amountGps,
+                ContractGPS = it.ContractGPS?.Trim() ?? $"HD-GPS-{supplierCode}-{cleanMonthStr}",
+                InStorageDate = it.InStorageDate ?? veh?.CreatedAt,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            lines.Add(line);
+            db.GpsPaymentLines.Add(line);
+
+            Log(it.Vin, "GpsPaymentLineAdded", $"Thêm vào bảng kê quyết toán GPS {paymentNo}: Thiết bị {gpsCode}, SIM {simCardNo}, {actualDays} ngày x {dailyRate:N0}đ + SIM {simDataFee:N0}đ = {amountGps:N0} VNĐ");
+        }
+
+        var totalBeforeVat = lines.Sum(l => l.AmountGPS);
+        var totalVat = Math.Round(totalBeforeVat * vatRate / 100m, 0);
+        var totalAmount = totalBeforeVat + totalVat;
+
+        payment.TotalVehicleCount = lines.Count;
+        payment.TotalBeforeVAT = totalBeforeVat;
+        payment.TotalVatAmount = totalVat;
+        payment.TotalAmount = totalAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            payment.PaymentGPSNo,
+            payment.PaymentGPSNoUser,
+            payment.PmtMonth,
+            payment.SupplierCode,
+            payment.SupplierName,
+            payment.TotalVehicleCount,
+            payment.TotalBeforeVAT,
+            payment.VatRate,
+            payment.TotalVatAmount,
+            payment.TotalAmount,
+            payment.Status,
+            payment.Remark,
+            payment.CreatedBy,
+            payment.CreatedAt,
+            itemsCount = lines.Count
+        };
+    }
+
+    public async Task<object> ListGpsPaymentsAsync(string? status, string? supplierCode, string? pmtMonth, string? paymentGPSNo, string? vin)
+    {
+        var q = db.GpsPayments.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(p => p.Status == status);
+        if (!string.IsNullOrWhiteSpace(supplierCode)) { var sc = supplierCode.Trim().ToUpperInvariant(); q = q.Where(p => p.SupplierCode == sc); }
+        if (!string.IsNullOrWhiteSpace(pmtMonth)) q = q.Where(p => p.PmtMonth == pmtMonth);
+        if (!string.IsNullOrWhiteSpace(paymentGPSNo)) { var pn = paymentGPSNo.Trim().ToUpperInvariant(); q = q.Where(p => p.PaymentGPSNo.Contains(pn) || (p.PaymentGPSNoUser != null && p.PaymentGPSNoUser.Contains(pn))); }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.GpsPaymentLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.PaymentGPSNo).Distinct().ToListAsync();
+            q = q.Where(p => matchedNos.Contains(p.PaymentGPSNo));
+        }
+
+        var list = await q.OrderByDescending(p => p.Id).Take(200).ToListAsync();
+        var pNos = list.Select(p => p.PaymentGPSNo).ToList();
+        var allLines = await db.GpsPaymentLines.Where(l => l.OrgId == Org && pNos.Contains(l.PaymentGPSNo)).ToListAsync();
+
+        var items = list.Select(p =>
+        {
+            var pLines = allLines.Where(l => l.PaymentGPSNo == p.PaymentGPSNo).ToList();
+            return new
+            {
+                p.Id,
+                p.PaymentGPSNo,
+                p.PaymentGPSNoUser,
+                p.PmtMonth,
+                p.SupplierCode,
+                p.SupplierName,
+                p.TotalVehicleCount,
+                p.TotalBeforeVAT,
+                p.VatRate,
+                p.TotalVatAmount,
+                p.TotalAmount,
+                p.Status,
+                p.TCMSSignStatus,
+                p.TCMSSignDate,
+                p.TCMSSignBy,
+                p.HTVSignStatus,
+                p.HTVSignDate,
+                p.HTVSignBy,
+                p.BankRefNo,
+                p.PaymentDate,
+                p.FilePath,
+                p.Remark,
+                p.CreatedBy,
+                p.CreatedAt,
+                p.Approved1By,
+                p.Approved1At,
+                p.Approved2By,
+                p.Approved2At,
+                p.SettledBy,
+                p.SettledAt,
+                p.RejectedBy,
+                p.RejectedAt,
+                p.RejectReason,
+                p.CancelledBy,
+                p.CancelledAt,
+                p.CancelReason,
+                LinesCount = pLines.Count
+            };
+        }).ToList();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetGpsPaymentAsync(string paymentGPSNo)
+    {
+        paymentGPSNo = paymentGPSNo.Trim().ToUpperInvariant();
+        var p = await db.GpsPayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.PaymentGPSNo == paymentGPSNo || x.PaymentGPSNoUser == paymentGPSNo));
+        if (p is null) return null;
+
+        var lines = await db.GpsPaymentLines
+            .Where(l => l.OrgId == Org && l.PaymentGPSNo == p.PaymentGPSNo)
+            .OrderBy(l => l.LineIndex)
+            .ToListAsync();
+
+        return new
+        {
+            p.Id,
+            p.PaymentGPSNo,
+            p.PaymentGPSNoUser,
+            p.PmtMonth,
+            p.SupplierCode,
+            p.SupplierName,
+            p.TotalVehicleCount,
+            p.TotalBeforeVAT,
+            p.VatRate,
+            p.TotalVatAmount,
+            p.TotalAmount,
+            p.Status,
+            p.TCMSSignStatus,
+            p.TCMSSignDate,
+            p.TCMSSignBy,
+            p.HTVSignStatus,
+            p.HTVSignDate,
+            p.HTVSignBy,
+            p.BankRefNo,
+            p.PaymentDate,
+            p.FilePath,
+            p.Remark,
+            p.CreatedBy,
+            p.CreatedAt,
+            p.Approved1By,
+            p.Approved1At,
+            p.Approved2By,
+            p.Approved2At,
+            p.SettledBy,
+            p.SettledAt,
+            p.RejectedBy,
+            p.RejectedAt,
+            p.RejectReason,
+            p.CancelledBy,
+            p.CancelledAt,
+            p.CancelReason,
+            Lines = lines
+        };
+    }
+
+    public async Task<object?> UpdateGpsPaymentHeaderAsync(string paymentGPSNo, UpdateGpsPaymentHeaderDto dto)
+    {
+        paymentGPSNo = paymentGPSNo.Trim().ToUpperInvariant();
+        var p = await db.GpsPayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.PaymentGPSNo == paymentGPSNo || x.PaymentGPSNoUser == paymentGPSNo));
+        if (p is null) return null;
+
+        if (p.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa bảng kê đã {p.Status}.");
+
+        if (dto.PaymentGPSNoUser != null) p.PaymentGPSNoUser = dto.PaymentGPSNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PmtMonth)) p.PmtMonth = dto.PmtMonth.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SupplierCode)) p.SupplierCode = dto.SupplierCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.SupplierName)) p.SupplierName = dto.SupplierName.Trim();
+        if (dto.BankRefNo != null) p.BankRefNo = dto.BankRefNo.Trim();
+        if (dto.PaymentDate.HasValue) p.PaymentDate = dto.PaymentDate.Value;
+        if (dto.FilePath != null) p.FilePath = dto.FilePath.Trim();
+        if (dto.Remark != null) p.Remark = dto.Remark.Trim();
+
+        if (dto.VatRate.HasValue && dto.VatRate.Value >= 0)
+        {
+            p.VatRate = dto.VatRate.Value;
+            p.TotalVatAmount = Math.Round(p.TotalBeforeVAT * p.VatRate / 100m, 0);
+            p.TotalAmount = p.TotalBeforeVAT + p.TotalVatAmount;
+        }
+
+        await db.SaveChangesAsync();
+        return await GetGpsPaymentAsync(p.PaymentGPSNo);
+    }
+
+    public async Task<object?> GpsPaymentTransitionAsync(string paymentGPSNo, string action, GpsPaymentTransitionDto? dto)
+    {
+        paymentGPSNo = paymentGPSNo.Trim().ToUpperInvariant();
+        var p = await db.GpsPayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.PaymentGPSNo == paymentGPSNo || x.PaymentGPSNoUser == paymentGPSNo));
+        if (p is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "Specialist";
+        var lines = await db.GpsPaymentLines.Where(l => l.OrgId == Org && l.PaymentGPSNo == p.PaymentGPSNo).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+            case "request":
+                if (p.Status is not "Draft") return null;
+                p.Status = "Submitted";
+                foreach (var line in lines)
+                {
+                    line.Status = "Submitted";
+                    Log(line.Vin, "GpsPaymentSubmitted", $"Bảng kê {p.PaymentGPSNo} đã gửi thẩm định chi phí GPS & SIM 4G ({line.AmountGPS:N0} VNĐ)");
+                }
+                break;
+
+            case "approve1":
+            case "approve-step1":
+                if (p.Status is not "Submitted") return null;
+                p.Status = "Approved1";
+                p.Approved1By = actor;
+                p.Approved1At = now;
+                foreach (var line in lines)
+                {
+                    line.Status = "Approved1";
+                    Log(line.Vin, "GpsPaymentApproved1", $"Kế toán chi phí {actor} duyệt sơ bộ bảng kê GPS {p.PaymentGPSNo}");
+                }
+                break;
+
+            case "approve2":
+            case "approve":
+                if (p.Status is not "Approved1" and not "Submitted") return null;
+                p.Status = "Approved2";
+                p.Approved2By = actor;
+                p.Approved2At = now;
+                foreach (var line in lines)
+                {
+                    line.Status = "Approved2";
+                    Log(line.Vin, "GpsPaymentApproved2", $"Giám đốc khối {actor} duyệt phê duyệt bảng kê GPS {p.PaymentGPSNo}");
+                }
+                break;
+
+            case "tcms-sign":
+            case "tcmssign":
+            case "sign-tcms":
+                if (p.Status is not "Approved2" and not "Approved1" and not "Submitted") return null;
+                p.Status = "TCMSSigned";
+                p.TCMSSignStatus = "Signed";
+                p.TCMSSignDate = now;
+                p.TCMSSignBy = actor;
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) p.FilePath = dto.FilePath.Trim();
+                foreach (var line in lines)
+                {
+                    line.Status = "TCMSSigned";
+                    Log(line.Vin, "GpsPaymentTcmsSigned", $"Đơn vị dịch vụ GPS ký số biên bản đối soát {p.PaymentGPSNo} bởi {actor}");
+                }
+                break;
+
+            case "htv-sign":
+            case "htvsign":
+            case "sign-htv":
+                if (p.Status is not "TCMSSigned" and not "Approved2") return null;
+                p.Status = "HTVSigned";
+                p.HTVSignStatus = "Signed";
+                p.HTVSignDate = now;
+                p.HTVSignBy = actor;
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) p.FilePath = dto.FilePath.Trim();
+                foreach (var line in lines)
+                {
+                    line.Status = "HTVSigned";
+                    Log(line.Vin, "GpsPaymentHtvSigned", $"Hãng xe OEM HTV ký số duyệt chi bảng kê GPS {p.PaymentGPSNo} bởi {actor}");
+                }
+                break;
+
+            case "settle":
+            case "pay":
+            case "finish":
+            case "complete":
+                if (p.Status is not "HTVSigned" and not "TCMSSigned" and not "Approved2") return null;
+                p.Status = "Settled";
+                p.SettledBy = actor;
+                p.SettledAt = now;
+                p.PaymentDate = dto?.PaymentDate ?? now;
+                if (!string.IsNullOrWhiteSpace(dto?.BankRefNo)) p.BankRefNo = dto.BankRefNo.Trim();
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Settled";
+                    var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == line.Vin);
+                    if (veh != null)
+                    {
+                        veh.IsGpsPaid = true;
+                        veh.GpsPaidAmount += line.AmountGPS;
+                        veh.LastGpsPaymentNo = p.PaymentGPSNo;
+                        veh.LastGpsPaymentDate = p.PaymentDate;
+                        veh.GpsPaymentCount += 1;
+                    }
+                    Log(line.Vin, "GpsPaymentSettled", $"Quyết toán chi phí dịch vụ GPS & SIM 4G thành công theo bảng kê {p.PaymentGPSNo}: {line.AmountGPS:N0} VNĐ (UNC: {p.BankRefNo ?? "CHUYEN_KHOAN"})");
+                }
+                break;
+
+            case "reject":
+                if (p.Status is "Settled" or "Cancelled") return null;
+                p.Status = "Rejected";
+                p.RejectedBy = actor;
+                p.RejectedAt = now;
+                p.RejectReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Từ chối duyệt bảng kê GPS";
+                foreach (var line in lines)
+                {
+                    line.Status = "Rejected";
+                    Log(line.Vin, "GpsPaymentRejected", $"Từ chối bảng kê GPS {p.PaymentGPSNo}: {p.RejectReason}");
+                }
+                break;
+
+            case "cancel":
+                if (p.Status is "Settled")
+                    throw new InvalidOperationException("Không thể hủy bảng kê đã quyết toán chi trả hoàn tất.");
+                p.Status = "Cancelled";
+                p.CancelledBy = actor;
+                p.CancelledAt = now;
+                p.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hủy đợt quyết toán GPS";
+                foreach (var line in lines)
+                {
+                    line.Status = "Cancelled";
+                    Log(line.Vin, "GpsPaymentCancelled", $"Hủy bảng kê GPS {p.PaymentGPSNo}: {p.CancelReason}");
+                }
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return await GetGpsPaymentAsync(p.PaymentGPSNo);
+    }
+
+    public async Task<object?> UpdateGpsPaymentLineAsync(string paymentGPSNo, string vin, UpdateGpsPaymentLineDto dto)
+    {
+        paymentGPSNo = paymentGPSNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var p = await db.GpsPayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.PaymentGPSNo == paymentGPSNo || x.PaymentGPSNoUser == paymentGPSNo));
+        if (p is null) return null;
+
+        if (p.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa dòng xe trong bảng kê đã {p.Status}.");
+
+        var line = await db.GpsPaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.PaymentGPSNo == p.PaymentGPSNo && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.Model)) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.GpsCode)) line.GpsCode = dto.GpsCode.Trim().ToUpperInvariant();
+        if (dto.SimCardNo != null) line.SimCardNo = dto.SimCardNo.Trim();
+        if (dto.ImeiNo != null) line.ImeiNo = dto.ImeiNo.Trim();
+
+        if (dto.CostGPSStartDate.HasValue) line.CostGPSStartDate = dto.CostGPSStartDate.Value;
+        if (dto.CostGPSEndDate.HasValue) line.CostGPSEndDate = dto.CostGPSEndDate.Value;
+        if (line.CostGPSEndDate < line.CostGPSStartDate) line.CostGPSEndDate = line.CostGPSStartDate;
+
+        line.PlanCostGPSDate = (line.CostGPSEndDate.Date - line.CostGPSStartDate.Date).Days + 1;
+        if (dto.DeductDate.HasValue && dto.DeductDate.Value >= 0) line.DeductDate = dto.DeductDate.Value;
+        line.ActualCostGPSDate = Math.Max(0, line.PlanCostGPSDate - line.DeductDate);
+
+        if (dto.DailyRate.HasValue && dto.DailyRate.Value >= 0) line.DailyRate = dto.DailyRate.Value;
+        if (dto.SimDataFee.HasValue && dto.SimDataFee.Value >= 0) line.SimDataFee = dto.SimDataFee.Value;
+
+        line.AmountGPS = (line.ActualCostGPSDate * line.DailyRate) + line.SimDataFee;
+
+        if (dto.ContractGPS != null) line.ContractGPS = dto.ContractGPS.Trim();
+        if (dto.InStorageDate.HasValue) line.InStorageDate = dto.InStorageDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.GpsPaymentLines.Where(l => l.OrgId == Org && l.PaymentGPSNo == p.PaymentGPSNo).ToListAsync();
+        var totalBeforeVat = allLines.Sum(l => l.AmountGPS);
+        var totalVat = Math.Round(totalBeforeVat * p.VatRate / 100m, 0);
+
+        p.TotalBeforeVAT = totalBeforeVat;
+        p.TotalVatAmount = totalVat;
+        p.TotalAmount = totalBeforeVat + totalVat;
+
+        await db.SaveChangesAsync();
+
+        Log(vin, "GpsPaymentLineUpdated", $"Cập nhật dòng xe trong bảng kê GPS {p.PaymentGPSNo}: {line.ActualCostGPSDate} ngày x {line.DailyRate:N0}đ + SIM {line.SimDataFee:N0}đ = {line.AmountGPS:N0} VNĐ");
+        await db.SaveChangesAsync();
+
+        return line;
+    }
+
+    public async Task<object?> AddGpsPaymentLinesAsync(string paymentGPSNo, List<GpsPaymentLineInputDto> items)
+    {
+        paymentGPSNo = paymentGPSNo.Trim().ToUpperInvariant();
+        var p = await db.GpsPayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.PaymentGPSNo == paymentGPSNo || x.PaymentGPSNoUser == paymentGPSNo));
+        if (p is null) return null;
+
+        if (p.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm xe vào bảng kê đã {p.Status}.");
+
+        var existingLines = await db.GpsPaymentLines.Where(l => l.OrgId == Org && l.PaymentGPSNo == p.PaymentGPSNo).ToListAsync();
+        var maxIndex = existingLines.Count > 0 ? existingLines.Max(l => l.LineIndex) : 0;
+        var existingVins = new HashSet<string>(existingLines.Select(l => l.Vin), StringComparer.OrdinalIgnoreCase);
+
+        var cleanMonthStr = p.PmtMonth.Replace("-", "");
+        var addedLines = new List<GpsPaymentLine>();
+
+        foreach (var it in items.Where(i => !string.IsNullOrWhiteSpace(i.Vin)))
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length != 17)
+                throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự).");
+
+            if (!existingVins.Add(cleanVin)) continue;
+
+            maxIndex++;
+            var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == cleanVin);
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : (veh?.Model ?? "SantaFe");
+            var spec = !string.IsNullOrWhiteSpace(it.SpecCode) ? it.SpecCode.Trim() : null;
+            var engine = !string.IsNullOrWhiteSpace(it.EngineNo) ? it.EngineNo.Trim() : veh?.EngineNo;
+            var color = !string.IsNullOrWhiteSpace(it.Color) ? it.Color.Trim() : veh?.Color;
+
+            var gpsCode = !string.IsNullOrWhiteSpace(it.GpsCode) ? it.GpsCode.Trim().ToUpperInvariant() : (veh?.GpsCode ?? $"GPS-{cleanMonthStr}-{maxIndex:0000}");
+            var simCardNo = !string.IsNullOrWhiteSpace(it.SimCardNo) ? it.SimCardNo.Trim() : $"098{cleanMonthStr}{maxIndex:0000}";
+            var imeiNo = !string.IsNullOrWhiteSpace(it.ImeiNo) ? it.ImeiNo.Trim() : $"86{cleanMonthStr}{maxIndex:00000000}";
+
+            DateTime startDate = it.CostGPSStartDate ?? (DateTime.TryParse($"{p.PmtMonth}-01", out var d) ? d : DateTime.Now);
+            DateTime endDate = it.CostGPSEndDate ?? startDate.AddMonths(1).AddDays(-1);
+            if (endDate < startDate) endDate = startDate;
+
+            var planDays = (endDate.Date - startDate.Date).Days + 1;
+            var deductDays = it.DeductDate ?? 0;
+            var actualDays = Math.Max(0, planDays - deductDays);
+
+            var dailyRate = it.DailyRate ?? 15000m;
+            var simDataFee = it.SimDataFee ?? 50000m;
+            var amountGps = (actualDays * dailyRate) + simDataFee;
+
+            var line = new GpsPaymentLine
+            {
+                OrgId = Org,
+                GpsPaymentId = p.Id,
+                PaymentGPSNo = p.PaymentGPSNo,
+                LineIndex = maxIndex,
+                Vin = cleanVin,
+                Model = model,
+                SpecCode = spec,
+                EngineNo = engine,
+                Color = color,
+                GpsCode = gpsCode,
+                SimCardNo = simCardNo,
+                ImeiNo = imeiNo,
+                CostGPSStartDate = startDate,
+                CostGPSEndDate = endDate,
+                PlanCostGPSDate = planDays,
+                DeductDate = deductDays,
+                ActualCostGPSDate = actualDays,
+                DailyRate = dailyRate,
+                SimDataFee = simDataFee,
+                AmountGPS = amountGps,
+                ContractGPS = it.ContractGPS?.Trim() ?? $"HD-GPS-{p.SupplierCode}-{cleanMonthStr}",
+                InStorageDate = it.InStorageDate ?? veh?.CreatedAt,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            addedLines.Add(line);
+            db.GpsPaymentLines.Add(line);
+
+            Log(cleanVin, "GpsPaymentLineAdded", $"Bổ sung xe vào bảng kê GPS {p.PaymentGPSNo}: Thiết bị {gpsCode}, SIM {simCardNo}, Thành tiền {amountGps:N0} VNĐ");
+        }
+
+        var allLines = existingLines.Concat(addedLines).ToList();
+        var totalBeforeVat = allLines.Sum(l => l.AmountGPS);
+        var totalVat = Math.Round(totalBeforeVat * p.VatRate / 100m, 0);
+
+        p.TotalVehicleCount = allLines.Count;
+        p.TotalBeforeVAT = totalBeforeVat;
+        p.TotalVatAmount = totalVat;
+        p.TotalAmount = totalBeforeVat + totalVat;
+
+        await db.SaveChangesAsync();
+        return await GetGpsPaymentAsync(p.PaymentGPSNo);
+    }
+
+    public async Task<object?> RemoveGpsPaymentLineAsync(string paymentGPSNo, string vin)
+    {
+        paymentGPSNo = paymentGPSNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var p = await db.GpsPayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.PaymentGPSNo == paymentGPSNo || x.PaymentGPSNoUser == paymentGPSNo));
+        if (p is null) return null;
+
+        if (p.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa dòng xe khỏi bảng kê đã {p.Status}.");
+
+        var line = await db.GpsPaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.PaymentGPSNo == p.PaymentGPSNo && l.Vin == vin);
+        if (line is null) return null;
+
+        db.GpsPaymentLines.Remove(line);
+
+        var remainingLines = await db.GpsPaymentLines.Where(l => l.OrgId == Org && l.PaymentGPSNo == p.PaymentGPSNo && l.Vin != vin).ToListAsync();
+        var totalBeforeVat = remainingLines.Sum(l => l.AmountGPS);
+        var totalVat = Math.Round(totalBeforeVat * p.VatRate / 100m, 0);
+
+        p.TotalVehicleCount = remainingLines.Count;
+        p.TotalBeforeVAT = totalBeforeVat;
+        p.TotalVatAmount = totalVat;
+        p.TotalAmount = totalBeforeVat + totalVat;
+
+        Log(vin, "GpsPaymentLineRemoved", $"Rút xe khỏi bảng kê quyết toán GPS {p.PaymentGPSNo}");
+        await db.SaveChangesAsync();
+
+        return new { success = true, paymentGPSNo = p.PaymentGPSNo, vin, remainingCount = remainingLines.Count };
+    }
+
+    public async Task<object?> RemoveGpsPaymentAsync(string paymentGPSNo)
+    {
+        paymentGPSNo = paymentGPSNo.Trim().ToUpperInvariant();
+        var p = await db.GpsPayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.PaymentGPSNo == paymentGPSNo || x.PaymentGPSNoUser == paymentGPSNo));
+        if (p is null) return null;
+
+        if (p.Status is not "Draft" and not "Cancelled")
+            throw new InvalidOperationException($"Chỉ có thể xóa bảng kê ở trạng thái Draft hoặc Cancelled (Hiện tại: {p.Status}).");
+
+        var lines = await db.GpsPaymentLines.Where(l => l.OrgId == Org && l.PaymentGPSNo == p.PaymentGPSNo).ToListAsync();
+        db.GpsPaymentLines.RemoveRange(lines);
+        db.GpsPayments.Remove(p);
+
+        await db.SaveChangesAsync();
+        return new { success = true, paymentGPSNo = p.PaymentGPSNo, deletedLines = lines.Count };
+    }
+
+    public async Task<object> GetGpsPaymentSummaryAsync(string? supplierCode, string? pmtMonth)
+    {
+        var q = db.GpsPayments.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(supplierCode)) { var sc = supplierCode.Trim().ToUpperInvariant(); q = q.Where(p => p.SupplierCode == sc); }
+        if (!string.IsNullOrWhiteSpace(pmtMonth)) q = q.Where(p => p.PmtMonth == pmtMonth);
+
+        var list = await q.ToListAsync();
+
+        var totalPayments = list.Count;
+        var totalDraft = list.Count(p => p.Status == "Draft");
+        var totalSubmitted = list.Count(p => p.Status == "Submitted");
+        var totalApproved = list.Count(p => p.Status is "Approved1" or "Approved2");
+        var totalSigned = list.Count(p => p.Status is "TCMSSigned" or "HTVSigned");
+        var totalSettled = list.Count(p => p.Status == "Settled");
+        var totalCancelled = list.Count(p => p.Status == "Cancelled");
+        var totalVehicles = list.Sum(p => p.TotalVehicleCount);
+        var totalBeforeVat = list.Sum(p => p.TotalBeforeVAT);
+        var totalVatAmount = list.Sum(p => p.TotalVatAmount);
+        var totalAmount = list.Sum(p => p.TotalAmount);
+        var totalSettledAmount = list.Where(p => p.Status == "Settled").Sum(p => p.TotalAmount);
+
+        var bySupplier = list
+            .GroupBy(p => p.SupplierCode)
+            .Select(g => new GpsPaymentSupplierStatsDto(
+                g.Key,
+                g.FirstOrDefault()?.SupplierName ?? g.Key,
+                g.Count(),
+                g.Sum(p => p.TotalVehicleCount),
+                g.Sum(p => p.TotalAmount),
+                g.Where(p => p.Status == "Settled").Sum(p => p.TotalAmount)
+            ))
+            .OrderByDescending(x => x.TotalAmount)
+            .ToList();
+
+        var byMonth = list
+            .GroupBy(p => p.PmtMonth)
+            .Select(g => new GpsPaymentMonthStatsDto(
+                g.Key,
+                g.Count(),
+                g.Sum(p => p.TotalVehicleCount),
+                g.Sum(p => p.TotalAmount),
+                g.Where(p => p.Status == "Settled").Sum(p => p.TotalAmount)
+            ))
+            .OrderByDescending(x => x.PmtMonth)
+            .ToList();
+
+        return new GpsPaymentSummaryDto(
+            totalPayments,
+            totalDraft,
+            totalSubmitted,
+            totalApproved,
+            totalSigned,
+            totalSettled,
+            totalCancelled,
+            totalVehicles,
+            totalBeforeVat,
+            totalVatAmount,
+            totalAmount,
+            totalSettledAmount,
+            bySupplier,
+            byMonth
+        );
+    }
+
+    public async Task<object?> GetVehicleGpsPaymentInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.GpsPaymentLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new VehicleGpsPaymentInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.DealerCode,
+            veh.IsGpsInstalled,
+            veh.GpsCode,
+            veh.IsGpsPaid,
+            veh.GpsPaidAmount,
+            veh.LastGpsPaymentNo,
+            veh.LastGpsPaymentDate,
+            veh.GpsPaymentCount,
+            lines
+        );
+    }
+
+    public async Task<object?> GetVehicleGpsPaymentHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.GpsPaymentLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var paymentNos = lines.Select(l => l.PaymentGPSNo).Distinct().ToList();
+        var payments = await db.GpsPayments
+            .Where(p => p.OrgId == Org && paymentNos.Contains(p.PaymentGPSNo))
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("GpsPayment") || e.Kind.StartsWith("GpsDevice") || e.Kind.StartsWith("GpsInstallation") || e.Kind.StartsWith("GpsUninstallation")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.EngineNo,
+                veh.Color,
+                veh.StorageCode,
+                veh.DealerCode,
+                veh.IsGpsInstalled,
+                veh.GpsCode,
+                veh.IsGpsPaid,
+                veh.GpsPaidAmount,
+                veh.LastGpsPaymentNo,
+                veh.LastGpsPaymentDate,
+                veh.GpsPaymentCount
+            },
+            payments,
             lines,
             events
         };

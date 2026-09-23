@@ -4112,6 +4112,133 @@ app.MapGet("/api/vehicles/{vin}/transport-plan-history", async (string vin, IVeh
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Bảng kê & Quyết toán chi phí Mua sắm/Thuê thiết bị định vị GPS & Dịch vụ SIM 4G data viễn thông theo lô xe VIN (BizHTC.Payment / Pmt_PaymentGPS & GpsPayment / FrmQuanLyThanhToanGPS, FrmTaoThanhToanGPS) =====
+
+app.MapPost("/api/gps-payments", async (CreateGpsPaymentDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.PmtMonth))
+        return Results.BadRequest(new { error = "Cần tháng/kỳ quyết toán PmtMonth (YYYY-MM)." });
+    try { return Results.Ok(await svc.CreateGpsPaymentAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/gps-payments", async (IVehicleService svc, string? status, string? supplierCode, string? pmtMonth, string? paymentGPSNo, string? vin) =>
+    Results.Ok(await svc.ListGpsPaymentsAsync(status, supplierCode, pmtMonth, paymentGPSNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/gps-payments/summary", async (IVehicleService svc, string? supplierCode, string? pmtMonth) =>
+    Results.Ok(await svc.GetGpsPaymentSummaryAsync(supplierCode, pmtMonth))).RequireAuthorization();
+
+app.MapGet("/api/reports/gps-payments/summary", async (IVehicleService svc, string? supplierCode, string? pmtMonth) =>
+    Results.Ok(await svc.GetGpsPaymentSummaryAsync(supplierCode, pmtMonth))).RequireAuthorization();
+
+app.MapGet("/api/gps-payments/{paymentGPSNo}", async (string paymentGPSNo, IVehicleService svc) =>
+{
+    var r = await svc.GetGpsPaymentAsync(paymentGPSNo);
+    return r is null ? Results.NotFound(new { paymentGPSNo, error = "Không tìm thấy bảng kê quyết toán GPS." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/gps-payments/{paymentGPSNo}", async (string paymentGPSNo, UpdateGpsPaymentHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsPaymentHeaderAsync(paymentGPSNo, dto);
+        return r is null ? Results.NotFound(new { paymentGPSNo, error = "Không tìm thấy bảng kê quyết toán GPS." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps-payments/{paymentGPSNo}/update", async (string paymentGPSNo, UpdateGpsPaymentHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsPaymentHeaderAsync(paymentGPSNo, dto);
+        return r is null ? Results.NotFound(new { paymentGPSNo, error = "Không tìm thấy bảng kê quyết toán GPS." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps-payments/{paymentGPSNo}/{action}", async (string paymentGPSNo, string action, GpsPaymentTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "request" or "approve1" or "approve-step1" or "approve2" or "approve" or "tcms-sign" or "tcmssign" or "sign-tcms" or "htv-sign" or "htvsign" or "sign-htv" or "settle" or "pay" or "finish" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve1|approve2|tcms-sign|htv-sign|settle|reject|cancel" });
+    try
+    {
+        var r = await svc.GpsPaymentTransitionAsync(paymentGPSNo, action, dto);
+        return r is null ? Results.NotFound(new { paymentGPSNo, error = "Không tìm thấy bảng kê hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps-payments/{paymentGPSNo}/lines/{vin}/update", async (string paymentGPSNo, string vin, UpdateGpsPaymentLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsPaymentLineAsync(paymentGPSNo, vin, dto);
+        return r is null ? Results.NotFound(new { paymentGPSNo, vin, error = "Không tìm thấy dòng xe trong bảng kê GPS." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/gps-payments/{paymentGPSNo}/lines/{vin}", async (string paymentGPSNo, string vin, UpdateGpsPaymentLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateGpsPaymentLineAsync(paymentGPSNo, vin, dto);
+        return r is null ? Results.NotFound(new { paymentGPSNo, vin, error = "Không tìm thấy dòng xe trong bảng kê GPS." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/gps-payments/{paymentGPSNo}/lines", async (string paymentGPSNo, List<GpsPaymentLineInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào bảng kê." });
+    try
+    {
+        var r = await svc.AddGpsPaymentLinesAsync(paymentGPSNo, items);
+        return r is null ? Results.NotFound(new { paymentGPSNo, error = "Không tìm thấy bảng kê hoặc không thể thêm xe." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/gps-payments/{paymentGPSNo}/lines/{vin}", async (string paymentGPSNo, string vin, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveGpsPaymentLineAsync(paymentGPSNo, vin);
+        return r is null ? Results.NotFound(new { paymentGPSNo, vin, error = "Không tìm thấy dòng xe trong bảng kê hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/gps-payments/{paymentGPSNo}", async (string paymentGPSNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveGpsPaymentAsync(paymentGPSNo);
+        return r is null ? Results.NotFound(new { paymentGPSNo, error = "Không tìm thấy bảng kê hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/gps-payment-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleGpsPaymentInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/gps-payments", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleGpsPaymentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/gps-payment-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleGpsPaymentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

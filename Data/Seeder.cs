@@ -4320,6 +4320,179 @@ public static class Seeder
                 v3Tp.TranspPlanCount = 1;
             }
         }
+
+        if (!await db.GpsPayments.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var gps1 = new GpsPayment
+            {
+                OrgId = org,
+                PaymentGPSNo = "GPS-202604-001",
+                PaymentGPSNoUser = "TTGPS-2026-04-VLC",
+                PmtMonth = "2026-04",
+                SupplierCode = "VELOCA",
+                SupplierName = "Công ty Cổ phần Công nghệ Veloca",
+                TotalVehicleCount = 2,
+                TotalBeforeVAT = 1000000m,
+                VatRate = 10m,
+                TotalVatAmount = 100000m,
+                TotalAmount = 1100000m,
+                Status = "Settled",
+                TCMSSignStatus = "Signed",
+                TCMSSignDate = DateTime.Now.AddDays(-2),
+                TCMSSignBy = "Đại diện Veloca - Giám đốc kỹ thuật",
+                HTVSignStatus = "Signed",
+                HTVSignDate = DateTime.Now.AddDays(-2),
+                HTVSignBy = "Đại diện HTV - Trưởng phòng Phụ tùng",
+                BankRefNo = "UNC-VCB-20260430-8812",
+                PaymentDate = DateTime.Now.AddDays(-1),
+                FilePath = "/documents/gps-payments/GPS-202604-001-signed.pdf",
+                Remark = "Quyết toán chi phí thiết bị định vị GPS và cước SIM 4G tháng 04/2026 cho bãi xe nhà máy HTMV",
+                CreatedBy = "Kế toán vật tư",
+                CreatedAt = DateTime.Now.AddDays(-5),
+                Approved1By = "Kế toán chi phí",
+                Approved1At = DateTime.Now.AddDays(-4),
+                Approved2By = "Giám đốc Logistics",
+                Approved2At = DateTime.Now.AddDays(-3),
+                SettledBy = "Kế toán thanh toán",
+                SettledAt = DateTime.Now.AddDays(-1)
+            };
+            db.GpsPayments.Add(gps1);
+            await db.SaveChangesAsync();
+
+            db.GpsPaymentLines.AddRange(
+                new GpsPaymentLine
+                {
+                    OrgId = org,
+                    GpsPaymentId = gps1.Id,
+                    PaymentGPSNo = gps1.PaymentGPSNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000001",
+                    Model = "SantaFe",
+                    SpecCode = "2.5 HTRAC Cao Cấp",
+                    EngineNo = "G4KP123456",
+                    Color = "Trắng Ngọc Trai",
+                    GpsCode = "GPS-VELOCA-001",
+                    SimCardNo = "09820260001",
+                    ImeiNo = "8620260400000001",
+                    CostGPSStartDate = new DateTime(2026, 4, 1),
+                    CostGPSEndDate = new DateTime(2026, 4, 30),
+                    PlanCostGPSDate = 30,
+                    DeductDate = 0,
+                    ActualCostGPSDate = 30,
+                    DailyRate = 15000m,
+                    SimDataFee = 50000m,
+                    AmountGPS = 500000m,
+                    ContractGPS = "HD-GPS-VELOCA-2026",
+                    InStorageDate = DateTime.Now.AddDays(-45),
+                    Status = "Settled",
+                    Remark = "Định vị bãi xe nhà máy HTMV 1"
+                },
+                new GpsPaymentLine
+                {
+                    OrgId = org,
+                    GpsPaymentId = gps1.Id,
+                    PaymentGPSNo = gps1.PaymentGPSNo,
+                    LineIndex = 2,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Tucson",
+                    SpecCode = "1.6T Turbo HTRAC",
+                    EngineNo = "G4FP654321",
+                    Color = "Đen Sang Trọng",
+                    GpsCode = "GPS-VELOCA-002",
+                    SimCardNo = "09820260002",
+                    ImeiNo = "8620260400000002",
+                    CostGPSStartDate = new DateTime(2026, 4, 1),
+                    CostGPSEndDate = new DateTime(2026, 4, 30),
+                    PlanCostGPSDate = 30,
+                    DeductDate = 0,
+                    ActualCostGPSDate = 30,
+                    DailyRate = 15000m,
+                    SimDataFee = 50000m,
+                    AmountGPS = 500000m,
+                    ContractGPS = "HD-GPS-VELOCA-2026",
+                    InStorageDate = DateTime.Now.AddDays(-40),
+                    Status = "Settled",
+                    Remark = "Định vị xe vận chuyển xe lồng"
+                }
+            );
+
+            var gps2 = new GpsPayment
+            {
+                OrgId = org,
+                PaymentGPSNo = "GPS-202605-001",
+                PaymentGPSNoUser = "TTGPS-2026-05-VTT",
+                PmtMonth = "2026-05",
+                SupplierCode = "VIETTEL",
+                SupplierName = "Viettel Telecom - Chi nhánh Doanh nghiệp",
+                TotalVehicleCount = 1,
+                TotalBeforeVAT = 500000m,
+                VatRate = 10m,
+                TotalVatAmount = 50000m,
+                TotalAmount = 550000m,
+                Status = "Approved2",
+                TCMSSignStatus = "Unsigned",
+                HTVSignStatus = "Unsigned",
+                Remark = "Đợt thanh toán cước thiết bị định vị GPS & data 4G tháng 05/2026",
+                CreatedBy = "Kế toán vật tư",
+                CreatedAt = DateTime.Now.AddDays(-2),
+                Approved1By = "Kế toán chi phí",
+                Approved1At = DateTime.Now.AddDays(-1),
+                Approved2By = "Giám đốc Logistics",
+                Approved2At = DateTime.Now
+            };
+            db.GpsPayments.Add(gps2);
+
+            db.GpsPaymentLines.Add(
+                new GpsPaymentLine
+                {
+                    OrgId = org,
+                    GpsPaymentId = gps2.Id,
+                    PaymentGPSNo = gps2.PaymentGPSNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000003",
+                    Model = "Accent",
+                    SpecCode = "1.5 AT Đặc Biệt",
+                    EngineNo = "G4LC789012",
+                    Color = "Đỏ Mê Hoặc",
+                    GpsCode = "GPS-VTT-001",
+                    SimCardNo = "09820260003",
+                    ImeiNo = "8620260500000003",
+                    CostGPSStartDate = new DateTime(2026, 5, 1),
+                    CostGPSEndDate = new DateTime(2026, 5, 30),
+                    PlanCostGPSDate = 30,
+                    DeductDate = 0,
+                    ActualCostGPSDate = 30,
+                    DailyRate = 15000m,
+                    SimDataFee = 50000m,
+                    AmountGPS = 500000m,
+                    ContractGPS = "HD-GPS-VIETTEL-2026",
+                    InStorageDate = DateTime.Now.AddDays(-20),
+                    Status = "Approved2",
+                    Remark = "Định vị xe bãi trung tâm"
+                }
+            );
+
+            var v1Gps = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Gps != null)
+            {
+                v1Gps.IsGpsPaid = true;
+                v1Gps.GpsPaidAmount = 500000m;
+                v1Gps.LastGpsPaymentNo = gps1.PaymentGPSNo;
+                v1Gps.LastGpsPaymentDate = gps1.PaymentDate;
+                v1Gps.GpsPaymentCount = 1;
+            }
+
+            var v2Gps = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Gps != null)
+            {
+                v2Gps.IsGpsPaid = true;
+                v2Gps.GpsPaidAmount = 500000m;
+                v2Gps.LastGpsPaymentNo = gps1.PaymentGPSNo;
+                v2Gps.LastGpsPaymentDate = gps1.PaymentDate;
+                v2Gps.GpsPaymentCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -4535,7 +4708,14 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastTranspPlanDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"TranspPlanCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"TransportPlans\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PlanNo\" text NOT NULL DEFAULT '', \"PlanNoUser\" text NULL, \"PlanMonth\" text NOT NULL DEFAULT '', \"PlanDate\" timestamp NOT NULL DEFAULT now(), \"StorageCode\" text NOT NULL DEFAULT 'PLANT-HTMV1', \"StorageName\" text NULL DEFAULT 'Kho Tổng Nhà máy HTMV Ninh Bình 1', \"TPType\" text NOT NULL DEFAULT 'Road', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalRealVinCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"ExecutedBy\" text NULL, \"ExecutedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"TransportPlanLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TransportPlanId\" bigint NOT NULL, \"PlanNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"VINPlan\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"FlagRealVin\" boolean NOT NULL DEFAULT false, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT 'NWAC', \"ColorName\" text NULL DEFAULT 'Trắng ngọc trai', \"StorageCode\" text NOT NULL DEFAULT 'PLANT-HTMV1', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"FProvinceCode\" text NOT NULL DEFAULT 'NB', \"FProvinceName\" text NULL DEFAULT 'Ninh Bình', \"FDistrictCode\" text NOT NULL DEFAULT 'GV', \"FDistrictName\" text NULL DEFAULT 'Gia Viễn', \"TProvinceCode\" text NOT NULL DEFAULT 'HN', \"TProvinceName\" text NULL DEFAULT 'Hà Nội', \"TDistrictCode\" text NOT NULL DEFAULT 'CG', \"TDistrictName\" text NULL DEFAULT 'Cầu Giấy', \"TransporterCode\" text NOT NULL DEFAULT 'NYK', \"TransporterName\" text NULL DEFAULT 'Công ty TNHH Vận tải Hàng hải NYK Việt Nam', \"TruckPlateNo\" text NULL, \"DriverName\" text NULL, \"DriverPhone\" text NULL, \"CQStartDate\" timestamp NULL, \"ExpectedDate\" timestamp NOT NULL DEFAULT now(), \"ActualDepartureDate\" timestamp NULL, \"ActualArrivalDate\" timestamp NULL, \"TPStatus\" text NOT NULL DEFAULT 'Pending', \"TransporterStatus\" text NOT NULL DEFAULT 'Pending', \"TransporterAppDate\" timestamp NULL, \"TransporterAppBy\" text NULL, \"TransporterRejectReason\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"TransportPlanLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TransportPlanId\" bigint NOT NULL, \"PlanNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"VINPlan\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"FlagRealVin\" boolean NOT NULL DEFAULT false, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT 'NWAC', \"ColorName\" text NULL DEFAULT 'Trắng ngọc trai', \"StorageCode\" text NOT NULL DEFAULT 'PLANT-HTMV1', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"FProvinceCode\" text NOT NULL DEFAULT 'NB', \"FProvinceName\" text NULL DEFAULT 'Ninh Bình', \"FDistrictCode\" text NOT NULL DEFAULT 'GV', \"FDistrictName\" text NULL DEFAULT 'Gia Viễn', \"TProvinceCode\" text NOT NULL DEFAULT 'HN', \"TProvinceName\" text NULL DEFAULT 'Hà Nội', \"TDistrictCode\" text NOT NULL DEFAULT 'CG', \"TDistrictName\" text NULL DEFAULT 'Cầu Giấy', \"TransporterCode\" text NOT NULL DEFAULT 'NYK', \"TransporterName\" text NULL DEFAULT 'Công ty TNHH Vận tải Hàng hải NYK Việt Nam', \"TruckPlateNo\" text NULL, \"DriverName\" text NULL, \"DriverPhone\" text NULL, \"CQStartDate\" timestamp NULL, \"ExpectedDate\" timestamp NOT NULL DEFAULT now(), \"ActualDepartureDate\" timestamp NULL, \"ActualArrivalDate\" timestamp NULL, \"TPStatus\" text NOT NULL DEFAULT 'Pending', \"TransporterStatus\" text NOT NULL DEFAULT 'Pending', \"TransporterAppDate\" timestamp NULL, \"TransporterAppBy\" text NULL, \"TransporterRejectReason\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsGpsPaid\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"GpsPaidAmount\" numeric NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastGpsPaymentNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastGpsPaymentDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"GpsPaymentCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"GpsPayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PaymentGPSNo\" text NOT NULL DEFAULT '', \"PaymentGPSNoUser\" text NULL, \"PmtMonth\" text NOT NULL DEFAULT '', \"SupplierCode\" text NOT NULL DEFAULT 'VELOCA', \"SupplierName\" text NULL DEFAULT 'Công ty Cổ phần Công nghệ Veloca', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalBeforeVAT\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"TCMSSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"TCMSSignDate\" timestamp NULL, \"TCMSSignBy\" text NULL, \"HTVSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"HTVSignDate\" timestamp NULL, \"HTVSignBy\" text NULL, \"BankRefNo\" text NULL, \"PaymentDate\" timestamp NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"GpsPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsPaymentId\" bigint NOT NULL, \"PaymentGPSNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"SimCardNo\" text NULL, \"ImeiNo\" text NULL, \"CostGPSStartDate\" timestamp NOT NULL DEFAULT now(), \"CostGPSEndDate\" timestamp NOT NULL DEFAULT now(), \"PlanCostGPSDate\" integer NOT NULL DEFAULT 30, \"DeductDate\" integer NOT NULL DEFAULT 0, \"ActualCostGPSDate\" integer NOT NULL DEFAULT 30, \"DailyRate\" numeric NOT NULL DEFAULT 15000, \"SimDataFee\" numeric NOT NULL DEFAULT 50000, \"AmountGPS\" numeric NOT NULL DEFAULT 500000, \"ContractGPS\" text NULL, \"InStorageDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

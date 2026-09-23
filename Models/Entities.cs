@@ -101,6 +101,11 @@ public sealed class Vehicle
     public decimal? LastGpsBatteryVolt { get; set; } // Điện áp nguồn thiết bị GPS / ắc quy xe (V)
     public DateTime? LastGpsSignalTime { get; set; } // Thời điểm cập nhật tín hiệu GPS gần nhất
     public int GpsDeviceCount { get; set; } = 0;     // Tổng số lần xe đã từng gắn / đổi thiết bị định vị
+    public bool IsGpsPaid { get; set; } = false;      // Đã thanh toán / quyết toán chi phí dịch vụ thiết bị định vị GPS (BizHTC.Payment.Pmt_PaymentGPS)
+    public decimal GpsPaidAmount { get; set; } = 0;   // Tổng tiền dịch vụ GPS đã thanh toán của xe (VNĐ)
+    public string? LastGpsPaymentNo { get; set; }     // Mã bảng kê quyết toán GPS gần nhất (PaymentGPSNo)
+    public DateTime? LastGpsPaymentDate { get; set; } // Ngày quyết toán chi phí GPS gần nhất
+    public int GpsPaymentCount { get; set; } = 0;     // Số lần xe phát sinh trong bảng kê quyết toán GPS
     public string? LastCavityNo { get; set; }       // Mã khoang/cầu sửa chữa xưởng dịch vụ gần nhất xe vào (BizCarSv.Ser_Cavity / ServiceCavity)
     public string? LastCavityName { get; set; }     // Tên khoang/cầu sửa chữa gần nhất
     public DateTime? LastCavityDate { get; set; }   // Thời điểm vào khoang sửa chữa gần nhất
@@ -4361,6 +4366,189 @@ public sealed record VehicleTransportPlanInfoDto(
     DateTime? LastTranspPlanDate,
     int TranspPlanCount,
     List<TransportPlanLine> PlanLines
+);
+
+// ===== Bảng kê & Quyết toán chi phí Mua sắm/Thuê thiết bị định vị GPS & Dịch vụ SIM 4G data viễn thông theo lô xe VIN (BizHTC.Payment / Pmt_PaymentGPS, Pmt_PaymentGPSDetail / FrmQuanLyThanhToanGPS, FrmTaoThanhToanGPS, FrmTaoThanhToanGPS_AddCar) =====
+
+/// <summary>Bảng kê & Quyết toán chi phí Thiết bị định vị GPS & Dịch vụ SIM 4G data viễn thông theo lô xe VIN (BizHTC.Payment.Pmt_PaymentGPS / GpsPayment): quản lý đối soát và thanh toán chi phí thuê/mua thiết bị GPS và cước phí duy trì SIM 4G viễn thông giám sát hành trình giữa Hãng xe OEM HTV và Đơn vị cung cấp giải pháp/quản lý bãi kho TCMS/Veloca/Viettel/VNPT.</summary>
+public sealed class GpsPayment
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PaymentGPSNo { get; set; } = "";        // Mã bảng kê quyết toán GPS (GPS-202604-001, PMGPS...)
+    public string? PaymentGPSNoUser { get; set; }       // Mã số bảng kê do người dùng nhập / tham chiếu nội bộ
+    public string PmtMonth { get; set; } = "";          // Kỳ / tháng quyết toán chi phí (YYYY-MM, ví dụ: 2026-04)
+    public string SupplierCode { get; set; } = "VELOCA"; // Mã nhà cung cấp thiết bị/dịch vụ GPS (VELOCA, VIETTEL, VNPT, MOBIS...)
+    public string? SupplierName { get; set; } = "Công ty Cổ phần Công nghệ Veloca"; // Tên nhà cung cấp giải pháp GPS
+    public int TotalVehicleCount { get; set; } = 0;     // Tổng số lượng xe lắp đặt thiết bị GPS trong bảng kê
+    public decimal TotalBeforeVAT { get; set; } = 0;    // Tổng chi phí GPS trước thuế VAT (VNĐ)
+    public decimal VatRate { get; set; } = 10;          // Thuế suất VAT (%) (VD: 10% = 10)
+    public decimal TotalVatAmount { get; set; } = 0;    // Tiền thuế VAT = TotalBeforeVAT * VatRate / 100
+    public decimal TotalAmount { get; set; } = 0;       // Tổng số tiền thanh toán đã bao gồm VAT = TotalBeforeVAT + TotalVatAmount
+    public string Status { get; set; } = "Draft";       // Draft → Submitted → Approved1 → Approved2 → TCMSSigned → HTVSigned → Settled (hoặc Rejected / Cancelled)
+    public string? TCMSSignStatus { get; set; } = "Unsigned"; // Trạng thái ký số Đơn vị GPS/TCMS (Unsigned, Signed)
+    public DateTime? TCMSSignDate { get; set; }         // Ngày ký số Đơn vị GPS/TCMS
+    public string? TCMSSignBy { get; set; }             // Người đại diện Đơn vị GPS ký số
+    public string? HTVSignStatus { get; set; } = "Unsigned"; // Trạng thái ký số Hãng xe OEM HTV (Unsigned, Signed)
+    public DateTime? HTVSignDate { get; set; }          // Ngày ký số HTV
+    public string? HTVSignBy { get; set; }              // Người đại diện HTV ký số
+    public string? BankRefNo { get; set; }              // Số chứng từ / Ủy nhiệm chi UNC ngân hàng giải ngân thanh toán
+    public DateTime? PaymentDate { get; set; }          // Ngày thực tế chuyển khoản thanh toán
+    public string? FilePath { get; set; }               // Tệp đính kèm bảng kê có chữ ký số (PDF)
+    public string? Remark { get; set; }                 // Ghi chú đợt quyết toán
+    public string? CreatedBy { get; set; }              // Người lập bảng kê
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? Approved1By { get; set; }            // Kế toán chi phí vật tư sơ duyệt A1
+    public DateTime? Approved1At { get; set; }
+    public string? Approved2By { get; set; }            // Giám đốc Khối Phụ tùng / Khối Logistics duyệt A2
+    public DateTime? Approved2At { get; set; }
+    public string? SettledBy { get; set; }              // Kế toán trưởng / Thủ quỹ xác nhận giải ngân
+    public DateTime? SettledAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe trong Bảng kê quyết toán chi phí GPS (BizHTC.Payment.Pmt_PaymentGPSDetail / GpsPaymentLine): số khung VIN, model, mã thiết bị GPS, số SIM 4G, số IMEI, số ngày tính phí kế hoạch/thực tế, ngày khấu trừ, đơn giá thuê/ngày, cước data 4G và thành tiền.</summary>
+public sealed class GpsPaymentLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long GpsPaymentId { get; set; }
+    public string PaymentGPSNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;             // Thứ tự dòng
+    public string Vin { get; set; } = "";               // Số khung VIN xe gắn thiết bị GPS
+    public string Model { get; set; } = "";             // Dòng xe (SantaFe, Tucson, Accent, Creta, Elantra, Stargazer, Custin, Ioniq 5...)
+    public string? SpecCode { get; set; }               // Phiên bản xe
+    public string? EngineNo { get; set; }               // Số máy
+    public string? Color { get; set; }                  // Màu sắc
+    public string GpsCode { get; set; } = "";           // Mã thiết bị GPS (GPSDvNo / GPSID)
+    public string? SimCardNo { get; set; }              // Số SIM 4G data viễn thông
+    public string? ImeiNo { get; set; }                 // Số IMEI thiết bị phần cứng
+    public DateTime CostGPSStartDate { get; set; } = DateTime.Now; // Ngày bắt đầu tính phí GPS
+    public DateTime CostGPSEndDate { get; set; } = DateTime.Now;   // Ngày kết thúc tính phí GPS
+    public int PlanCostGPSDate { get; set; } = 30;      // Số ngày kế hoạch tính phí = (CostGPSEndDate - CostGPSStartDate).Days + 1
+    public int DeductDate { get; set; } = 0;            // Số ngày khấu trừ không tính phí (bảo hành, đổi thiết bị, lưu kho chưa kích hoạt)
+    public int ActualCostGPSDate { get; set; } = 30;    // Số ngày tính phí thực tế = Max(0, PlanCostGPSDate - DeductDate)
+    public decimal DailyRate { get; set; } = 15000m;    // Đơn giá thuê thiết bị GPS theo ngày (VNĐ/ngày) (PriceGPS)
+    public decimal SimDataFee { get; set; } = 50000m;   // Cước phí data viễn thông 4G theo tháng (VNĐ)
+    public decimal AmountGPS { get; set; } = 500000m;   // Tổng chi phí GPS của xe = (ActualCostGPSDate * DailyRate) + SimDataFee (VNĐ)
+    public string? ContractGPS { get; set; }            // Số hợp đồng dịch vụ / gói cước GPS tham chiếu
+    public DateTime? InStorageDate { get; set; }        // Ngày xe nhập kho bãi / xuất xưởng
+    public string Status { get; set; } = "Pending";     // Pending → Approved → Settled (hoặc Cancelled)
+    public string? Remark { get; set; }                 // Ghi chú kỹ thuật chi tiết
+}
+
+// ===== DTOs cho Bảng kê & Quyết toán chi phí Thiết bị GPS & SIM 4G (BizHTC.Payment / Pmt_PaymentGPS & GpsPayment) =====
+
+public sealed record CreateGpsPaymentDto(
+    string? PaymentGPSNo,
+    string? PaymentGPSNoUser,
+    string PmtMonth,
+    string? SupplierCode,
+    string? SupplierName,
+    decimal? VatRate,
+    string? Remark,
+    string? CreatedBy,
+    List<GpsPaymentLineInputDto>? Items
+);
+
+public sealed record GpsPaymentLineInputDto(
+    string Vin,
+    string? Model,
+    string? SpecCode,
+    string? EngineNo,
+    string? Color,
+    string? GpsCode,
+    string? SimCardNo,
+    string? ImeiNo,
+    DateTime? CostGPSStartDate,
+    DateTime? CostGPSEndDate,
+    int? DeductDate,
+    decimal? DailyRate,
+    decimal? SimDataFee,
+    string? ContractGPS,
+    DateTime? InStorageDate,
+    string? Remark
+);
+
+public sealed record UpdateGpsPaymentHeaderDto(
+    string? PaymentGPSNoUser,
+    string? PmtMonth,
+    string? SupplierCode,
+    string? SupplierName,
+    decimal? VatRate,
+    string? BankRefNo,
+    DateTime? PaymentDate,
+    string? FilePath,
+    string? Remark
+);
+
+public sealed record UpdateGpsPaymentLineDto(
+    string? Model,
+    string? SpecCode,
+    string? GpsCode,
+    string? SimCardNo,
+    string? ImeiNo,
+    DateTime? CostGPSStartDate,
+    DateTime? CostGPSEndDate,
+    int? DeductDate,
+    decimal? DailyRate,
+    decimal? SimDataFee,
+    string? ContractGPS,
+    DateTime? InStorageDate,
+    string? Status,
+    string? Remark
+);
+
+public sealed record GpsPaymentTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate,
+    string? BankRefNo,
+    DateTime? PaymentDate,
+    string? FilePath
+);
+
+public sealed record GpsPaymentSummaryDto(
+    int TotalPayments,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalApproved,
+    int TotalSigned,
+    int TotalSettled,
+    int TotalCancelled,
+    int TotalVehicles,
+    decimal TotalBeforeVAT,
+    decimal TotalVatAmount,
+    decimal TotalAmount,
+    decimal TotalSettledAmount,
+    List<GpsPaymentSupplierStatsDto> BySupplier,
+    List<GpsPaymentMonthStatsDto> ByMonth
+);
+
+public sealed record GpsPaymentSupplierStatsDto(string SupplierCode, string SupplierName, int PaymentCount, int VehicleCount, decimal TotalAmount, decimal SettledAmount);
+public sealed record GpsPaymentMonthStatsDto(string PmtMonth, int PaymentCount, int VehicleCount, decimal TotalAmount, decimal SettledAmount);
+
+public sealed record VehicleGpsPaymentInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    bool IsGpsInstalled,
+    string? GpsCode,
+    bool IsGpsPaid,
+    decimal GpsPaidAmount,
+    string? LastGpsPaymentNo,
+    DateTime? LastGpsPaymentDate,
+    int GpsPaymentCount,
+    List<GpsPaymentLine> PaymentLines
 );
 
 
