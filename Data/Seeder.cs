@@ -4493,6 +4493,213 @@ public static class Seeder
                 v2Gps.GpsPaymentCount = 1;
             }
         }
+
+        if (!await db.TransportInsurancePayments.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+
+            // Bảng kê 1: Quyết toán tháng 2026-05 với nhà xe NYK & Bảo Việt (Đã Settled)
+            var tip1 = new TransportInsurancePayment
+            {
+                OrgId = org,
+                TransportInsNo = "TIP202605-0001",
+                TransportInsNoUser = "BK-VT-BH/2026/05/NYK-01",
+                PmtMonth = "2026-05",
+                TransporterCode = "NYK",
+                TransporterName = "Công ty TNHH Vận tải Hàng hải NYK Việt Nam",
+                InsuranceCompanyCode = "BAOVIET",
+                InsuranceCompanyName = "Tổng Công ty Bảo hiểm Bảo Việt",
+                TotalVehicleCount = 2,
+                TotalFreightAmount = 5200000m,
+                TotalDelayPenalty = 100000m,
+                TotalInsuranceFee = 600000m,
+                TotalBeforeVAT = 5700000m,
+                VatRate = 10m,
+                TotalVatAmount = 570000m,
+                TotalAmount = 6270000m,
+                Status = "Settled",
+                TransporterSignStatus = "Signed",
+                TransporterSignDate = DateTime.Now.AddDays(-2),
+                TransporterSignBy = "nyk.director",
+                HTVSignStatus = "Signed",
+                HTVSignDate = DateTime.Now.AddDays(-2),
+                HTVSignBy = "htv.logistics.lead",
+                BankRefNo = "UNC-VCB-202605-00889",
+                PaymentDate = DateTime.Now.AddDays(-1),
+                Remark = "Quyết toán cước vận tải đường bộ xe lồng và phí bảo hiểm hàng hóa tháng 05/2026 - Tuyến Ninh Bình đi Hà Nội & Hải Phòng",
+                CreatedBy = "planner.logistics",
+                CreatedAt = DateTime.Now.AddDays(-5),
+                Approved1By = "accountant.cost",
+                Approved1At = DateTime.Now.AddDays(-4),
+                Approved2By = "director.logistics",
+                Approved2At = DateTime.Now.AddDays(-3),
+                SettledBy = "chief.accountant",
+                SettledAt = DateTime.Now.AddDays(-1)
+            };
+            db.TransportInsurancePayments.Add(tip1);
+            await db.SaveChangesAsync();
+
+            db.TransportInsurancePaymentLines.AddRange(
+                new TransportInsurancePaymentLine
+                {
+                    OrgId = org,
+                    TransportInsurancePaymentId = tip1.Id,
+                    TransportInsNo = tip1.TransportInsNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000001",
+                    Model = "SantaFe",
+                    SpecCode = "2.5 H-Trac Cao Cấp",
+                    EngineNo = "G4KP123456",
+                    Color = "Trắng Ngọc Trai",
+                    FStorageCode = "PLANT-HTMV1",
+                    FProvinceName = "Ninh Bình",
+                    TStorageCode = "DLR-HN01",
+                    TProvinceName = "Hà Nội",
+                    DealerCode = "DLR-HN01",
+                    DlvStartDate = DateTime.Now.AddDays(-7),
+                    ExpectedDays = 2,
+                    ExpectedDlvEndDate = DateTime.Now.AddDays(-5),
+                    DlvEndDate = DateTime.Now.AddDays(-5),
+                    DelayDate = 0,
+                    FreightAmount = 2600000m,
+                    PenaltyPerDay = 100000m,
+                    DelayPenalty = 0m,
+                    CarValue = 650000000m,
+                    InsuranceRate = 0.05m,
+                    InsuranceFee = 325000m,
+                    TotalAmount = 2925000m,
+                    DlvMnNo = "DMN260501001",
+                    TranspReqType = "OEMToDealer",
+                    Status = "Settled",
+                    StandardRemark = "Giao đúng hạn SLA",
+                    Remark = "Xe kiểm tra ngoại quan hoàn hảo"
+                },
+                new TransportInsurancePaymentLine
+                {
+                    OrgId = org,
+                    TransportInsurancePaymentId = tip1.Id,
+                    TransportInsNo = tip1.TransportInsNo,
+                    LineIndex = 2,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Tucson",
+                    SpecCode = "2.0 AT Đặc Biệt",
+                    EngineNo = "G4NL654321",
+                    Color = "Đen Sang Trọng",
+                    FStorageCode = "PLANT-HTMV1",
+                    FProvinceName = "Ninh Bình",
+                    TStorageCode = "DLR-HP01",
+                    TProvinceName = "Hải Phòng",
+                    DealerCode = "DLR-HP01",
+                    DlvStartDate = DateTime.Now.AddDays(-7),
+                    ExpectedDays = 2,
+                    ExpectedDlvEndDate = DateTime.Now.AddDays(-5),
+                    DlvEndDate = DateTime.Now.AddDays(-4),
+                    DelayDate = 1,
+                    FreightAmount = 2600000m,
+                    PenaltyPerDay = 100000m,
+                    DelayPenalty = 100000m,
+                    CarValue = 550000000m,
+                    InsuranceRate = 0.05m,
+                    InsuranceFee = 275000m,
+                    TotalAmount = 2775000m,
+                    DlvMnNo = "DMN260501002",
+                    TranspReqType = "OEMToDealer",
+                    Status = "Settled",
+                    StandardRemark = "Trễ 1 ngày do thời tiết bão",
+                    Remark = "Khấu trừ phạt trễ 1 ngày theo hợp đồng"
+                }
+            );
+
+            // Bảng kê 2: Quyết toán tháng 2026-05 với nhà xe TRACO & Bảo hiểm PVI (Approved2 / Chờ ký số)
+            var tip2 = new TransportInsurancePayment
+            {
+                OrgId = org,
+                TransportInsNo = "TIP202605-0002",
+                TransportInsNoUser = "BK-VT-BH/2026/05/TRACO-01",
+                PmtMonth = "2026-05",
+                TransporterCode = "TRACO",
+                TransporterName = "Công ty Cổ phần Vận tải Traco",
+                InsuranceCompanyCode = "PVI",
+                InsuranceCompanyName = "Tổng Công ty Cổ phần Bảo hiểm PVI",
+                TotalVehicleCount = 1,
+                TotalFreightAmount = 3500000m,
+                TotalDelayPenalty = 0m,
+                TotalInsuranceFee = 250000m,
+                TotalBeforeVAT = 3750000m,
+                VatRate = 10m,
+                TotalVatAmount = 375000m,
+                TotalAmount = 4125000m,
+                Status = "Approved2",
+                TransporterSignStatus = "Unsigned",
+                HTVSignStatus = "Unsigned",
+                Remark = "Đợt vận chuyển tuyến Ninh Bình đi Đà Nẵng",
+                CreatedBy = "planner.logistics",
+                CreatedAt = DateTime.Now.AddDays(-2),
+                Approved1By = "accountant.cost",
+                Approved1At = DateTime.Now.AddDays(-1),
+                Approved2By = "director.logistics",
+                Approved2At = DateTime.Now
+            };
+            db.TransportInsurancePayments.Add(tip2);
+            await db.SaveChangesAsync();
+
+            db.TransportInsurancePaymentLines.Add(
+                new TransportInsurancePaymentLine
+                {
+                    OrgId = org,
+                    TransportInsurancePaymentId = tip2.Id,
+                    TransportInsNo = tip2.TransportInsNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000003",
+                    Model = "Accent",
+                    SpecCode = "1.5 AT Đặc Biệt",
+                    EngineNo = "G4LC789012",
+                    Color = "Đỏ Mê Hoặc",
+                    FStorageCode = "PLANT-HTMV1",
+                    FProvinceName = "Ninh Bình",
+                    TStorageCode = "DLR-DN01",
+                    TProvinceName = "Đà Nẵng",
+                    DealerCode = "DLR-DN01",
+                    DlvStartDate = DateTime.Now.AddDays(-4),
+                    ExpectedDays = 3,
+                    ExpectedDlvEndDate = DateTime.Now.AddDays(-1),
+                    DlvEndDate = DateTime.Now.AddDays(-1),
+                    DelayDate = 0,
+                    FreightAmount = 3500000m,
+                    PenaltyPerDay = 100000m,
+                    DelayPenalty = 0m,
+                    CarValue = 500000000m,
+                    InsuranceRate = 0.05m,
+                    InsuranceFee = 250000m,
+                    TotalAmount = 3750000m,
+                    DlvMnNo = "DMN260502001",
+                    TranspReqType = "OEMToDealer",
+                    Status = "Approved2",
+                    StandardRemark = "Vận chuyển đường dài an toàn",
+                    Remark = "Đã hoàn thành bàn giao đại lý"
+                }
+            );
+
+            var v1Tip = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Tip != null)
+            {
+                v1Tip.IsTranspInsPaid = true;
+                v1Tip.TranspInsPaidAmount = 2925000m;
+                v1Tip.LastTranspInsPaymentNo = tip1.TransportInsNo;
+                v1Tip.LastTranspInsPaymentDate = tip1.PaymentDate;
+                v1Tip.TranspInsPaymentCount = 1;
+            }
+
+            var v2Tip = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Tip != null)
+            {
+                v2Tip.IsTranspInsPaid = true;
+                v2Tip.TranspInsPaidAmount = 2775000m;
+                v2Tip.LastTranspInsPaymentNo = tip1.TransportInsNo;
+                v2Tip.LastTranspInsPaymentDate = tip1.PaymentDate;
+                v2Tip.TranspInsPaymentCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -4715,7 +4922,14 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastGpsPaymentDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"GpsPaymentCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"GpsPayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PaymentGPSNo\" text NOT NULL DEFAULT '', \"PaymentGPSNoUser\" text NULL, \"PmtMonth\" text NOT NULL DEFAULT '', \"SupplierCode\" text NOT NULL DEFAULT 'VELOCA', \"SupplierName\" text NULL DEFAULT 'Công ty Cổ phần Công nghệ Veloca', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalBeforeVAT\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"TCMSSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"TCMSSignDate\" timestamp NULL, \"TCMSSignBy\" text NULL, \"HTVSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"HTVSignDate\" timestamp NULL, \"HTVSignBy\" text NULL, \"BankRefNo\" text NULL, \"PaymentDate\" timestamp NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"GpsPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsPaymentId\" bigint NOT NULL, \"PaymentGPSNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"SimCardNo\" text NULL, \"ImeiNo\" text NULL, \"CostGPSStartDate\" timestamp NOT NULL DEFAULT now(), \"CostGPSEndDate\" timestamp NOT NULL DEFAULT now(), \"PlanCostGPSDate\" integer NOT NULL DEFAULT 30, \"DeductDate\" integer NOT NULL DEFAULT 0, \"ActualCostGPSDate\" integer NOT NULL DEFAULT 30, \"DailyRate\" numeric NOT NULL DEFAULT 15000, \"SimDataFee\" numeric NOT NULL DEFAULT 50000, \"AmountGPS\" numeric NOT NULL DEFAULT 500000, \"ContractGPS\" text NULL, \"InStorageDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"GpsPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsPaymentId\" bigint NOT NULL, \"PaymentGPSNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"SimCardNo\" text NULL, \"ImeiNo\" text NULL, \"CostGPSStartDate\" timestamp NOT NULL DEFAULT now(), \"CostGPSEndDate\" timestamp NOT NULL DEFAULT now(), \"PlanCostGPSDate\" integer NOT NULL DEFAULT 30, \"DeductDate\" integer NOT NULL DEFAULT 0, \"ActualCostGPSDate\" integer NOT NULL DEFAULT 30, \"DailyRate\" numeric NOT NULL DEFAULT 15000, \"SimDataFee\" numeric NOT NULL DEFAULT 50000, \"AmountGPS\" numeric NOT NULL DEFAULT 500000, \"ContractGPS\" text NULL, \"InStorageDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsTranspInsPaid\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"TranspInsPaidAmount\" numeric NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastTranspInsPaymentNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastTranspInsPaymentDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"TranspInsPaymentCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"TransportInsurancePayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TransportInsNo\" text NOT NULL DEFAULT '', \"TransportInsNoUser\" text NULL, \"PmtMonth\" text NOT NULL DEFAULT '', \"TransporterCode\" text NOT NULL DEFAULT 'NYK', \"TransporterName\" text NULL DEFAULT 'Công ty TNHH Vận tải Hàng hải NYK Việt Nam', \"InsuranceCompanyCode\" text NOT NULL DEFAULT 'BAOVIET', \"InsuranceCompanyName\" text NULL DEFAULT 'Tổng Công ty Bảo hiểm Bảo Việt', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalFreightAmount\" numeric NOT NULL DEFAULT 0, \"TotalDelayPenalty\" numeric NOT NULL DEFAULT 0, \"TotalInsuranceFee\" numeric NOT NULL DEFAULT 0, \"TotalBeforeVAT\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"TransporterSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"TransporterSignDate\" timestamp NULL, \"TransporterSignBy\" text NULL, \"HTVSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"HTVSignDate\" timestamp NULL, \"HTVSignBy\" text NULL, \"BankRefNo\" text NULL, \"PaymentDate\" timestamp NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"TransportInsurancePaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TransportInsurancePaymentId\" bigint NOT NULL, \"TransportInsNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"FStorageCode\" text NULL DEFAULT 'PLANT-HTMV1', \"FProvinceName\" text NULL DEFAULT 'Ninh Bình', \"TStorageCode\" text NULL, \"TProvinceName\" text NULL DEFAULT 'Hà Nội', \"DealerCode\" text NULL, \"DlvStartDate\" timestamp NOT NULL DEFAULT now(), \"ExpectedDays\" integer NOT NULL DEFAULT 2, \"ExpectedDlvEndDate\" timestamp NOT NULL DEFAULT now(), \"DlvEndDate\" timestamp NOT NULL DEFAULT now(), \"DelayDate\" integer NOT NULL DEFAULT 0, \"FreightAmount\" numeric NOT NULL DEFAULT 2500000, \"PenaltyPerDay\" numeric NOT NULL DEFAULT 100000, \"DelayPenalty\" numeric NOT NULL DEFAULT 0, \"CarValue\" numeric NOT NULL DEFAULT 550000000, \"InsuranceRate\" numeric NOT NULL DEFAULT 0.05, \"InsuranceFee\" numeric NOT NULL DEFAULT 275000, \"TotalAmount\" numeric NOT NULL DEFAULT 2775000, \"DlvMnNo\" text NULL, \"TranspReqType\" text NOT NULL DEFAULT 'OEMToDealer', \"Status\" text NOT NULL DEFAULT 'Pending', \"StandardRemark\" text NULL, \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

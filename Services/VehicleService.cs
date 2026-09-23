@@ -2073,6 +2073,20 @@ public interface IVehicleService
     Task<object> GetGpsPaymentSummaryAsync(string? supplierCode, string? pmtMonth);
     Task<object?> GetVehicleGpsPaymentInfoAsync(string vin);
     Task<object?> GetVehicleGpsPaymentHistoryAsync(string vin);
+
+    // Bảng kê & Quyết toán chi phí Vận tải & Bảo hiểm xe ô tô vận chuyển theo lô VIN (BizHTC.Payment / Pmt_TransportIns & TransportInsurancePayment / FrmTransportMinutes, FrmMngPaymentTransport)
+    Task<object> CreateTransportInsurancePaymentAsync(CreateTransportInsurancePaymentDto dto);
+    Task<object> ListTransportInsurancePaymentsAsync(string? status, string? transporterCode, string? insuranceCompanyCode, string? pmtMonth, string? transportInsNo, string? vin);
+    Task<object?> GetTransportInsurancePaymentAsync(string transportInsNo);
+    Task<object?> UpdateTransportInsurancePaymentHeaderAsync(string transportInsNo, UpdateTransportInsurancePaymentHeaderDto dto);
+    Task<object?> TransportInsurancePaymentTransitionAsync(string transportInsNo, string action, TransportInsurancePaymentTransitionDto? dto);
+    Task<object?> UpdateTransportInsurancePaymentLineAsync(string transportInsNo, string vin, UpdateTransportInsurancePaymentLineDto dto);
+    Task<object?> AddTransportInsurancePaymentLinesAsync(string transportInsNo, List<TransportInsurancePaymentLineInputDto> items);
+    Task<object?> RemoveTransportInsurancePaymentLineAsync(string transportInsNo, string vin);
+    Task<object?> RemoveTransportInsurancePaymentAsync(string transportInsNo);
+    Task<object> GetTransportInsurancePaymentSummaryAsync(string? transporterCode, string? pmtMonth, string? insuranceCompanyCode);
+    Task<object?> GetVehicleTranspInsPaymentInfoAsync(string vin);
+    Task<object?> GetVehicleTranspInsPaymentHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -31396,6 +31410,921 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 veh.LastGpsPaymentNo,
                 veh.LastGpsPaymentDate,
                 veh.GpsPaymentCount
+            },
+            payments,
+            lines,
+            events
+        };
+    }
+
+    // ===== Bảng kê & Quyết toán chi phí Vận tải & Bảo hiểm xe ô tô vận chuyển theo lô VIN (BizHTC.Payment / Pmt_TransportIns & TransportInsurancePayment) =====
+
+    public async Task<object> CreateTransportInsurancePaymentAsync(CreateTransportInsurancePaymentDto dto)
+    {
+        var pmtMonth = dto.PmtMonth.Trim();
+        var transportInsNo = !string.IsNullOrWhiteSpace(dto.TransportInsNo)
+            ? dto.TransportInsNo.Trim().ToUpperInvariant()
+            : $"TIP{DateTime.Now:yyyyMMddHHmmss}";
+
+        if (await db.TransportInsurancePayments.AnyAsync(p => p.OrgId == Org && p.TransportInsNo == transportInsNo))
+            throw new InvalidOperationException($"Bảng kê quyết toán vận tải & bảo hiểm {transportInsNo} đã tồn tại.");
+
+        var transporterCode = !string.IsNullOrWhiteSpace(dto.TransporterCode) ? dto.TransporterCode.Trim().ToUpperInvariant() : "NYK";
+        var transporterName = dto.TransporterName?.Trim() ?? (transporterCode switch
+        {
+            "NYK" => "Công ty TNHH Vận tải Hàng hải NYK Việt Nam",
+            "TRACO" => "Công ty Cổ phần Vận tải Traco",
+            "VINAFCO" => "Công ty Cổ phần Vinafco Logistics",
+            _ => transporterCode
+        });
+
+        var insCompanyCode = !string.IsNullOrWhiteSpace(dto.InsuranceCompanyCode) ? dto.InsuranceCompanyCode.Trim().ToUpperInvariant() : "BAOVIET";
+        var insCompanyName = dto.InsuranceCompanyName?.Trim() ?? (insCompanyCode switch
+        {
+            "BAOVIET" => "Tổng Công ty Bảo hiểm Bảo Việt",
+            "PVI" => "Tổng Công ty Cổ phần Bảo hiểm PVI",
+            "PTI" => "Tổng Công ty Cổ phần Bảo hiểm Bưu điện",
+            _ => insCompanyCode
+        });
+
+        var vatRate = dto.VatRate ?? 10m;
+
+        var p = new TransportInsurancePayment
+        {
+            OrgId = Org,
+            TransportInsNo = transportInsNo,
+            TransportInsNoUser = dto.TransportInsNoUser?.Trim(),
+            PmtMonth = pmtMonth,
+            TransporterCode = transporterCode,
+            TransporterName = transporterName,
+            InsuranceCompanyCode = insCompanyCode,
+            InsuranceCompanyName = insCompanyName,
+            VatRate = vatRate,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.TransportInsurancePayments.Add(p);
+
+        var lines = new List<TransportInsurancePaymentLine>();
+        var lineIndex = 1;
+
+        if (dto.Items is { Count: > 0 })
+        {
+            var distinctItems = dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+                .DistinctBy(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+
+            var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+            var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+            foreach (var item in distinctItems)
+            {
+                var vin = item.Vin.Trim().ToUpperInvariant();
+                vehicles.TryGetValue(vin, out var v);
+
+                var dlvStartDate = item.DlvStartDate ?? DateTime.Now.AddDays(-5);
+                var expectedDays = item.ExpectedDays ?? 2;
+                var expectedDlvEndDate = item.ExpectedDlvEndDate ?? dlvStartDate.AddDays(expectedDays);
+                var dlvEndDate = item.DlvEndDate ?? expectedDlvEndDate;
+
+                var delayDate = Math.Max(0, (dlvEndDate.Date - expectedDlvEndDate.Date).Days);
+                var freightAmount = item.FreightAmount ?? 2500000m;
+                var penaltyPerDay = item.PenaltyPerDay ?? 100000m;
+                var delayPenalty = delayDate * penaltyPerDay;
+
+                var carValue = item.CarValue ?? 550000000m;
+                var insuranceRate = item.InsuranceRate ?? 0.05m;
+                var insuranceFee = Math.Round(carValue * insuranceRate / 100m, 0);
+
+                var totalAmount = freightAmount - delayPenalty + insuranceFee;
+
+                var line = new TransportInsurancePaymentLine
+                {
+                    OrgId = Org,
+                    TransportInsurancePaymentId = p.Id,
+                    TransportInsNo = p.TransportInsNo,
+                    LineIndex = lineIndex++,
+                    Vin = vin,
+                    Model = item.Model?.Trim() ?? v?.Model ?? "Hyundai Model",
+                    SpecCode = item.SpecCode?.Trim(),
+                    EngineNo = item.EngineNo?.Trim() ?? v?.EngineNo,
+                    Color = item.Color?.Trim() ?? v?.Color,
+                    FStorageCode = item.FStorageCode?.Trim() ?? "PLANT-HTMV1",
+                    FProvinceName = item.FProvinceName?.Trim() ?? "Ninh Bình",
+                    TStorageCode = item.TStorageCode?.Trim() ?? item.DealerCode?.Trim() ?? "DLR-HN01",
+                    TProvinceName = item.TProvinceName?.Trim() ?? "Hà Nội",
+                    DealerCode = item.DealerCode?.Trim() ?? v?.DealerCode,
+                    DlvStartDate = dlvStartDate,
+                    ExpectedDays = expectedDays,
+                    ExpectedDlvEndDate = expectedDlvEndDate,
+                    DlvEndDate = dlvEndDate,
+                    DelayDate = delayDate,
+                    FreightAmount = freightAmount,
+                    PenaltyPerDay = penaltyPerDay,
+                    DelayPenalty = delayPenalty,
+                    CarValue = carValue,
+                    InsuranceRate = insuranceRate,
+                    InsuranceFee = insuranceFee,
+                    TotalAmount = totalAmount,
+                    DlvMnNo = item.DlvMnNo?.Trim(),
+                    TranspReqType = item.TranspReqType?.Trim() ?? "OEMToDealer",
+                    Status = "Pending",
+                    StandardRemark = item.StandardRemark?.Trim(),
+                    Remark = item.Remark?.Trim()
+                };
+
+                lines.Add(line);
+                db.TransportInsurancePaymentLines.Add(line);
+
+                Log(vin, "TransportInsurancePaymentCreated", $"Thêm vào bảng kê quyết toán vận tải & BH {p.TransportInsNo}: Cước {freightAmount:N0}đ, Phạt trễ {delayPenalty:N0}đ, Phí BH {insuranceFee:N0}đ");
+            }
+        }
+
+        var totalFreight = lines.Sum(l => l.FreightAmount);
+        var totalDelayPenalty = lines.Sum(l => l.DelayPenalty);
+        var totalInsuranceFee = lines.Sum(l => l.InsuranceFee);
+        var totalBeforeVat = totalFreight - totalDelayPenalty + totalInsuranceFee;
+        var totalVat = Math.Round(totalBeforeVat * vatRate / 100m, 0);
+
+        p.TotalVehicleCount = lines.Count;
+        p.TotalFreightAmount = totalFreight;
+        p.TotalDelayPenalty = totalDelayPenalty;
+        p.TotalInsuranceFee = totalInsuranceFee;
+        p.TotalBeforeVAT = totalBeforeVat;
+        p.TotalVatAmount = totalVat;
+        p.TotalAmount = totalBeforeVat + totalVat;
+
+        await db.SaveChangesAsync();
+        return await GetTransportInsurancePaymentAsync(p.TransportInsNo) ?? (object)new { success = true, transportInsNo = p.TransportInsNo };
+    }
+
+    public async Task<object> ListTransportInsurancePaymentsAsync(string? status, string? transporterCode, string? insuranceCompanyCode, string? pmtMonth, string? transportInsNo, string? vin)
+    {
+        var q = db.TransportInsurancePayments.Where(p => p.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(p => p.Status == status);
+        if (!string.IsNullOrWhiteSpace(transporterCode)) { var tc = transporterCode.Trim().ToUpperInvariant(); q = q.Where(p => p.TransporterCode == tc); }
+        if (!string.IsNullOrWhiteSpace(insuranceCompanyCode)) { var ic = insuranceCompanyCode.Trim().ToUpperInvariant(); q = q.Where(p => p.InsuranceCompanyCode == ic); }
+        if (!string.IsNullOrWhiteSpace(pmtMonth)) q = q.Where(p => p.PmtMonth == pmtMonth);
+        if (!string.IsNullOrWhiteSpace(transportInsNo))
+        {
+            var no = transportInsNo.Trim().ToUpperInvariant();
+            q = q.Where(p => p.TransportInsNo.Contains(no) || (p.TransportInsNoUser != null && p.TransportInsNoUser.Contains(no)));
+        }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.TransportInsurancePaymentLines
+                .Where(l => l.OrgId == Org && l.Vin == v)
+                .Select(l => l.TransportInsNo)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(p => matchedNos.Contains(p.TransportInsNo));
+        }
+
+        var list = await q.OrderByDescending(p => p.Id).ToListAsync();
+
+        var paymentNos = list.Select(p => p.TransportInsNo).ToList();
+        var linesGrouped = await db.TransportInsurancePaymentLines
+            .Where(l => l.OrgId == Org && paymentNos.Contains(l.TransportInsNo))
+            .GroupBy(l => l.TransportInsNo)
+            .ToDictionaryAsync(g => g.Key, g => g.ToList());
+
+        var result = list.Select(p =>
+        {
+            linesGrouped.TryGetValue(p.TransportInsNo, out var pLines);
+            pLines ??= new List<TransportInsurancePaymentLine>();
+            return new
+            {
+                p.Id,
+                p.TransportInsNo,
+                p.TransportInsNoUser,
+                p.PmtMonth,
+                p.TransporterCode,
+                p.TransporterName,
+                p.InsuranceCompanyCode,
+                p.InsuranceCompanyName,
+                p.TotalVehicleCount,
+                p.TotalFreightAmount,
+                p.TotalDelayPenalty,
+                p.TotalInsuranceFee,
+                p.TotalBeforeVAT,
+                p.VatRate,
+                p.TotalVatAmount,
+                p.TotalAmount,
+                p.Status,
+                p.TransporterSignStatus,
+                p.TransporterSignDate,
+                p.TransporterSignBy,
+                p.HTVSignStatus,
+                p.HTVSignDate,
+                p.HTVSignBy,
+                p.BankRefNo,
+                p.PaymentDate,
+                p.FilePath,
+                p.Remark,
+                p.CreatedBy,
+                p.CreatedAt,
+                p.Approved1By,
+                p.Approved1At,
+                p.Approved2By,
+                p.Approved2At,
+                p.SettledBy,
+                p.SettledAt,
+                p.RejectedBy,
+                p.RejectedAt,
+                p.RejectReason,
+                p.CancelledBy,
+                p.CancelledAt,
+                p.CancelReason,
+                items = pLines.Select(l => new
+                {
+                    l.Id,
+                    l.TransportInsNo,
+                    l.LineIndex,
+                    l.Vin,
+                    l.Model,
+                    l.SpecCode,
+                    l.EngineNo,
+                    l.Color,
+                    l.FStorageCode,
+                    l.FProvinceName,
+                    l.TStorageCode,
+                    l.TProvinceName,
+                    l.DealerCode,
+                    l.DlvStartDate,
+                    l.ExpectedDays,
+                    l.ExpectedDlvEndDate,
+                    l.DlvEndDate,
+                    l.DelayDate,
+                    l.FreightAmount,
+                    l.PenaltyPerDay,
+                    l.DelayPenalty,
+                    l.CarValue,
+                    l.InsuranceRate,
+                    l.InsuranceFee,
+                    l.TotalAmount,
+                    l.DlvMnNo,
+                    l.TranspReqType,
+                    l.Status,
+                    l.StandardRemark,
+                    l.Remark
+                })
+            };
+        }).ToList();
+
+        return new { count = result.Count, items = result };
+    }
+
+    public async Task<object?> GetTransportInsurancePaymentAsync(string transportInsNo)
+    {
+        transportInsNo = transportInsNo.Trim().ToUpperInvariant();
+        var p = await db.TransportInsurancePayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.TransportInsNo == transportInsNo || x.TransportInsNoUser == transportInsNo));
+        if (p is null) return null;
+
+        var lines = await db.TransportInsurancePaymentLines
+            .Where(l => l.OrgId == Org && l.TransportInsNo == p.TransportInsNo)
+            .OrderBy(l => l.LineIndex)
+            .ToListAsync();
+
+        return new
+        {
+            p.Id,
+            p.TransportInsNo,
+            p.TransportInsNoUser,
+            p.PmtMonth,
+            p.TransporterCode,
+            p.TransporterName,
+            p.InsuranceCompanyCode,
+            p.InsuranceCompanyName,
+            p.TotalVehicleCount,
+            p.TotalFreightAmount,
+            p.TotalDelayPenalty,
+            p.TotalInsuranceFee,
+            p.TotalBeforeVAT,
+            p.VatRate,
+            p.TotalVatAmount,
+            p.TotalAmount,
+            p.Status,
+            p.TransporterSignStatus,
+            p.TransporterSignDate,
+            p.TransporterSignBy,
+            p.HTVSignStatus,
+            p.HTVSignDate,
+            p.HTVSignBy,
+            p.BankRefNo,
+            p.PaymentDate,
+            p.FilePath,
+            p.Remark,
+            p.CreatedBy,
+            p.CreatedAt,
+            p.Approved1By,
+            p.Approved1At,
+            p.Approved2By,
+            p.Approved2At,
+            p.SettledBy,
+            p.SettledAt,
+            p.RejectedBy,
+            p.RejectedAt,
+            p.RejectReason,
+            p.CancelledBy,
+            p.CancelledAt,
+            p.CancelReason,
+            items = lines.Select(l => new
+            {
+                l.Id,
+                l.TransportInsNo,
+                l.LineIndex,
+                l.Vin,
+                l.Model,
+                l.SpecCode,
+                l.EngineNo,
+                l.Color,
+                l.FStorageCode,
+                l.FProvinceName,
+                l.TStorageCode,
+                l.TProvinceName,
+                l.DealerCode,
+                l.DlvStartDate,
+                l.ExpectedDays,
+                l.ExpectedDlvEndDate,
+                l.DlvEndDate,
+                l.DelayDate,
+                l.FreightAmount,
+                l.PenaltyPerDay,
+                l.DelayPenalty,
+                l.CarValue,
+                l.InsuranceRate,
+                l.InsuranceFee,
+                l.TotalAmount,
+                l.DlvMnNo,
+                l.TranspReqType,
+                l.Status,
+                l.StandardRemark,
+                l.Remark
+            })
+        };
+    }
+
+    public async Task<object?> UpdateTransportInsurancePaymentHeaderAsync(string transportInsNo, UpdateTransportInsurancePaymentHeaderDto dto)
+    {
+        transportInsNo = transportInsNo.Trim().ToUpperInvariant();
+        var p = await db.TransportInsurancePayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.TransportInsNo == transportInsNo || x.TransportInsNoUser == transportInsNo));
+        if (p is null) return null;
+
+        if (p.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể cập nhật bảng kê ở trạng thái {p.Status}.");
+
+        if (!string.IsNullOrWhiteSpace(dto.TransportInsNoUser)) p.TransportInsNoUser = dto.TransportInsNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PmtMonth)) p.PmtMonth = dto.PmtMonth.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TransporterCode)) p.TransporterCode = dto.TransporterCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.TransporterName)) p.TransporterName = dto.TransporterName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.InsuranceCompanyCode)) p.InsuranceCompanyCode = dto.InsuranceCompanyCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.InsuranceCompanyName)) p.InsuranceCompanyName = dto.InsuranceCompanyName.Trim();
+        if (dto.VatRate.HasValue) p.VatRate = dto.VatRate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.BankRefNo)) p.BankRefNo = dto.BankRefNo.Trim();
+        if (dto.PaymentDate.HasValue) p.PaymentDate = dto.PaymentDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.FilePath)) p.FilePath = dto.FilePath.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) p.Remark = dto.Remark.Trim();
+
+        var lines = await db.TransportInsurancePaymentLines.Where(l => l.OrgId == Org && l.TransportInsNo == p.TransportInsNo).ToListAsync();
+        var totalFreight = lines.Sum(l => l.FreightAmount);
+        var totalDelayPenalty = lines.Sum(l => l.DelayPenalty);
+        var totalInsuranceFee = lines.Sum(l => l.InsuranceFee);
+        var totalBeforeVat = totalFreight - totalDelayPenalty + totalInsuranceFee;
+        var totalVat = Math.Round(totalBeforeVat * p.VatRate / 100m, 0);
+
+        p.TotalVehicleCount = lines.Count;
+        p.TotalFreightAmount = totalFreight;
+        p.TotalDelayPenalty = totalDelayPenalty;
+        p.TotalInsuranceFee = totalInsuranceFee;
+        p.TotalBeforeVAT = totalBeforeVat;
+        p.TotalVatAmount = totalVat;
+        p.TotalAmount = totalBeforeVat + totalVat;
+
+        await db.SaveChangesAsync();
+        return await GetTransportInsurancePaymentAsync(p.TransportInsNo);
+    }
+
+    public async Task<object?> TransportInsurancePaymentTransitionAsync(string transportInsNo, string action, TransportInsurancePaymentTransitionDto? dto)
+    {
+        transportInsNo = transportInsNo.Trim().ToUpperInvariant();
+        var p = await db.TransportInsurancePayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.TransportInsNo == transportInsNo || x.TransportInsNoUser == transportInsNo));
+        if (p is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "system";
+        var lines = await db.TransportInsurancePaymentLines.Where(l => l.OrgId == Org && l.TransportInsNo == p.TransportInsNo).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+            case "request":
+                if (p.Status != "Draft")
+                    throw new InvalidOperationException($"Chỉ có thể gửi duyệt bảng kê ở trạng thái Draft (Hiện tại: {p.Status}).");
+                p.Status = "Submitted";
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Submitted";
+                break;
+
+            case "approve1":
+            case "approve-step1":
+                if (p.Status != "Submitted")
+                    throw new InvalidOperationException($"Chỉ có thể sơ duyệt bảng kê ở trạng thái Submitted (Hiện tại: {p.Status}).");
+                p.Status = "Approved1";
+                p.Approved1By = actor;
+                p.Approved1At = now;
+                foreach (var l in lines) if (l.Status == "Submitted") l.Status = "Approved1";
+                break;
+
+            case "approve2":
+            case "approve":
+                if (p.Status != "Approved1")
+                    throw new InvalidOperationException($"Chỉ có thể phê duyệt bảng kê ở trạng thái Approved1 (Hiện tại: {p.Status}).");
+                p.Status = "Approved2";
+                p.Approved2By = actor;
+                p.Approved2At = now;
+                foreach (var l in lines) if (l.Status == "Approved1") l.Status = "Approved2";
+                break;
+
+            case "transporter-sign":
+            case "transportersign":
+            case "sign-transporter":
+                if (p.Status != "Approved2")
+                    throw new InvalidOperationException($"Chỉ có thể ký số đơn vị vận tải ở trạng thái Approved2 (Hiện tại: {p.Status}).");
+                p.Status = "TransporterSigned";
+                p.TransporterSignStatus = "Signed";
+                p.TransporterSignBy = actor;
+                p.TransporterSignDate = now;
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) p.FilePath = dto.FilePath.Trim();
+                foreach (var l in lines) if (l.Status == "Approved2") l.Status = "TransporterSigned";
+                break;
+
+            case "htv-sign":
+            case "htvsign":
+            case "sign-htv":
+                if (p.Status != "TransporterSigned")
+                    throw new InvalidOperationException($"Chỉ có thể Hãng HTV ký số ở trạng thái TransporterSigned (Hiện tại: {p.Status}).");
+                p.Status = "HTVSigned";
+                p.HTVSignStatus = "Signed";
+                p.HTVSignBy = actor;
+                p.HTVSignDate = now;
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) p.FilePath = dto.FilePath.Trim();
+                foreach (var l in lines) if (l.Status == "TransporterSigned") l.Status = "HTVSigned";
+                break;
+
+            case "settle":
+            case "pay":
+            case "finish":
+            case "complete":
+                if (p.Status is not ("HTVSigned" or "TransporterSigned" or "Approved2"))
+                    throw new InvalidOperationException($"Chỉ có thể giải ngân thanh toán khi đã được phê duyệt / ký số (Hiện tại: {p.Status}).");
+
+                p.Status = "Settled";
+                p.SettledBy = actor;
+                p.SettledAt = now;
+                p.PaymentDate = dto?.PaymentDate ?? now;
+                if (!string.IsNullOrWhiteSpace(dto?.BankRefNo)) p.BankRefNo = dto.BankRefNo.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) p.FilePath = dto.FilePath.Trim();
+
+                var vins = lines.Select(l => l.Vin).Distinct().ToList();
+                var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Settled";
+                    if (vehicles.TryGetValue(l.Vin, out var v))
+                    {
+                        v.IsTranspInsPaid = true;
+                        v.TranspInsPaidAmount += l.TotalAmount;
+                        v.LastTranspInsPaymentNo = p.TransportInsNo;
+                        v.LastTranspInsPaymentDate = p.PaymentDate;
+                        v.TranspInsPaymentCount += 1;
+
+                        Log(v.Vin, "TransportInsurancePaymentSettled",
+                            $"{p.TransportInsNo} Quyết toán cước vận tải & bảo hiểm xe thành công: {l.TotalAmount:N0} VNĐ (Nhà xe: {p.TransporterName}, BH: {p.InsuranceCompanyName}, UNC: {p.BankRefNo ?? "N/A"})");
+                    }
+                }
+                break;
+
+            case "reject":
+                if (p.Status is "Settled" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể từ chối bảng kê ở trạng thái {p.Status}.");
+                p.Status = "Rejected";
+                p.RejectedBy = actor;
+                p.RejectedAt = now;
+                p.RejectReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+                foreach (var l in lines) l.Status = "Rejected";
+                break;
+
+            case "cancel":
+                if (p.Status is "Settled")
+                    throw new InvalidOperationException("Không thể hủy bảng kê đã hoàn tất thanh toán Settled.");
+                p.Status = "Cancelled";
+                p.CancelledBy = actor;
+                p.CancelledAt = now;
+                p.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+                foreach (var l in lines) l.Status = "Cancelled";
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động không hợp lệ: {action}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            p.Remark = string.IsNullOrWhiteSpace(p.Remark) ? dto.Note.Trim() : $"{p.Remark} | {dto.Note.Trim()}";
+
+        await db.SaveChangesAsync();
+        return await GetTransportInsurancePaymentAsync(p.TransportInsNo);
+    }
+
+    public async Task<object?> UpdateTransportInsurancePaymentLineAsync(string transportInsNo, string vin, UpdateTransportInsurancePaymentLineDto dto)
+    {
+        transportInsNo = transportInsNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var p = await db.TransportInsurancePayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.TransportInsNo == transportInsNo || x.TransportInsNoUser == transportInsNo));
+        if (p is null) return null;
+
+        if (p.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể sửa chi tiết bảng kê ở trạng thái {p.Status}.");
+
+        var line = await db.TransportInsurancePaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TransportInsNo == p.TransportInsNo && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.Model)) line.Model = dto.Model.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SpecCode)) line.SpecCode = dto.SpecCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.FStorageCode)) line.FStorageCode = dto.FStorageCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.FProvinceName)) line.FProvinceName = dto.FProvinceName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TStorageCode)) line.TStorageCode = dto.TStorageCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TProvinceName)) line.TProvinceName = dto.TProvinceName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) line.DealerCode = dto.DealerCode.Trim();
+        if (dto.DlvStartDate.HasValue) line.DlvStartDate = dto.DlvStartDate.Value;
+        if (dto.ExpectedDays.HasValue) line.ExpectedDays = dto.ExpectedDays.Value;
+        if (dto.ExpectedDlvEndDate.HasValue) line.ExpectedDlvEndDate = dto.ExpectedDlvEndDate.Value;
+        if (dto.DlvEndDate.HasValue) line.DlvEndDate = dto.DlvEndDate.Value;
+
+        if (dto.DelayDate.HasValue) line.DelayDate = dto.DelayDate.Value;
+        else line.DelayDate = Math.Max(0, (line.DlvEndDate.Date - line.ExpectedDlvEndDate.Date).Days);
+
+        if (dto.FreightAmount.HasValue) line.FreightAmount = dto.FreightAmount.Value;
+        if (dto.PenaltyPerDay.HasValue) line.PenaltyPerDay = dto.PenaltyPerDay.Value;
+
+        if (dto.DelayPenalty.HasValue) line.DelayPenalty = dto.DelayPenalty.Value;
+        else line.DelayPenalty = line.DelayDate * line.PenaltyPerDay;
+
+        if (dto.CarValue.HasValue) line.CarValue = dto.CarValue.Value;
+        if (dto.InsuranceRate.HasValue) line.InsuranceRate = dto.InsuranceRate.Value;
+
+        if (dto.InsuranceFee.HasValue) line.InsuranceFee = dto.InsuranceFee.Value;
+        else line.InsuranceFee = Math.Round(line.CarValue * line.InsuranceRate / 100m, 0);
+
+        line.TotalAmount = line.FreightAmount - line.DelayPenalty + line.InsuranceFee;
+
+        if (!string.IsNullOrWhiteSpace(dto.DlvMnNo)) line.DlvMnNo = dto.DlvMnNo.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TranspReqType)) line.TranspReqType = dto.TranspReqType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.StandardRemark)) line.StandardRemark = dto.StandardRemark.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.TransportInsurancePaymentLines.Where(l => l.OrgId == Org && l.TransportInsNo == p.TransportInsNo).ToListAsync();
+        var totalFreight = allLines.Sum(l => l.FreightAmount);
+        var totalDelayPenalty = allLines.Sum(l => l.DelayPenalty);
+        var totalInsuranceFee = allLines.Sum(l => l.InsuranceFee);
+        var totalBeforeVat = totalFreight - totalDelayPenalty + totalInsuranceFee;
+        var totalVat = Math.Round(totalBeforeVat * p.VatRate / 100m, 0);
+
+        p.TotalVehicleCount = allLines.Count;
+        p.TotalFreightAmount = totalFreight;
+        p.TotalDelayPenalty = totalDelayPenalty;
+        p.TotalInsuranceFee = totalInsuranceFee;
+        p.TotalBeforeVAT = totalBeforeVat;
+        p.TotalVatAmount = totalVat;
+        p.TotalAmount = totalBeforeVat + totalVat;
+
+        await db.SaveChangesAsync();
+        return await GetTransportInsurancePaymentAsync(p.TransportInsNo);
+    }
+
+    public async Task<object?> AddTransportInsurancePaymentLinesAsync(string transportInsNo, List<TransportInsurancePaymentLineInputDto> items)
+    {
+        transportInsNo = transportInsNo.Trim().ToUpperInvariant();
+        var p = await db.TransportInsurancePayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.TransportInsNo == transportInsNo || x.TransportInsNoUser == transportInsNo));
+        if (p is null) return null;
+
+        if (p.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm dòng xe vào bảng kê ở trạng thái {p.Status}.");
+
+        var distinctItems = items.Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+            .DistinctBy(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        if (distinctItems.Count == 0) return null;
+
+        var existingLines = await db.TransportInsurancePaymentLines
+            .Where(l => l.OrgId == Org && l.TransportInsNo == p.TransportInsNo)
+            .ToListAsync();
+
+        var existingVins = existingLines.Select(l => l.Vin).ToHashSet();
+        var maxIndex = existingLines.Count > 0 ? existingLines.Max(l => l.LineIndex) : 0;
+
+        var newVins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).Where(v => !existingVins.Contains(v)).ToList();
+        if (newVins.Count == 0) return await GetTransportInsurancePaymentAsync(p.TransportInsNo);
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var addedLines = new List<TransportInsurancePaymentLine>();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            if (existingVins.Contains(vin)) continue;
+
+            vehicles.TryGetValue(vin, out var v);
+
+            var dlvStartDate = item.DlvStartDate ?? DateTime.Now.AddDays(-5);
+            var expectedDays = item.ExpectedDays ?? 2;
+            var expectedDlvEndDate = item.ExpectedDlvEndDate ?? dlvStartDate.AddDays(expectedDays);
+            var dlvEndDate = item.DlvEndDate ?? expectedDlvEndDate;
+
+            var delayDate = Math.Max(0, (dlvEndDate.Date - expectedDlvEndDate.Date).Days);
+            var freightAmount = item.FreightAmount ?? 2500000m;
+            var penaltyPerDay = item.PenaltyPerDay ?? 100000m;
+            var delayPenalty = delayDate * penaltyPerDay;
+
+            var carValue = item.CarValue ?? 550000000m;
+            var insuranceRate = item.InsuranceRate ?? 0.05m;
+            var insuranceFee = Math.Round(carValue * insuranceRate / 100m, 0);
+
+            var totalAmount = freightAmount - delayPenalty + insuranceFee;
+
+            var line = new TransportInsurancePaymentLine
+            {
+                OrgId = Org,
+                TransportInsurancePaymentId = p.Id,
+                TransportInsNo = p.TransportInsNo,
+                LineIndex = ++maxIndex,
+                Vin = vin,
+                Model = item.Model?.Trim() ?? v?.Model ?? "Hyundai Model",
+                SpecCode = item.SpecCode?.Trim(),
+                EngineNo = item.EngineNo?.Trim() ?? v?.EngineNo,
+                Color = item.Color?.Trim() ?? v?.Color,
+                FStorageCode = item.FStorageCode?.Trim() ?? "PLANT-HTMV1",
+                FProvinceName = item.FProvinceName?.Trim() ?? "Ninh Bình",
+                TStorageCode = item.TStorageCode?.Trim() ?? item.DealerCode?.Trim() ?? "DLR-HN01",
+                TProvinceName = item.TProvinceName?.Trim() ?? "Hà Nội",
+                DealerCode = item.DealerCode?.Trim() ?? v?.DealerCode,
+                DlvStartDate = dlvStartDate,
+                ExpectedDays = expectedDays,
+                ExpectedDlvEndDate = expectedDlvEndDate,
+                DlvEndDate = dlvEndDate,
+                DelayDate = delayDate,
+                FreightAmount = freightAmount,
+                PenaltyPerDay = penaltyPerDay,
+                DelayPenalty = delayPenalty,
+                CarValue = carValue,
+                InsuranceRate = insuranceRate,
+                InsuranceFee = insuranceFee,
+                TotalAmount = totalAmount,
+                DlvMnNo = item.DlvMnNo?.Trim(),
+                TranspReqType = item.TranspReqType?.Trim() ?? "OEMToDealer",
+                Status = p.Status == "Submitted" ? "Submitted" : "Pending",
+                StandardRemark = item.StandardRemark?.Trim(),
+                Remark = item.Remark?.Trim()
+            };
+
+            addedLines.Add(line);
+            db.TransportInsurancePaymentLines.Add(line);
+
+            Log(vin, "TransportInsurancePaymentLineAdded", $"Bổ sung xe vào bảng kê quyết toán vận tải & BH {p.TransportInsNo}: Cước {freightAmount:N0}đ, Phạt {delayPenalty:N0}đ, Phí BH {insuranceFee:N0}đ");
+        }
+
+        var allLines = existingLines.Concat(addedLines).ToList();
+        var totalFreight = allLines.Sum(l => l.FreightAmount);
+        var totalDelayPenalty = allLines.Sum(l => l.DelayPenalty);
+        var totalInsuranceFee = allLines.Sum(l => l.InsuranceFee);
+        var totalBeforeVat = totalFreight - totalDelayPenalty + totalInsuranceFee;
+        var totalVat = Math.Round(totalBeforeVat * p.VatRate / 100m, 0);
+
+        p.TotalVehicleCount = allLines.Count;
+        p.TotalFreightAmount = totalFreight;
+        p.TotalDelayPenalty = totalDelayPenalty;
+        p.TotalInsuranceFee = totalInsuranceFee;
+        p.TotalBeforeVAT = totalBeforeVat;
+        p.TotalVatAmount = totalVat;
+        p.TotalAmount = totalBeforeVat + totalVat;
+
+        await db.SaveChangesAsync();
+        return await GetTransportInsurancePaymentAsync(p.TransportInsNo);
+    }
+
+    public async Task<object?> RemoveTransportInsurancePaymentLineAsync(string transportInsNo, string vin)
+    {
+        transportInsNo = transportInsNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var p = await db.TransportInsurancePayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.TransportInsNo == transportInsNo || x.TransportInsNoUser == transportInsNo));
+        if (p is null) return null;
+
+        if (p.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa dòng xe khỏi bảng kê đã {p.Status}.");
+
+        var line = await db.TransportInsurancePaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TransportInsNo == p.TransportInsNo && l.Vin == vin);
+        if (line is null) return null;
+
+        db.TransportInsurancePaymentLines.Remove(line);
+
+        var remainingLines = await db.TransportInsurancePaymentLines.Where(l => l.OrgId == Org && l.TransportInsNo == p.TransportInsNo && l.Vin != vin).ToListAsync();
+        var totalFreight = remainingLines.Sum(l => l.FreightAmount);
+        var totalDelayPenalty = remainingLines.Sum(l => l.DelayPenalty);
+        var totalInsuranceFee = remainingLines.Sum(l => l.InsuranceFee);
+        var totalBeforeVat = totalFreight - totalDelayPenalty + totalInsuranceFee;
+        var totalVat = Math.Round(totalBeforeVat * p.VatRate / 100m, 0);
+
+        p.TotalVehicleCount = remainingLines.Count;
+        p.TotalFreightAmount = totalFreight;
+        p.TotalDelayPenalty = totalDelayPenalty;
+        p.TotalInsuranceFee = totalInsuranceFee;
+        p.TotalBeforeVAT = totalBeforeVat;
+        p.TotalVatAmount = totalVat;
+        p.TotalAmount = totalBeforeVat + totalVat;
+
+        Log(vin, "TransportInsurancePaymentLineRemoved", $"Rút xe khỏi bảng kê quyết toán vận tải & BH {p.TransportInsNo}");
+        await db.SaveChangesAsync();
+
+        return new { success = true, transportInsNo = p.TransportInsNo, vin, remainingCount = remainingLines.Count };
+    }
+
+    public async Task<object?> RemoveTransportInsurancePaymentAsync(string transportInsNo)
+    {
+        transportInsNo = transportInsNo.Trim().ToUpperInvariant();
+        var p = await db.TransportInsurancePayments.FirstOrDefaultAsync(x => x.OrgId == Org && (x.TransportInsNo == transportInsNo || x.TransportInsNoUser == transportInsNo));
+        if (p is null) return null;
+
+        if (p.Status is not "Draft" and not "Cancelled")
+            throw new InvalidOperationException($"Chỉ có thể xóa bảng kê ở trạng thái Draft hoặc Cancelled (Hiện tại: {p.Status}).");
+
+        var lines = await db.TransportInsurancePaymentLines.Where(l => l.OrgId == Org && l.TransportInsNo == p.TransportInsNo).ToListAsync();
+        db.TransportInsurancePaymentLines.RemoveRange(lines);
+        db.TransportInsurancePayments.Remove(p);
+
+        await db.SaveChangesAsync();
+        return new { success = true, transportInsNo = p.TransportInsNo, deletedLines = lines.Count };
+    }
+
+    public async Task<object> GetTransportInsurancePaymentSummaryAsync(string? transporterCode, string? pmtMonth, string? insuranceCompanyCode)
+    {
+        var q = db.TransportInsurancePayments.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(transporterCode)) { var tc = transporterCode.Trim().ToUpperInvariant(); q = q.Where(p => p.TransporterCode == tc); }
+        if (!string.IsNullOrWhiteSpace(insuranceCompanyCode)) { var ic = insuranceCompanyCode.Trim().ToUpperInvariant(); q = q.Where(p => p.InsuranceCompanyCode == ic); }
+        if (!string.IsNullOrWhiteSpace(pmtMonth)) q = q.Where(p => p.PmtMonth == pmtMonth);
+
+        var list = await q.ToListAsync();
+
+        var totalPayments = list.Count;
+        var totalDraft = list.Count(p => p.Status == "Draft");
+        var totalSubmitted = list.Count(p => p.Status == "Submitted");
+        var totalApproved = list.Count(p => p.Status is "Approved1" or "Approved2");
+        var totalSigned = list.Count(p => p.Status is "TransporterSigned" or "HTVSigned");
+        var totalSettled = list.Count(p => p.Status == "Settled");
+        var totalCancelled = list.Count(p => p.Status == "Cancelled");
+        var totalVehicles = list.Sum(p => p.TotalVehicleCount);
+        var totalFreightAmount = list.Sum(p => p.TotalFreightAmount);
+        var totalDelayPenalty = list.Sum(p => p.TotalDelayPenalty);
+        var totalInsuranceFee = list.Sum(p => p.TotalInsuranceFee);
+        var totalBeforeVat = list.Sum(p => p.TotalBeforeVAT);
+        var totalVatAmount = list.Sum(p => p.TotalVatAmount);
+        var totalAmount = list.Sum(p => p.TotalAmount);
+        var totalSettledAmount = list.Where(p => p.Status == "Settled").Sum(p => p.TotalAmount);
+
+        var byTransporter = list
+            .GroupBy(p => p.TransporterCode)
+            .Select(g => new TransportInsuranceTransporterStatsDto(
+                g.Key,
+                g.FirstOrDefault()?.TransporterName ?? g.Key,
+                g.Count(),
+                g.Sum(p => p.TotalVehicleCount),
+                g.Sum(p => p.TotalFreightAmount),
+                g.Sum(p => p.TotalDelayPenalty),
+                g.Sum(p => p.TotalAmount),
+                g.Where(p => p.Status == "Settled").Sum(p => p.TotalAmount)
+            ))
+            .OrderByDescending(x => x.TotalAmount)
+            .ToList();
+
+        var byInsuranceCompany = list
+            .GroupBy(p => p.InsuranceCompanyCode)
+            .Select(g => new TransportInsuranceCompanyStatsDto(
+                g.Key,
+                g.FirstOrDefault()?.InsuranceCompanyName ?? g.Key,
+                g.Count(),
+                g.Sum(p => p.TotalVehicleCount),
+                g.Sum(p => p.TotalInsuranceFee),
+                g.Sum(p => p.TotalAmount),
+                g.Where(p => p.Status == "Settled").Sum(p => p.TotalAmount)
+            ))
+            .OrderByDescending(x => x.TotalAmount)
+            .ToList();
+
+        var byMonth = list
+            .GroupBy(p => p.PmtMonth)
+            .Select(g => new TransportInsuranceMonthStatsDto(
+                g.Key,
+                g.Count(),
+                g.Sum(p => p.TotalVehicleCount),
+                g.Sum(p => p.TotalFreightAmount),
+                g.Sum(p => p.TotalDelayPenalty),
+                g.Sum(p => p.TotalInsuranceFee),
+                g.Sum(p => p.TotalAmount),
+                g.Where(p => p.Status == "Settled").Sum(p => p.TotalAmount)
+            ))
+            .OrderByDescending(x => x.PmtMonth)
+            .ToList();
+
+        return new TransportInsurancePaymentSummaryDto(
+            totalPayments,
+            totalDraft,
+            totalSubmitted,
+            totalApproved,
+            totalSigned,
+            totalSettled,
+            totalCancelled,
+            totalVehicles,
+            totalFreightAmount,
+            totalDelayPenalty,
+            totalInsuranceFee,
+            totalBeforeVat,
+            totalVatAmount,
+            totalAmount,
+            totalSettledAmount,
+            byTransporter,
+            byInsuranceCompany,
+            byMonth
+        );
+    }
+
+    public async Task<object?> GetVehicleTranspInsPaymentInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.TransportInsurancePaymentLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new VehicleTranspInsPaymentInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.DealerCode,
+            veh.IsTranspInsPaid,
+            veh.TranspInsPaidAmount,
+            veh.LastTranspInsPaymentNo,
+            veh.LastTranspInsPaymentDate,
+            veh.TranspInsPaymentCount,
+            lines
+        );
+    }
+
+    public async Task<object?> GetVehicleTranspInsPaymentHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.TransportInsurancePaymentLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var paymentNos = lines.Select(l => l.TransportInsNo).Distinct().ToList();
+        var payments = await db.TransportInsurancePayments
+            .Where(p => p.OrgId == Org && paymentNos.Contains(p.TransportInsNo))
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("TransportInsurancePayment") || e.Kind.StartsWith("TransportRequest") || e.Kind.StartsWith("TransportMinutes") || e.Kind.StartsWith("TransportPlan")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.EngineNo,
+                veh.Color,
+                veh.StorageCode,
+                veh.DealerCode,
+                veh.IsTranspInsPaid,
+                veh.TranspInsPaidAmount,
+                veh.LastTranspInsPaymentNo,
+                veh.LastTranspInsPaymentDate,
+                veh.TranspInsPaymentCount
             },
             payments,
             lines,

@@ -116,6 +116,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<TransportPlanLine> TransportPlanLines => Set<TransportPlanLine>();
     public DbSet<GpsPayment> GpsPayments => Set<GpsPayment>();
     public DbSet<GpsPaymentLine> GpsPaymentLines => Set<GpsPaymentLine>();
+    public DbSet<TransportInsurancePayment> TransportInsurancePayments => Set<TransportInsurancePayment>();
+    public DbSet<TransportInsurancePaymentLine> TransportInsurancePaymentLines => Set<TransportInsurancePaymentLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -181,5 +183,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<GpsPayment>().HasIndex(x => new { x.OrgId, x.PaymentGPSNo }).IsUnique();
         b.Entity<GpsPaymentLine>().HasIndex(x => new { x.OrgId, x.PaymentGPSNo, x.Vin });
         b.Entity<GpsPaymentLine>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<TransportInsurancePayment>().HasIndex(x => new { x.OrgId, x.TransportInsNo }).IsUnique();
+        b.Entity<TransportInsurancePayment>().HasIndex(x => new { x.OrgId, x.PmtMonth });
+        b.Entity<TransportInsurancePayment>().HasIndex(x => new { x.OrgId, x.TransporterCode });
+        b.Entity<TransportInsurancePayment>().HasIndex(x => new { x.OrgId, x.InsuranceCompanyCode });
+        b.Entity<TransportInsurancePaymentLine>().HasIndex(x => new { x.OrgId, x.TransportInsNo, x.Vin });
+        b.Entity<TransportInsurancePaymentLine>().HasIndex(x => new { x.OrgId, x.Vin });
     }
 }

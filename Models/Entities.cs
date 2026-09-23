@@ -130,6 +130,11 @@ public sealed class Vehicle
     public string? LastTranspPlanNo { get; set; }     // Mã kế hoạch điều độ vận tải gần nhất (Sto_TranspPlan / TransportPlan)
     public DateTime? LastTranspPlanDate { get; set; } // Ngày lập kế hoạch điều độ vận tải gần nhất
     public int TranspPlanCount { get; set; } = 0;     // Tổng số lần xe phát sinh trong kế hoạch điều độ vận tải
+    public bool IsTranspInsPaid { get; set; } = false; // Đã thanh toán / quyết toán chi phí vận tải & bảo hiểm xe (BizHTC.Payment.Pmt_TransportIns)
+    public decimal TranspInsPaidAmount { get; set; } = 0; // Tổng tiền cước vận chuyển & bảo hiểm đã thanh toán của xe (VNĐ)
+    public string? LastTranspInsPaymentNo { get; set; } // Mã bảng kê quyết toán vận tải & bảo hiểm gần nhất (TransportInsNo)
+    public DateTime? LastTranspInsPaymentDate { get; set; } // Ngày quyết toán chi phí vận tải & bảo hiểm gần nhất
+    public int TranspInsPaymentCount { get; set; } = 0; // Số lần xe phát sinh trong bảng kê quyết toán vận chuyển & bảo hiểm
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -4549,6 +4554,221 @@ public sealed record VehicleGpsPaymentInfoDto(
     DateTime? LastGpsPaymentDate,
     int GpsPaymentCount,
     List<GpsPaymentLine> PaymentLines
+);
+
+/// <summary>Bảng kê &amp; Quyết toán chi phí Vận tải &amp; Bảo hiểm xe ô tô vận chuyển theo lô VIN (BizHTC.Payment.Pmt_TransportIns / TransportInsurancePayment): quản lý thanh toán cước vận tải đường bộ giữa OEM HTV và Đơn vị vận chuyển (NYK, Traco, Vinafco...) kết hợp phí bảo hiểm hàng hóa vận chuyển (Bảo Việt, PVI, PTI...), đối soát phạt trễ hạn giao xe, phê duyệt 4 cấp và bù trừ công nợ.</summary>
+public sealed class TransportInsurancePayment
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string TransportInsNo { get; set; } = "";             // Mã bảng kê quyết toán vận tải & bảo hiểm (TIP202603-0001, TIP...)
+    public string? TransportInsNoUser { get; set; }            // Số hiệu bảng kê tham chiếu nội bộ (BK-VT-BH/2026/03/NYK-01)
+    public string PmtMonth { get; set; } = "";                 // Kỳ quyết toán (YYYY-MM, ví dụ: 2026-03)
+    public string TransporterCode { get; set; } = "NYK";       // Mã đơn vị vận tải (NYK, TRACO, VINAFCO, TT_LOGISTICS...)
+    public string? TransporterName { get; set; } = "Công ty TNHH Vận tải Hàng hải NYK Việt Nam";
+    public string InsuranceCompanyCode { get; set; } = "BAOVIET"; // Mã công ty bảo hiểm (BAOVIET, PVI, PTI, BIC, MIC...)
+    public string? InsuranceCompanyName { get; set; } = "Tổng Công ty Bảo hiểm Bảo Việt";
+    public int TotalVehicleCount { get; set; } = 0;            // Tổng số lượng xe trong đợt quyết toán
+    public decimal TotalFreightAmount { get; set; } = 0;       // Tổng cước phí vận chuyển trước thuế (VNĐ)
+    public decimal TotalDelayPenalty { get; set; } = 0;        // Tổng tiền phạt chậm trễ giao hàng (VNĐ)
+    public decimal TotalInsuranceFee { get; set; } = 0;        // Tổng phí bảo hiểm hàng hóa vận chuyển (VNĐ)
+    public decimal TotalBeforeVAT { get; set; } = 0;           // Tổng chi phí trước thuế VAT = TotalFreightAmount - TotalDelayPenalty + TotalInsuranceFee (VNĐ)
+    public decimal VatRate { get; set; } = 10;                 // Thuế suất VAT (%) (VD: 10% = 10)
+    public decimal TotalVatAmount { get; set; } = 0;           // Tiền thuế VAT (VNĐ) = TotalBeforeVAT * VatRate / 100
+    public decimal TotalAmount { get; set; } = 0;              // Tổng số tiền thanh toán sau thuế = TotalBeforeVAT + TotalVatAmount
+    public string Status { get; set; } = "Draft";              // Draft → Submitted → Approved1 → Approved2 → TransporterSigned → HTVSigned → Settled (hoặc Rejected / Cancelled)
+    public string? TransporterSignStatus { get; set; } = "Unsigned"; // Trạng thái ký số đơn vị vận tải (Unsigned, Signed)
+    public DateTime? TransporterSignDate { get; set; }         // Ngày ký số đơn vị vận tải
+    public string? TransporterSignBy { get; set; }             // Người đại diện đơn vị vận tải ký số
+    public string? HTVSignStatus { get; set; } = "Unsigned";   // Trạng thái ký số Hãng xe HTV (Unsigned, Signed)
+    public DateTime? HTVSignDate { get; set; }                 // Ngày ký số HTV
+    public string? HTVSignBy { get; set; }                     // Người đại diện HTV ký số
+    public string? BankRefNo { get; set; }                     // Số chứng từ / Ủy nhiệm chi UNC ngân hàng giải ngân thanh toán
+    public DateTime? PaymentDate { get; set; }                 // Ngày thực tế chuyển khoản thanh toán
+    public string? FilePath { get; set; }                      // Tệp đính kèm bảng kê có chữ ký số (PDF)
+    public string? Remark { get; set; }                        // Ghi chú đợt quyết toán
+    public string? CreatedBy { get; set; }                     // Người lập bảng kê
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? Approved1By { get; set; }                   // Kế toán chi phí / Chuyên viên Logistics sơ duyệt A1
+    public DateTime? Approved1At { get; set; }
+    public string? Approved2By { get; set; }                   // Giám đốc Khối Logistics / Giám đốc Tài chính duyệt A2
+    public DateTime? Approved2At { get; set; }
+    public string? SettledBy { get; set; }                     // Kế toán trưởng / Thủ quỹ xác nhận giải ngân
+    public DateTime? SettledAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe trong Bảng kê quyết toán vận tải &amp; bảo hiểm (BizHTC.Payment.Pmt_TransportInsDetail / TransportInsurancePaymentLine): số khung VIN, model, chặng vận chuyển, ngày xuất/đến, ngày trễ hạn, cước vận tải, phạt trễ, giá trị định giá, phí bảo hiểm và tổng chi phí.</summary>
+public sealed class TransportInsurancePaymentLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long TransportInsurancePaymentId { get; set; }
+    public string TransportInsNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;                    // Thứ tự dòng
+    public string Vin { get; set; } = "";                      // Số khung VIN xe vận chuyển
+    public string Model { get; set; } = "";                    // Dòng xe (SantaFe, Tucson, Accent, Creta, Custin, Palisade, Grand i10, Venue, Ioniq 5...)
+    public string? SpecCode { get; set; }                      // Phiên bản xe
+    public string? EngineNo { get; set; }                      // Số máy
+    public string? Color { get; set; }                         // Màu sắc
+    public string? FStorageCode { get; set; } = "PLANT-HTMV1"; // Kho bãi xuất phát (PLANT-HTMV1, PLANT-HTMV2, PORT_HP, TCV_YARD)
+    public string? FProvinceName { get; set; } = "Ninh Bình";   // Tỉnh xuất phát
+    public string? TStorageCode { get; set; }                  // Kho / Đại lý nhận xe (DLR-HN01, DLR-HCM01, DLR-DN01...)
+    public string? TProvinceName { get; set; } = "Hà Nội";     // Tỉnh đích đến
+    public string? DealerCode { get; set; }                    // Mã đại lý nhận phân bổ
+    public DateTime DlvStartDate { get; set; } = DateTime.Now.AddDays(-5); // Ngày bắt đầu vận chuyển xuất bến
+    public int ExpectedDays { get; set; } = 2;                 // Số ngày định mức vận tải theo thỏa thuận SLA tuyến
+    public DateTime ExpectedDlvEndDate { get; set; } = DateTime.Now.AddDays(-3); // Hạn giao xe dự kiến
+    public DateTime DlvEndDate { get; set; } = DateTime.Now.AddDays(-3); // Ngày thực tế hạ tải nhận xe tại đại lý
+    public int DelayDate { get; set; } = 0;                    // Số ngày chậm trễ giao hàng = Max(0, (DlvEndDate.Date - ExpectedDlvEndDate.Date).Days)
+    public decimal FreightAmount { get; set; } = 2500000m;     // Cước vận chuyển xe lồng đường bộ theo chặng (VNĐ) (TFValReal)
+    public decimal PenaltyPerDay { get; set; } = 100000m;      // Định mức phạt trễ hạn/ngày (VNĐ/ngày)
+    public decimal DelayPenalty { get; set; } = 0;             // Tiền phạt trễ hạn giao xe = DelayDate * PenaltyPerDay (TPValReal)
+    public decimal CarValue { get; set; } = 550000000m;        // Giá trị định giá xe mua bảo hiểm (VNĐ) (PriceCar)
+    public decimal InsuranceRate { get; set; } = 0.05m;        // Tỷ lệ phí bảo hiểm (%) (VD: 0.05% = 0.05)
+    public decimal InsuranceFee { get; set; } = 275000m;       // Tiền phí bảo hiểm = CarValue * InsuranceRate / 100 (VNĐ)
+    public decimal TotalAmount { get; set; } = 2775000m;       // Tổng tiền quyết toán của xe = FreightAmount - DelayPenalty + InsuranceFee (Val_Transport)
+    public string? DlvMnNo { get; set; }                       // Mã biên bản giao nhận bàn giao xe (Sto_DlvMinutes)
+    public string? TranspReqType { get; set; } = "OEMToDealer"; // Loại hình vận chuyển: OEMToDealer, InterDealer, PlantToPort, ReturnRetrieve
+    public string Status { get; set; } = "Pending";            // Pending → Approved → Settled (hoặc Cancelled)
+    public string? StandardRemark { get; set; }                // Ghi chú tuyến tiêu chuẩn
+    public string? Remark { get; set; }                        // Ghi chú chi tiết dòng xe
+}
+
+// ===== DTOs cho Bảng kê & Quyết toán chi phí Vận tải & Bảo hiểm (BizHTC.Payment / Pmt_TransportIns & TransportInsurancePayment) =====
+
+public sealed record CreateTransportInsurancePaymentDto(
+    string? TransportInsNo,
+    string? TransportInsNoUser,
+    string PmtMonth,
+    string? TransporterCode,
+    string? TransporterName,
+    string? InsuranceCompanyCode,
+    string? InsuranceCompanyName,
+    decimal? VatRate,
+    string? Remark,
+    string? CreatedBy,
+    List<TransportInsurancePaymentLineInputDto>? Items
+);
+
+public sealed record TransportInsurancePaymentLineInputDto(
+    string Vin,
+    string? Model,
+    string? SpecCode,
+    string? EngineNo,
+    string? Color,
+    string? FStorageCode,
+    string? FProvinceName,
+    string? TStorageCode,
+    string? TProvinceName,
+    string? DealerCode,
+    DateTime? DlvStartDate,
+    int? ExpectedDays,
+    DateTime? ExpectedDlvEndDate,
+    DateTime? DlvEndDate,
+    decimal? FreightAmount,
+    decimal? PenaltyPerDay,
+    decimal? CarValue,
+    decimal? InsuranceRate,
+    string? DlvMnNo,
+    string? TranspReqType,
+    string? StandardRemark,
+    string? Remark
+);
+
+public sealed record UpdateTransportInsurancePaymentHeaderDto(
+    string? TransportInsNoUser,
+    string? PmtMonth,
+    string? TransporterCode,
+    string? TransporterName,
+    string? InsuranceCompanyCode,
+    string? InsuranceCompanyName,
+    decimal? VatRate,
+    string? BankRefNo,
+    DateTime? PaymentDate,
+    string? FilePath,
+    string? Remark
+);
+
+public sealed record UpdateTransportInsurancePaymentLineDto(
+    string? Model,
+    string? SpecCode,
+    string? FStorageCode,
+    string? FProvinceName,
+    string? TStorageCode,
+    string? TProvinceName,
+    string? DealerCode,
+    DateTime? DlvStartDate,
+    int? ExpectedDays,
+    DateTime? ExpectedDlvEndDate,
+    DateTime? DlvEndDate,
+    int? DelayDate,
+    decimal? FreightAmount,
+    decimal? PenaltyPerDay,
+    decimal? DelayPenalty,
+    decimal? CarValue,
+    decimal? InsuranceRate,
+    decimal? InsuranceFee,
+    string? DlvMnNo,
+    string? TranspReqType,
+    string? Status,
+    string? StandardRemark,
+    string? Remark
+);
+
+public sealed record TransportInsurancePaymentTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate,
+    string? BankRefNo,
+    DateTime? PaymentDate,
+    string? FilePath
+);
+
+public sealed record TransportInsurancePaymentSummaryDto(
+    int TotalPayments,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalApproved,
+    int TotalSigned,
+    int TotalSettled,
+    int TotalCancelled,
+    int TotalVehicles,
+    decimal TotalFreightAmount,
+    decimal TotalDelayPenalty,
+    decimal TotalInsuranceFee,
+    decimal TotalBeforeVAT,
+    decimal TotalVatAmount,
+    decimal TotalAmount,
+    decimal TotalSettledAmount,
+    List<TransportInsuranceTransporterStatsDto> ByTransporter,
+    List<TransportInsuranceCompanyStatsDto> ByInsuranceCompany,
+    List<TransportInsuranceMonthStatsDto> ByMonth
+);
+
+public sealed record TransportInsuranceTransporterStatsDto(string TransporterCode, string TransporterName, int PaymentCount, int VehicleCount, decimal TotalFreight, decimal TotalPenalty, decimal TotalAmount, decimal SettledAmount);
+public sealed record TransportInsuranceCompanyStatsDto(string InsuranceCompanyCode, string InsuranceCompanyName, int PaymentCount, int VehicleCount, decimal TotalInsuranceFee, decimal TotalAmount, decimal SettledAmount);
+public sealed record TransportInsuranceMonthStatsDto(string PmtMonth, int PaymentCount, int VehicleCount, decimal TotalFreight, decimal TotalPenalty, decimal TotalInsuranceFee, decimal TotalAmount, decimal SettledAmount);
+
+public sealed record VehicleTranspInsPaymentInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    bool IsTranspInsPaid,
+    decimal TranspInsPaidAmount,
+    string? LastTranspInsPaymentNo,
+    DateTime? LastTranspInsPaymentDate,
+    int TranspInsPaymentCount,
+    List<TransportInsurancePaymentLine> PaymentLines
 );
 
 
