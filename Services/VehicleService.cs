@@ -1781,6 +1781,25 @@ public record UpdateFnExpCalcLineDto(
     string? Remark = null,
     string? By = null);
 
+// ===== Mẫu hợp đồng mua bán xe của Đại lý (Dlr_Mst_ContractForm / Dlr_Mst_DealerContractForm) =====
+public record CreateDealerContractFormDto(string ContractFNo, string ContractFName, string? ContractFType = null, string? Remark = null, string? By = null);
+public record UpdateDealerContractFormDto(string? ContractFName = null, string? ContractFType = null, string? Remark = null, string? FlagActive = null, string? By = null);
+public record SaveDealerContractFormTermDto(
+    string DealerCode,
+    string ContractFNo,
+    string? Note = null,
+    string? Promotion = null,
+    string? TimePayment = null,
+    string? MethodPayment = null,
+    string? TimeAndAddressDelivery = null,
+    string? TimeOwnerTransfer = null,
+    string? RightAndResponsibilityPartySeller = null,
+    string? RightAndResponsibilityPartyBuyer = null,
+    string? Warrantly = null,
+    string? OtherTerms = null,
+    string? Remark = null,
+    string? By = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2595,6 +2614,16 @@ public interface IVehicleService
     Task<object?> UpdateFnExpCalcLineAsync(string caNo, string vin, UpdateFnExpCalcLineDto dto);
     Task<object?> GetVehicleFnExpInfoAsync(string vin);
     Task<object> GetFnExpCalcSummaryAsync(string? dealerCode);
+
+    // ===== Mẫu hợp đồng mua bán xe của Đại lý (Dlr_Mst_ContractForm / Dlr_Mst_DealerContractForm) =====
+    Task<object> CreateDealerContractFormAsync(CreateDealerContractFormDto dto);
+    Task<object> ListDealerContractFormsAsync(string? keyword, bool? activeOnly);
+    Task<object?> GetDealerContractFormAsync(string contractFNo);
+    Task<object?> UpdateDealerContractFormAsync(string contractFNo, UpdateDealerContractFormDto dto);
+    Task<object?> SaveDealerContractFormTermAsync(SaveDealerContractFormTermDto dto);
+    Task<object> ListDealerContractFormTermsAsync(string? dealer, string? contractFNo, bool? activeOnly);
+    Task<object?> GetDealerContractFormTermAsync(string dealerCode, string contractFNo);
+    Task<object?> DeleteDealerContractFormTermAsync(string dealerCode, string contractFNo);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -44693,5 +44722,259 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             totalPDAmount,
             byDealer
         };
+    }
+
+    // ===== Mẫu hợp đồng mua bán xe của Đại lý (Dlr_Mst_ContractForm / Dlr_Mst_DealerContractForm) =====
+    public async Task<object> CreateDealerContractFormAsync(CreateDealerContractFormDto dto)
+    {
+        var code = dto.ContractFNo?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(code))
+            throw new InvalidOperationException("Cần mã mẫu hợp đồng ContractFNo.");
+        if (string.IsNullOrWhiteSpace(dto.ContractFName))
+            throw new InvalidOperationException("Cần tên mẫu hợp đồng ContractFName.");
+
+        if (await db.DealerContractForms.AnyAsync(f => f.OrgId == Org && f.ContractFNo == code))
+            throw new InvalidOperationException($"Mã mẫu hợp đồng {code} đã tồn tại.");
+
+        var form = new DealerContractForm
+        {
+            OrgId = Org,
+            ContractFNo = code,
+            ContractFName = dto.ContractFName.Trim(),
+            ContractFType = string.IsNullOrWhiteSpace(dto.ContractFType) ? null : dto.ContractFType.Trim(),
+            Remark = dto.Remark?.Trim(),
+            FlagActive = "1",
+            CreatedAt = DateTime.Now,
+            LogLUDateTime = DateTime.Now,
+            LogLUBy = dto.By?.Trim()
+        };
+        db.DealerContractForms.Add(form);
+        await db.SaveChangesAsync();
+
+        return new { form.Id, form.ContractFNo, form.ContractFName, form.ContractFType, form.FlagActive };
+    }
+
+    public async Task<object> ListDealerContractFormsAsync(string? keyword, bool? activeOnly)
+    {
+        var q = db.DealerContractForms.Where(f => f.OrgId == Org);
+        if (activeOnly == true) q = q.Where(f => f.FlagActive == "1");
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var kw = keyword.Trim().ToUpperInvariant();
+            q = q.Where(f => f.ContractFNo.Contains(kw) || f.ContractFName.ToUpper().Contains(kw));
+        }
+
+        var forms = await q.OrderBy(f => f.ContractFNo).ToListAsync();
+        var codes = forms.Select(f => f.ContractFNo).ToList();
+        var termCounts = await db.DealerContractFormTerms
+            .Where(t => t.OrgId == Org && codes.Contains(t.ContractFNo))
+            .GroupBy(t => t.ContractFNo)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToListAsync();
+        var countMap = termCounts.ToDictionary(x => x.Key, x => x.Count);
+
+        return forms.Select(f => new
+        {
+            f.Id,
+            f.ContractFNo,
+            f.ContractFName,
+            f.ContractFType,
+            f.FlagActive,
+            f.Remark,
+            termCount = countMap.TryGetValue(f.ContractFNo, out var c) ? c : 0
+        });
+    }
+
+    public async Task<object?> GetDealerContractFormAsync(string contractFNo)
+    {
+        var code = contractFNo.Trim().ToUpperInvariant();
+        var form = await db.DealerContractForms.FirstOrDefaultAsync(f => f.OrgId == Org && f.ContractFNo == code);
+        if (form is null) return null;
+
+        var terms = await db.DealerContractFormTerms
+            .Where(t => t.OrgId == Org && t.ContractFNo == code)
+            .OrderBy(t => t.DealerCode)
+            .ToListAsync();
+
+        return new
+        {
+            form.Id,
+            form.ContractFNo,
+            form.ContractFName,
+            form.ContractFType,
+            form.FlagActive,
+            form.Remark,
+            form.CreatedAt,
+            form.LogLUDateTime,
+            form.LogLUBy,
+            termCount = terms.Count,
+            terms = terms.Select(t => new { t.DealerCode, t.FlagActive })
+        };
+    }
+
+    public async Task<object?> UpdateDealerContractFormAsync(string contractFNo, UpdateDealerContractFormDto dto)
+    {
+        var code = contractFNo.Trim().ToUpperInvariant();
+        var form = await db.DealerContractForms.FirstOrDefaultAsync(f => f.OrgId == Org && f.ContractFNo == code);
+        if (form is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.ContractFName)) form.ContractFName = dto.ContractFName.Trim();
+        if (dto.ContractFType is not null) form.ContractFType = string.IsNullOrWhiteSpace(dto.ContractFType) ? null : dto.ContractFType.Trim();
+        if (dto.Remark is not null) form.Remark = dto.Remark.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.FlagActive)) form.FlagActive = dto.FlagActive.Trim();
+        form.LogLUDateTime = DateTime.Now;
+        form.LogLUBy = dto.By?.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new { form.ContractFNo, form.ContractFName, form.ContractFType, form.FlagActive, form.Remark };
+    }
+
+    public async Task<object?> SaveDealerContractFormTermAsync(SaveDealerContractFormTermDto dto)
+    {
+        var dealer = dto.DealerCode?.Trim().ToUpperInvariant();
+        var code = dto.ContractFNo?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(dealer))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode.");
+        if (string.IsNullOrWhiteSpace(code))
+            throw new InvalidOperationException("Cần mã mẫu hợp đồng ContractFNo.");
+
+        // Mẫu hợp đồng phải tồn tại và đang áp dụng (Dlr_Mst_ContractForm_CheckDB).
+        var form = await db.DealerContractForms.FirstOrDefaultAsync(f => f.OrgId == Org && f.ContractFNo == code);
+        if (form is null)
+            throw new InvalidOperationException($"Không tìm thấy mẫu hợp đồng {code}.");
+        if (form.FlagActive != "1")
+            throw new InvalidOperationException($"Mẫu hợp đồng {code} đã ngừng áp dụng.");
+
+        var term = await db.DealerContractFormTerms.FirstOrDefaultAsync(t => t.OrgId == Org && t.DealerCode == dealer && t.ContractFNo == code);
+        var isNew = term is null;
+        if (term is null)
+        {
+            term = new DealerContractFormTerm
+            {
+                OrgId = Org,
+                DealerCode = dealer,
+                ContractFNo = code,
+                CreatedAt = DateTime.Now,
+                CreateBy = dto.By?.Trim()
+            };
+            db.DealerContractFormTerms.Add(term);
+        }
+
+        term.Note = dto.Note?.Trim();
+        term.Promotion = dto.Promotion?.Trim();
+        term.TimePayment = dto.TimePayment?.Trim();
+        term.MethodPayment = dto.MethodPayment?.Trim();
+        term.TimeAndAddressDelivery = dto.TimeAndAddressDelivery?.Trim();
+        term.TimeOwnerTransfer = dto.TimeOwnerTransfer?.Trim();
+        term.RightAndResponsibilityPartySeller = dto.RightAndResponsibilityPartySeller?.Trim();
+        term.RightAndResponsibilityPartyBuyer = dto.RightAndResponsibilityPartyBuyer?.Trim();
+        term.Warrantly = dto.Warrantly?.Trim();
+        term.OtherTerms = dto.OtherTerms?.Trim();
+        term.Remark = dto.Remark?.Trim();
+        term.FlagActive = "1";
+        term.LogLUDateTime = DateTime.Now;
+        term.LogLUBy = dto.By?.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            term.DealerCode,
+            term.ContractFNo,
+            term.Note,
+            term.Promotion,
+            term.TimePayment,
+            term.MethodPayment,
+            term.TimeAndAddressDelivery,
+            term.TimeOwnerTransfer,
+            term.RightAndResponsibilityPartySeller,
+            term.RightAndResponsibilityPartyBuyer,
+            term.Warrantly,
+            term.OtherTerms,
+            term.FlagActive,
+            created = isNew
+        };
+    }
+
+    public async Task<object> ListDealerContractFormTermsAsync(string? dealer, string? contractFNo, bool? activeOnly)
+    {
+        var q = db.DealerContractFormTerms.Where(t => t.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(t => t.DealerCode == d);
+        }
+        if (!string.IsNullOrWhiteSpace(contractFNo))
+        {
+            var c = contractFNo.Trim().ToUpperInvariant();
+            q = q.Where(t => t.ContractFNo == c);
+        }
+        if (activeOnly == true) q = q.Where(t => t.FlagActive == "1");
+
+        var terms = await q.OrderBy(t => t.DealerCode).ThenBy(t => t.ContractFNo).ToListAsync();
+        return terms.Select(t => new
+        {
+            t.Id,
+            t.DealerCode,
+            t.ContractFNo,
+            t.Note,
+            t.Promotion,
+            t.TimePayment,
+            t.MethodPayment,
+            t.TimeAndAddressDelivery,
+            t.TimeOwnerTransfer,
+            t.RightAndResponsibilityPartySeller,
+            t.RightAndResponsibilityPartyBuyer,
+            t.Warrantly,
+            t.OtherTerms,
+            t.FlagActive,
+            t.Remark,
+            t.LogLUDateTime,
+            t.LogLUBy
+        });
+    }
+
+    public async Task<object?> GetDealerContractFormTermAsync(string dealerCode, string contractFNo)
+    {
+        var dealer = dealerCode.Trim().ToUpperInvariant();
+        var code = contractFNo.Trim().ToUpperInvariant();
+        var term = await db.DealerContractFormTerms.FirstOrDefaultAsync(t => t.OrgId == Org && t.DealerCode == dealer && t.ContractFNo == code);
+        if (term is null) return null;
+
+        return new
+        {
+            term.Id,
+            term.DealerCode,
+            term.ContractFNo,
+            term.Note,
+            term.Promotion,
+            term.TimePayment,
+            term.MethodPayment,
+            term.TimeAndAddressDelivery,
+            term.TimeOwnerTransfer,
+            term.RightAndResponsibilityPartySeller,
+            term.RightAndResponsibilityPartyBuyer,
+            term.Warrantly,
+            term.OtherTerms,
+            term.FlagActive,
+            term.Remark,
+            term.CreatedAt,
+            term.CreateBy,
+            term.LogLUDateTime,
+            term.LogLUBy
+        };
+    }
+
+    public async Task<object?> DeleteDealerContractFormTermAsync(string dealerCode, string contractFNo)
+    {
+        var dealer = dealerCode.Trim().ToUpperInvariant();
+        var code = contractFNo.Trim().ToUpperInvariant();
+        var term = await db.DealerContractFormTerms.FirstOrDefaultAsync(t => t.OrgId == Org && t.DealerCode == dealer && t.ContractFNo == code);
+        if (term is null) return null;
+
+        db.DealerContractFormTerms.Remove(term);
+        await db.SaveChangesAsync();
+        return new { deleted = dealer + "/" + code };
     }
 }

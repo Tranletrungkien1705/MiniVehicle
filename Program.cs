@@ -6415,6 +6415,55 @@ app.MapPost("/api/orgs/register", async (RegisterOrgDto dto, AppDbContext db) =>
     return Results.Ok(new { orgId = org.Id, apiKey = org.ApiKey });
 });
 
+// ---- Mẫu hợp đồng mua bán xe của Đại lý (BizHTC.RetailContract.Dlr_Mst_ContractForm / Dlr_Mst_DealerContractForm) ----
+// Danh mục mẫu hợp đồng (catalog) do Hãng OEM ban hành.
+app.MapPost("/api/contract-forms", async (CreateDealerContractFormDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.ContractFNo) || string.IsNullOrWhiteSpace(dto.ContractFName))
+        return Results.BadRequest(new { error = "Cần ContractFNo và ContractFName." });
+    try { return Results.Ok(await svc.CreateDealerContractFormAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/contract-forms", async (IVehicleService svc, string? keyword, bool? activeOnly) =>
+    Results.Ok(await svc.ListDealerContractFormsAsync(keyword, activeOnly))).RequireAuthorization();
+
+app.MapGet("/api/contract-forms/{contractFNo}", async (string contractFNo, IVehicleService svc) =>
+{
+    var r = await svc.GetDealerContractFormAsync(contractFNo);
+    return r is null ? Results.NotFound(new { contractFNo, error = "Không tìm thấy mẫu hợp đồng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/contract-forms/{contractFNo}", async (string contractFNo, UpdateDealerContractFormDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateDealerContractFormAsync(contractFNo, dto);
+    return r is null ? Results.NotFound(new { contractFNo, error = "Không tìm thấy mẫu hợp đồng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+// Bộ điều khoản mẫu hợp đồng gán theo từng Đại lý (khóa = DealerCode + ContractFNo).
+app.MapPost("/api/contract-form-terms", async (SaveDealerContractFormTermDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.ContractFNo))
+        return Results.BadRequest(new { error = "Cần DealerCode và ContractFNo." });
+    try { return Results.Ok(await svc.SaveDealerContractFormTermAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/contract-form-terms", async (IVehicleService svc, string? dealer, string? contractFNo, bool? activeOnly) =>
+    Results.Ok(await svc.ListDealerContractFormTermsAsync(dealer, contractFNo, activeOnly))).RequireAuthorization();
+
+app.MapGet("/api/contract-form-terms/{dealerCode}/{contractFNo}", async (string dealerCode, string contractFNo, IVehicleService svc) =>
+{
+    var r = await svc.GetDealerContractFormTermAsync(dealerCode, contractFNo);
+    return r is null ? Results.NotFound(new { dealerCode, contractFNo, error = "Không tìm thấy điều khoản mẫu hợp đồng của đại lý." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapDelete("/api/contract-form-terms/{dealerCode}/{contractFNo}", async (string dealerCode, string contractFNo, IVehicleService svc) =>
+{
+    var r = await svc.DeleteDealerContractFormTermAsync(dealerCode, contractFNo);
+    return r is null ? Results.NotFound(new { dealerCode, contractFNo, error = "Không tìm thấy điều khoản mẫu hợp đồng của đại lý." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 app.Run();
 
 record ImportVehicleRowDto(string? VIN, string? ModelCode, string? SpecCode, string? ColorCode, string? EngineNo, int? ProductionYearActual, string? StorageCodeCurrent);

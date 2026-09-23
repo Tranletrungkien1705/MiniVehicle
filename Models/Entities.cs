@@ -8077,3 +8077,43 @@ public sealed class FnExpCalcLine
     public DateTime? LogLUDateTime { get; set; }
     public string? LogLUBy { get; set; }
 }
+
+/// <summary>Danh mục mẫu hợp đồng mua bán xe của Đại lý (BizHTC.RetailContract.Dlr_Mst_ContractForm / Dlr_Mst_ContractForm): catalog các mẫu hợp đồng bán lẻ/bán buôn xe ô tô do Hãng OEM ban hành, mỗi mẫu có mã (ContractFNo) và tên mẫu (ContractFName), dùng làm khuôn để gán điều khoản cho từng đại lý.</summary>
+public sealed class DealerContractForm
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ContractFNo { get; set; } = "";          // Mã mẫu hợp đồng (ContractFNo)
+    public string ContractFName { get; set; } = "";        // Tên mẫu hợp đồng (ContractFName)
+    public string? ContractFType { get; set; }             // Loại mẫu: Retail (bán lẻ) / Wholesale (bán buôn)
+    public string? Remark { get; set; }
+    public string FlagActive { get; set; } = "1";          // Đang áp dụng (FlagActive)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? LogLUDateTime { get; set; }           // Thời điểm cập nhật gần nhất
+    public string? LogLUBy { get; set; }                   // Người cập nhật gần nhất
+}
+
+/// <summary>Mẫu hợp đồng mua bán xe gán theo từng Đại lý (BizHTC.RetailContract.Dlr_Mst_DealerContractForm / Dlr_Mst_DealerContractForm): bộ điều khoản hợp đồng cụ thể (khuyến mãi, thời hạn & phương thức thanh toán, thời gian/địa điểm giao xe, thời điểm sang tên, quyền & trách nhiệm bên bán/bên mua, bảo hành, điều khoản khác) áp dụng cho 1 đại lý theo 1 mẫu hợp đồng. Khóa nghiệp vụ = (DealerCode, ContractFNo).</summary>
+public sealed class DealerContractFormTerm
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string DealerCode { get; set; } = "";           // Đại lý áp dụng mẫu hợp đồng
+    public string ContractFNo { get; set; } = "";          // Mã mẫu hợp đồng (FK DealerContractForm)
+    public string? Note { get; set; }                      // Ghi chú chung
+    public string? Promotion { get; set; }                 // Khuyến mãi / ưu đãi
+    public string? TimePayment { get; set; }               // Thời hạn thanh toán
+    public string? MethodPayment { get; set; }             // Phương thức thanh toán
+    public string? TimeAndAddressDelivery { get; set; }    // Thời gian & địa điểm giao xe
+    public string? TimeOwnerTransfer { get; set; }         // Thời điểm sang tên chủ sở hữu
+    public string? RightAndResponsibilityPartySeller { get; set; } // Quyền & trách nhiệm bên bán
+    public string? RightAndResponsibilityPartyBuyer { get; set; }  // Quyền & trách nhiệm bên mua
+    public string? Warrantly { get; set; }                 // Điều khoản bảo hành
+    public string? OtherTerms { get; set; }                // Điều khoản khác
+    public string? Remark { get; set; }
+    public string FlagActive { get; set; } = "1";          // Đang áp dụng (FlagActive)
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? CreateBy { get; set; }                  // Người tạo
+    public DateTime? LogLUDateTime { get; set; }           // Thời điểm cập nhật gần nhất
+    public string? LogLUBy { get; set; }                   // Người cập nhật gần nhất
+}
