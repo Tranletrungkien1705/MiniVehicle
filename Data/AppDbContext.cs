@@ -163,6 +163,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<DealerContractCancelMinutes> DealerContractCancelMinutes => Set<DealerContractCancelMinutes>();
     public DbSet<RearrangeTransportRequest> RearrangeTransportRequests => Set<RearrangeTransportRequest>();
     public DbSet<RearrangeTransportRequestLine> RearrangeTransportRequestLines => Set<RearrangeTransportRequestLine>();
+    public DbSet<MarketingActivityType> MarketingActivityTypes => Set<MarketingActivityType>();
+    public DbSet<MarketingActivity> MarketingActivities => Set<MarketingActivity>();
+    public DbSet<MarketingFeeSettlement> MarketingFeeSettlements => Set<MarketingFeeSettlement>();
+    public DbSet<MarketingFeeDetail> MarketingFeeDetails => Set<MarketingFeeDetail>();
+    public DbSet<MarketingFeeDetailAttach> MarketingFeeDetailAttaches => Set<MarketingFeeDetailAttach>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -354,5 +359,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<RearrangeTransportRequest>().HasIndex(x => new { x.OrgId, x.TransporterCode });
         b.Entity<RearrangeTransportRequestLine>().HasIndex(x => new { x.OrgId, x.SRTReqNo, x.Vin });
         b.Entity<RearrangeTransportRequestLine>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<MarketingActivityType>().HasIndex(x => new { x.OrgId, x.MKTActivityTypeCode }).IsUnique();
+        b.Entity<MarketingActivity>().HasIndex(x => new { x.OrgId, x.MKTActivityCode }).IsUnique();
+        b.Entity<MarketingActivity>().HasIndex(x => new { x.OrgId, x.MKTActivityTypeCode });
+        b.Entity<MarketingFeeSettlement>().HasIndex(x => new { x.OrgId, x.MKTFeeCode }).IsUnique();
+        b.Entity<MarketingFeeSettlement>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<MarketingFeeSettlement>().HasIndex(x => new { x.OrgId, x.CampaignMonth });
+        b.Entity<MarketingFeeSettlement>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<MarketingFeeDetail>().HasIndex(x => new { x.OrgId, x.MKTFeeCode });
+        b.Entity<MarketingFeeDetail>().HasIndex(x => new { x.OrgId, x.MKTActivityCode });
+        b.Entity<MarketingFeeDetail>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<MarketingFeeDetailAttach>().HasIndex(x => new { x.OrgId, x.AttachCode }).IsUnique();
+        b.Entity<MarketingFeeDetailAttach>().HasIndex(x => new { x.OrgId, x.MKTFeeCode });
     }
 }

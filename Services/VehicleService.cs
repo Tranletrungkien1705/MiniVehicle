@@ -1680,6 +1680,16 @@ public record RearrangeTransportRequestItemInputDto(string Vin, string? StorageR
 public record CreateRearrangeTransportRequestDto(List<RearrangeTransportRequestItemInputDto> Items, string? TransporterCode = null, string? TransportContractNo = null, string? TruckPlateNo = null, string? DriverName = null, string? DriverPhone = null, string? FromStorage = null, string? ToStorage = null, DateTime? EstimatedDeparture = null, DateTime? EstimatedArrival = null, string? Remark = null, string? SRTReqNo = null, string? CreatedBy = null);
 public record RearrangeTransportRequestTransitionDto(string? Note = null, string? By = null);
 
+// ===== Quyết toán kinh phí Marketing (BizHTC.Marketing.MKT_MarketingFee) =====
+public record MarketingActivityTypeInputDto(string MKTActivityTypeCode, string MKTActivityTypeName, bool? FlagActive = null, string? Remark = null);
+public record MarketingActivityInputDto(string MKTActivityCode, string MKTActivityName, string? MKTActivityTypeCode = null, decimal? DefaultHTCLimitPrice = null, bool? FlagDesignImage = null, bool? FlagActualImage = null, bool? FlagContract = null, bool? FlagInvoice = null, bool? FlagActive = null, string? Remark = null);
+public record MarketingFeeDetailInputDto(string MKTActivityCode, string? MKTActivityName = null, string? MKTActivityTypeCode = null, string? Vin = null, string? Model = null, string? SpecCode = null, decimal? Qty = null, decimal? Price = null, decimal? HTCLimitPrice = null, bool? HasDesignImage = null, bool? HasActualImage = null, bool? HasContract = null, bool? HasInvoice = null, string? Remark = null);
+public record CreateMarketingFeeSettlementDto(string DealerCode, string CampaignMonth, string? MKTFeeCode = null, string? MKTFeeName = null, string? DealerName = null, DateTime? DateStart = null, DateTime? DateEnd = null, decimal? VatRate = null, string? Remark = null, string? CreatedBy = null, List<MarketingFeeDetailInputDto>? Items = null);
+public record MarketingFeeSettlementTransitionDto(string? Note = null, string? By = null, string? BankRefNo = null);
+public record UpdateMarketingFeeDetailDto(decimal? Qty = null, decimal? Price = null, decimal? HTCLimitPrice = null, decimal? ApprovedQty = null, decimal? ApprovedAmount = null, bool? HasDesignImage = null, bool? HasActualImage = null, bool? HasContract = null, bool? HasInvoice = null, string? Remark = null);
+public record MarketingFeeDetailDecisionDto(string? Note = null, string? By = null);
+public record MarketingFeeAttachInputDto(string FileType, string FileName, string? FilePath = null, long? FileSizeKb = null, string? Remark = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2434,6 +2444,21 @@ public interface IVehicleService
     Task<object?> RearrangeTransportRequestTransitionAsync(string srtReqNo, string action, RearrangeTransportRequestTransitionDto? dto);
     Task<object?> RemoveRearrangeTransportRequestLineAsync(string srtReqNo, string vin);
     Task<object?> GetVehicleRearrangeTransportRequestInfoAsync(string vin);
+
+    // ===== Quyết toán kinh phí Marketing (BizHTC.Marketing.MKT_MarketingFee) =====
+    Task<object> CreateMarketingActivityTypeAsync(MarketingActivityTypeInputDto dto);
+    Task<object> ListMarketingActivityTypesAsync(bool? activeOnly);
+    Task<object> CreateMarketingActivityAsync(MarketingActivityInputDto dto);
+    Task<object> ListMarketingActivitiesAsync(string? typeCode, bool? activeOnly);
+    Task<object> CreateMarketingFeeSettlementAsync(CreateMarketingFeeSettlementDto dto);
+    Task<object> ListMarketingFeeSettlementsAsync(string? status, string? dealer, string? campaignMonth, string? vin);
+    Task<object?> GetMarketingFeeSettlementAsync(string mktFeeCode);
+    Task<object?> MarketingFeeSettlementTransitionAsync(string mktFeeCode, string action, MarketingFeeSettlementTransitionDto? dto);
+    Task<object?> UpdateMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, UpdateMarketingFeeDetailDto dto);
+    Task<object?> DecideMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, bool approve, MarketingFeeDetailDecisionDto? dto);
+    Task<object?> AddMarketingFeeAttachAsync(string mktFeeCode, int lineIndex, MarketingFeeAttachInputDto dto);
+    Task<object?> GetVehicleMarketingFeeInfoAsync(string vin);
+    Task<object> GetMarketingFeeSummaryAsync(string? dealerCode, string? campaignMonth);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
