@@ -7700,121 +7700,42 @@ public sealed class RearrangeTransportRequestLine
     public string? Remark { get; set; }
 }
 
-/// <summary>Danh mục loại hoạt động Marketing (BizHTC.Marketing.Mst_MarketingActivityType): phân loại hoạt động quảng bá (Digital, Sự kiện, Showroom, Roadshow, PR...) kèm hạn mức chi mặc định của Hãng.</summary>
-public sealed class MarketingActivityType
+/// <summary>Kế hoạch xe về / Kế hoạch nhập xe theo đại lý (BizHTC.Car.Car_Plan / CarPlan): đại lý đăng ký kế hoạch nhận xe theo tháng (số đơn hàng, model, spec, màu, số lượng đặt/duyệt), theo dõi số lượng xe đã về kho và còn lại.</summary>
+public sealed class CarPlan
 {
     public long Id { get; set; }
     public Guid OrgId { get; set; }
-    public string MKTActivityTypeCode { get; set; } = "";   // Mã loại hoạt động (DIGITAL, EVENT, SHOWROOM, ROADSHOW, PR...)
-    public string MKTActivityTypeName { get; set; } = "";   // Tên loại hoạt động
-    public bool FlagActive { get; set; } = true;            // Còn hiệu lực áp dụng
-    public string? Remark { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
-}
-
-/// <summary>Danh mục hoạt động Marketing (BizHTC.Marketing.Mst_MarketingActivity): hoạt động quảng bá cụ thể thuộc 1 loại, kèm hạn mức chi tối đa Hãng hỗ trợ và yêu cầu chứng từ (ảnh thiết kế, ảnh thực tế, hợp đồng, hóa đơn).</summary>
-public sealed class MarketingActivity
-{
-    public long Id { get; set; }
-    public Guid OrgId { get; set; }
-    public string MKTActivityCode { get; set; } = "";       // Mã hoạt động (MKT-...)
-    public string MKTActivityName { get; set; } = "";       // Tên hoạt động
-    public string MKTActivityTypeCode { get; set; } = "DIGITAL"; // Loại hoạt động (Mst_MarketingActivityType)
-    public decimal DefaultHTCLimitPrice { get; set; } = 0;  // Hạn mức chi tối đa Hãng hỗ trợ mặc định (VNĐ)
-    public bool FlagDesignImage { get; set; } = true;       // Bắt buộc nộp ảnh thiết kế
-    public bool FlagActualImage { get; set; } = true;       // Bắt buộc nộp ảnh thực tế triển khai
-    public bool FlagContract { get; set; } = true;          // Bắt buộc nộp hợp đồng
-    public bool FlagInvoice { get; set; } = true;           // Bắt buộc nộp hóa đơn
-    public bool FlagActive { get; set; } = true;
-    public string? Remark { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
-}
-
-/// <summary>Hồ sơ quyết toán kinh phí Marketing (BizHTC.Marketing.MKT_MarketingFee): đại lý lập hồ sơ đề nghị Hãng OEM hỗ trợ chi phí hoạt động Marketing theo tháng, tổng hợp nhiều hoạt động, luồng phê duyệt (Draft → Submitted → Approved → Settled hoặc Rejected/Cancelled).</summary>
-public sealed class MarketingFeeSettlement
-{
-    public long Id { get; set; }
-    public Guid OrgId { get; set; }
-    public string MKTFeeCode { get; set; } = "";            // Mã hồ sơ quyết toán (MKT-...)
-    public string? MKTFeeCodeUser { get; set; }             // Số hồ sơ do đại lý đặt
-    public string MKTFeeName { get; set; } = "";            // Tên hồ sơ quyết toán
-    public string DealerCode { get; set; } = "";            // Đại lý đề nghị quyết toán
-    public string? DealerName { get; set; }
-    public string CampaignMonth { get; set; } = "";         // Kỳ quyết toán (yyyy-MM)
-    public DateTime DateStart { get; set; } = DateTime.Now; // Ngày bắt đầu kỳ
-    public DateTime DateEnd { get; set; } = DateTime.Now;   // Ngày kết thúc kỳ
-    public int TotalActivityCount { get; set; } = 0;        // Tổng số hoạt động trong hồ sơ
-    public decimal TotalAmountDealer { get; set; } = 0;     // Tổng chi phí đại lý đề nghị (VNĐ)
-    public decimal TotalAmountApproved { get; set; } = 0;   // Tổng chi phí Hãng duyệt chi (VNĐ)
-    public decimal VatRate { get; set; } = 10;              // Thuế suất VAT (%)
-    public decimal TotalVatAmount { get; set; } = 0;        // Tiền thuế VAT
-    public decimal TotalAmountAfterVAT { get; set; } = 0;   // Tổng thanh toán sau VAT
-    public string Status { get; set; } = "Draft";           // Draft → Submitted → Approved → Settled (hoặc Rejected / Cancelled)
-    public string? BankRefNo { get; set; }                  // Số ủy nhiệm chi / giao dịch ngân hàng khi tất toán
-    public DateTime? SettledDate { get; set; }
-    public string? SettledBy { get; set; }
-    public string? ApprovedBy { get; set; }
-    public DateTime? ApprovedAt { get; set; }
-    public string? RejectedBy { get; set; }
-    public DateTime? RejectedAt { get; set; }
-    public string? RejectReason { get; set; }
-    public string? CancelledBy { get; set; }
-    public DateTime? CancelledAt { get; set; }
-    public string? CancelReason { get; set; }
-    public string? Remark { get; set; }
+    public string CPCode { get; set; } = "";              // Mã kế hoạch xe về (CP...)
+    public string DealerCode { get; set; } = "";          // Đại lý đăng ký kế hoạch nhận xe
+    public string? OrderNo { get; set; }                  // Số đơn hàng / lô xe liên quan
+    public string? PlanMonth { get; set; }                // Tháng kế hoạch (yyyy-MM)
+    public int TotalQtyOrder { get; set; } = 0;           // Tổng số lượng đặt
+    public int TotalQty { get; set; } = 0;                // Tổng số lượng duyệt
+    public int TotalArrivedQty { get; set; } = 0;         // Tổng số lượng xe đã về kho
+    public int TotalPendingQty { get; set; } = 0;         // Tổng số lượng xe còn lại (chưa về)
+    public string Status { get; set; } = "Draft";         // Draft → Submitted → Approved → Completed (hoặc Rejected / Cancelled)
     public string? CreatedBy { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
-}
-
-/// <summary>Chi tiết hoạt động Marketing trong hồ sơ quyết toán (BizHTC.Marketing.MKT_MarketingFeeDetail): từng hoạt động kèm chi phí đại lý, hạn mức Hãng, số tiền duyệt chi và trạng thái chứng từ (ảnh thiết kế/thực tế/hợp đồng/hóa đơn).</summary>
-public sealed class MarketingFeeDetail
-{
-    public long Id { get; set; }
-    public Guid OrgId { get; set; }
-    public long MarketingFeeSettlementId { get; set; }
-    public string MKTFeeCode { get; set; } = "";
-    public int LineIndex { get; set; } = 1;                 // Số thứ tự dòng
-    public string MKTActivityCode { get; set; } = "";       // Mã hoạt động (Mst_MarketingActivity)
-    public string MKTActivityName { get; set; } = "";
-    public string MKTActivityTypeCode { get; set; } = "DIGITAL";
-    public string? Vin { get; set; }                        // Xe liên quan (nếu hoạt động gắn xe)
-    public string? Model { get; set; }
-    public string? SpecCode { get; set; }
-    public decimal Qty { get; set; } = 1;                   // Số lượng (lượt/bài/ngày...)
-    public decimal Price { get; set; } = 0;                 // Đơn giá đại lý chi
-    public decimal TotalAmountDealer { get; set; } = 0;     // Thành tiền đại lý đề nghị
-    public decimal HTCLimitPrice { get; set; } = 0;         // Hạn mức Hãng hỗ trợ cho dòng
-    public decimal ApprovedQty { get; set; } = 0;           // Số lượng Hãng duyệt
-    public decimal ApprovedAmount { get; set; } = 0;        // Số tiền Hãng duyệt chi
-    public bool FlagDesignImage { get; set; } = true;       // Yêu cầu ảnh thiết kế
-    public bool FlagActualImage { get; set; } = true;       // Yêu cầu ảnh thực tế
-    public bool FlagContract { get; set; } = true;          // Yêu cầu hợp đồng
-    public bool FlagInvoice { get; set; } = true;           // Yêu cầu hóa đơn
-    public bool HasDesignImage { get; set; } = false;       // Đã nộp ảnh thiết kế
-    public bool HasActualImage { get; set; } = false;       // Đã nộp ảnh thực tế
-    public bool HasContract { get; set; } = false;          // Đã nộp hợp đồng
-    public bool HasInvoice { get; set; } = false;           // Đã nộp hóa đơn
-    public string Status { get; set; } = "Pending";         // Pending → Approved (hoặc Rejected / Cancelled)
-    public string? RejectReason { get; set; }
-    public string? Remark { get; set; }
-}
-
-/// <summary>Chứng từ đính kèm của dòng hoạt động Marketing (BizHTC.Marketing.MKT_MarketingFeeDetailAttach): ảnh thiết kế, ảnh thực tế, hợp đồng, hóa đơn kèm trạng thái duyệt từng chứng từ.</summary>
-public sealed class MarketingFeeDetailAttach
-{
-    public long Id { get; set; }
-    public Guid OrgId { get; set; }
-    public long MarketingFeeDetailId { get; set; }
-    public string MKTFeeCode { get; set; } = "";
-    public int LineIndex { get; set; } = 1;
-    public string AttachCode { get; set; } = "";            // Mã chứng từ (ATT-...)
-    public string FileType { get; set; } = "ActualImage";   // DesignImage / ActualImage / Contract / Invoice
-    public string FileName { get; set; } = "";
-    public string? FilePath { get; set; }
-    public long FileSizeKb { get; set; } = 1024;
-    public string Status { get; set; } = "Approved";        // Pending → Approved (hoặc Rejected)
     public string? ApprovedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime? ApprovedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
     public string? Remark { get; set; }
-    public DateTime UploadedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Chi tiết dòng xe trong kế hoạch xe về (Car_PlanDetail): model, spec, màu, số lượng đặt/duyệt và số lượng đã về theo từng dòng.</summary>
+public sealed class CarPlanLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long CarPlanId { get; set; }
+    public string CPCode { get; set; } = "";
+    public string Model { get; set; } = "";               // Dòng xe (Accent, Creta, Tucson...)
+    public string? SpecCode { get; set; }                 // Phiên bản xe
+    public string? Color { get; set; }                    // Màu xe
+    public int QtyOrder { get; set; } = 0;                // Số lượng đặt
+    public int Qty { get; set; } = 0;                     // Số lượng duyệt
+    public int ArrivedQty { get; set; } = 0;              // Số lượng xe đã về kho
+    public int PendingQty { get; set; } = 0;              // Số lượng xe còn lại (chưa về)
+    public string Status { get; set; } = "Pending";       // Pending → Approved → Arrived (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
 }

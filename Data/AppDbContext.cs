@@ -163,11 +163,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<DealerContractCancelMinutes> DealerContractCancelMinutes => Set<DealerContractCancelMinutes>();
     public DbSet<RearrangeTransportRequest> RearrangeTransportRequests => Set<RearrangeTransportRequest>();
     public DbSet<RearrangeTransportRequestLine> RearrangeTransportRequestLines => Set<RearrangeTransportRequestLine>();
-    public DbSet<MarketingActivityType> MarketingActivityTypes => Set<MarketingActivityType>();
-    public DbSet<MarketingActivity> MarketingActivities => Set<MarketingActivity>();
-    public DbSet<MarketingFeeSettlement> MarketingFeeSettlements => Set<MarketingFeeSettlement>();
-    public DbSet<MarketingFeeDetail> MarketingFeeDetails => Set<MarketingFeeDetail>();
-    public DbSet<MarketingFeeDetailAttach> MarketingFeeDetailAttaches => Set<MarketingFeeDetailAttach>();
+    public DbSet<CarPlan> CarPlans => Set<CarPlan>();
+    public DbSet<CarPlanLine> CarPlanLines => Set<CarPlanLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -371,5 +368,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<MarketingFeeDetail>().HasIndex(x => new { x.OrgId, x.Vin });
         b.Entity<MarketingFeeDetailAttach>().HasIndex(x => new { x.OrgId, x.AttachCode }).IsUnique();
         b.Entity<MarketingFeeDetailAttach>().HasIndex(x => new { x.OrgId, x.MKTFeeCode });
+        b.Entity<CarPlan>().HasIndex(x => new { x.OrgId, x.CPCode }).IsUnique();
+        b.Entity<CarPlan>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<CarPlan>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<CarPlanLine>().HasIndex(x => new { x.OrgId, x.CPCode });
+        b.Entity<CarPlanLine>().HasIndex(x => new { x.OrgId, x.Model });
     }
 }

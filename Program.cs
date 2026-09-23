@@ -6139,6 +6139,50 @@ app.MapGet("/api/vehicles/{vin}/rearrange-transport-requests", async (string vin
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Kế hoạch xe về / Kế hoạch nhập xe theo đại lý (BizHTC.Car.Car_Plan / CarPlan) ----
+app.MapPost("/api/car-plans", async (CreateCarPlanDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần DealerCode và danh sách Items dòng xe." });
+    try { return Results.Ok(await svc.CreateCarPlanAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/car-plans", async (IVehicleService svc, string? status, string? dealer, string? orderNo, string? model, string? planMonth) =>
+    Results.Ok(await svc.ListCarPlansAsync(status, dealer, orderNo, model, planMonth))).RequireAuthorization();
+
+app.MapGet("/api/car-plans/summary", async (IVehicleService svc, string? dealerCode, string? planMonth) =>
+    Results.Ok(await svc.GetCarPlanSummaryAsync(dealerCode, planMonth))).RequireAuthorization();
+
+app.MapGet("/api/reports/car-plans/summary", async (IVehicleService svc, string? dealerCode, string? planMonth) =>
+    Results.Ok(await svc.GetCarPlanSummaryAsync(dealerCode, planMonth))).RequireAuthorization();
+
+app.MapGet("/api/car-plans/{cpCode}", async (string cpCode, IVehicleService svc) =>
+{
+    var r = await svc.GetCarPlanAsync(cpCode);
+    return r is null ? Results.NotFound(new { cpCode, error = "Không tìm thấy kế hoạch xe về." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/car-plans/{cpCode}/{action}", async (string cpCode, string action, CarPlanTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|complete|reject|cancel" });
+    var r = await svc.CarPlanTransitionAsync(cpCode, action, dto);
+    return r is null ? Results.NotFound(new { cpCode, error = "Không thấy kế hoạch hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/car-plans/{cpCode}/arrivals", async (string cpCode, CarPlanArrivalDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần Vin của xe về." });
+    try
+    {
+        var r = await svc.RecordCarPlanArrivalAsync(cpCode, dto);
+        return r is null ? Results.NotFound(new { cpCode, error = "Không thấy kế hoạch/dòng xe hoặc kế hoạch chưa duyệt." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

@@ -1686,9 +1686,14 @@ public record MarketingActivityInputDto(string MKTActivityCode, string MKTActivi
 public record MarketingFeeDetailInputDto(string MKTActivityCode, string? MKTActivityName = null, string? MKTActivityTypeCode = null, string? Vin = null, string? Model = null, string? SpecCode = null, decimal? Qty = null, decimal? Price = null, decimal? HTCLimitPrice = null, bool? HasDesignImage = null, bool? HasActualImage = null, bool? HasContract = null, bool? HasInvoice = null, string? Remark = null);
 public record CreateMarketingFeeSettlementDto(string DealerCode, string CampaignMonth, string? MKTFeeCode = null, string? MKTFeeName = null, string? DealerName = null, DateTime? DateStart = null, DateTime? DateEnd = null, decimal? VatRate = null, string? Remark = null, string? CreatedBy = null, List<MarketingFeeDetailInputDto>? Items = null);
 public record MarketingFeeSettlementTransitionDto(string? Note = null, string? By = null, string? BankRefNo = null);
-public record UpdateMarketingFeeDetailDto(decimal? Qty = null, decimal? Price = null, decimal? HTCLimitPrice = null, decimal? ApprovedQty = null, decimal? ApprovedAmount = null, bool? HasDesignImage = null, bool? HasActualImage = null, bool? HasContract = null, bool? HasInvoice = null, string? Remark = null);
 public record MarketingFeeDetailDecisionDto(string? Note = null, string? By = null);
 public record MarketingFeeAttachInputDto(string FileType, string FileName, string? FilePath = null, long? FileSizeKb = null, string? Remark = null);
+
+public record CarPlanItemInputDto(string Model, string? SpecCode = null, string? Color = null, int QtyOrder = 1, int? Qty = null, string? Remark = null);
+public record CreateCarPlanDto(string DealerCode, List<CarPlanItemInputDto> Items, string? OrderNo = null, string? PlanMonth = null, string? CPCode = null, string? Remark = null, string? CreatedBy = null);
+public record CarPlanTransitionDto(string? Note = null, string? ApprovedBy = null, List<CarPlanApproveItemDto>? Items = null);
+public record CarPlanApproveItemDto(long? LineId = null, string? Model = null, string? SpecCode = null, string? Color = null, int? Qty = null);
+public record CarPlanArrivalDto(string Vin, string? Model = null, string? SpecCode = null, string? Color = null, string? Remark = null);
 
 public interface IVehicleService
 {
@@ -2445,20 +2450,13 @@ public interface IVehicleService
     Task<object?> RemoveRearrangeTransportRequestLineAsync(string srtReqNo, string vin);
     Task<object?> GetVehicleRearrangeTransportRequestInfoAsync(string vin);
 
-    // ===== Quyết toán kinh phí Marketing (BizHTC.Marketing.MKT_MarketingFee) =====
-    Task<object> CreateMarketingActivityTypeAsync(MarketingActivityTypeInputDto dto);
-    Task<object> ListMarketingActivityTypesAsync(bool? activeOnly);
-    Task<object> CreateMarketingActivityAsync(MarketingActivityInputDto dto);
-    Task<object> ListMarketingActivitiesAsync(string? typeCode, bool? activeOnly);
-    Task<object> CreateMarketingFeeSettlementAsync(CreateMarketingFeeSettlementDto dto);
-    Task<object> ListMarketingFeeSettlementsAsync(string? status, string? dealer, string? campaignMonth, string? vin);
-    Task<object?> GetMarketingFeeSettlementAsync(string mktFeeCode);
-    Task<object?> MarketingFeeSettlementTransitionAsync(string mktFeeCode, string action, MarketingFeeSettlementTransitionDto? dto);
-    Task<object?> UpdateMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, UpdateMarketingFeeDetailDto dto);
-    Task<object?> DecideMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, bool approve, MarketingFeeDetailDecisionDto? dto);
-    Task<object?> AddMarketingFeeAttachAsync(string mktFeeCode, int lineIndex, MarketingFeeAttachInputDto dto);
-    Task<object?> GetVehicleMarketingFeeInfoAsync(string vin);
-    Task<object> GetMarketingFeeSummaryAsync(string? dealerCode, string? campaignMonth);
+    // ===== Kế hoạch xe về / Kế hoạch nhập xe theo đại lý (BizHTC.Car.Car_Plan) =====
+    Task<object> CreateCarPlanAsync(CreateCarPlanDto dto);
+    Task<object> ListCarPlansAsync(string? status, string? dealer, string? orderNo, string? model, string? planMonth);
+    Task<object?> GetCarPlanAsync(string cpCode);
+    Task<object?> CarPlanTransitionAsync(string cpCode, string action, CarPlanTransitionDto? dto);
+    Task<object?> RecordCarPlanArrivalAsync(string cpCode, CarPlanArrivalDto dto);
+    Task<object> GetCarPlanSummaryAsync(string? dealerCode, string? planMonth);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -42879,6 +42877,273 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 r.CreatedAt,
                 r.ApprovedAt
             }).ToList()
+        };
+    }
+
+    // ===== Kế hoạch xe về / Kế hoạch nhập xe theo đại lý (BizHTC.Car.Car_Plan / CarPlan) =====
+    public async Task<object> CreateCarPlanAsync(CreateCarPlanDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần DealerCode để tạo kế hoạch xe về.");
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng chi tiết xe trong kế hoạch.");
+
+        foreach (var item in dto.Items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Model))
+                throw new InvalidOperationException("Mỗi dòng kế hoạch phải có Model xe.");
+            if (item.QtyOrder <= 0)
+                throw new InvalidOperationException("Số lượng đặt QtyOrder phải lớn hơn 0.");
+        }
+
+        var cpCode = string.IsNullOrWhiteSpace(dto.CPCode)
+            ? "CP" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.CPCode!.Trim().ToUpperInvariant();
+
+        if (await db.CarPlans.AnyAsync(c => c.OrgId == Org && c.CPCode == cpCode))
+            throw new InvalidOperationException($"Mã kế hoạch xe về {cpCode} đã tồn tại.");
+
+        var plan = new CarPlan
+        {
+            OrgId = Org,
+            CPCode = cpCode,
+            DealerCode = dto.DealerCode.Trim(),
+            OrderNo = dto.OrderNo?.Trim(),
+            PlanMonth = dto.PlanMonth?.Trim() ?? DateTime.Now.ToString("yyyy-MM"),
+            TotalQtyOrder = dto.Items.Sum(i => i.QtyOrder),
+            TotalQty = 0,
+            TotalArrivedQty = 0,
+            TotalPendingQty = 0,
+            Status = "Draft",
+            CreatedBy = dto.CreatedBy?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.CarPlans.Add(plan);
+        await db.SaveChangesAsync();
+
+        foreach (var item in dto.Items)
+        {
+            db.CarPlanLines.Add(new CarPlanLine
+            {
+                OrgId = Org,
+                CarPlanId = plan.Id,
+                CPCode = cpCode,
+                Model = item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                Color = item.Color?.Trim(),
+                QtyOrder = item.QtyOrder,
+                Qty = item.Qty ?? 0,
+                ArrivedQty = 0,
+                PendingQty = 0,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            plan.CPCode,
+            plan.DealerCode,
+            plan.OrderNo,
+            plan.PlanMonth,
+            plan.TotalQtyOrder,
+            status = plan.Status,
+            linesCount = dto.Items.Count
+        };
+    }
+
+    public async Task<object> ListCarPlansAsync(string? status, string? dealer, string? orderNo, string? model, string? planMonth)
+    {
+        var q = db.CarPlans.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(c => c.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(orderNo)) q = q.Where(c => c.OrderNo != null && c.OrderNo.Contains(orderNo));
+        if (!string.IsNullOrWhiteSpace(planMonth)) q = q.Where(c => c.PlanMonth == planMonth);
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var m = model.Trim();
+            var matchedCodes = await db.CarPlanLines
+                .Where(l => l.OrgId == Org && l.Model.Contains(m))
+                .Select(l => l.CPCode)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(c => matchedCodes.Contains(c.CPCode));
+        }
+
+        var items = await q.OrderByDescending(c => c.Id).Take(500).Select(c => new
+        {
+            c.CPCode,
+            c.DealerCode,
+            c.OrderNo,
+            c.PlanMonth,
+            c.TotalQtyOrder,
+            c.TotalQty,
+            c.TotalArrivedQty,
+            c.TotalPendingQty,
+            c.Status,
+            c.CreatedBy,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            c.CreatedAt,
+            linesCount = db.CarPlanLines.Count(l => l.OrgId == Org && l.CarPlanId == c.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCarPlanAsync(string cpCode)
+    {
+        cpCode = cpCode.Trim().ToUpperInvariant();
+        var plan = await db.CarPlans.FirstOrDefaultAsync(c => c.OrgId == Org && c.CPCode == cpCode);
+        if (plan is null) return null;
+
+        var lines = await db.CarPlanLines.Where(l => l.OrgId == Org && l.CarPlanId == plan.Id).ToListAsync();
+
+        return new
+        {
+            plan.CPCode,
+            plan.DealerCode,
+            plan.OrderNo,
+            plan.PlanMonth,
+            plan.TotalQtyOrder,
+            plan.TotalQty,
+            plan.TotalArrivedQty,
+            plan.TotalPendingQty,
+            plan.Status,
+            plan.CreatedBy,
+            plan.ApprovedBy,
+            plan.ApprovedAt,
+            plan.CompletedAt,
+            plan.Remark,
+            plan.CreatedAt,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.Model,
+                l.SpecCode,
+                l.Color,
+                l.QtyOrder,
+                l.Qty,
+                l.ArrivedQty,
+                l.PendingQty,
+                l.Status,
+                l.Remark
+            }).ToList()
+        };
+    }
+
+    public async Task<object?> CarPlanTransitionAsync(string cpCode, string action, CarPlanTransitionDto? dto)
+    {
+        cpCode = cpCode.Trim().ToUpperInvariant();
+        var plan = await db.CarPlans.FirstOrDefaultAsync(c => c.OrgId == Org && c.CPCode == cpCode);
+        if (plan is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.CarPlanLines.Where(l => l.OrgId == Org && l.CarPlanId == plan.Id).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+                if (plan.Status != "Draft") return null;
+                plan.Status = "Submitted";
+                break;
+
+            case "approve":
+                if (plan.Status is not ("Draft" or "Submitted")) return null;
+                // Duyệt số lượng từng dòng (mặc định = số lượng đặt nếu không chỉ định).
+                foreach (var line in lines)
+                {
+                    var approve = dto?.Items?.FirstOrDefault(i =>
+                        (i.LineId.HasValue && i.LineId.Value == line.Id) ||
+                        (!i.LineId.HasValue && i.Model == line.Model && i.SpecCode == line.SpecCode && i.Color == line.Color));
+                    line.Qty = approve?.Qty ?? line.QtyOrder;
+                    line.PendingQty = line.Qty - line.ArrivedQty;
+                    line.Status = "Approved";
+                }
+                plan.TotalQty = lines.Sum(l => l.Qty);
+                plan.TotalPendingQty = lines.Sum(l => l.PendingQty);
+                plan.Status = "Approved";
+                plan.ApprovedBy = dto?.ApprovedBy?.Trim();
+                plan.ApprovedAt = now;
+                break;
+
+            case "complete":
+                if (plan.Status != "Approved") return null;
+                plan.Status = "Completed";
+                plan.CompletedAt = now;
+                break;
+
+            case "reject":
+                if (plan.Status is "Completed" or "Rejected" or "Cancelled") return null;
+                plan.Status = "Rejected";
+                foreach (var line in lines) line.Status = "Rejected";
+                break;
+
+            case "cancel":
+                if (plan.Status is "Completed" or "Rejected" or "Cancelled") return null;
+                plan.Status = "Cancelled";
+                foreach (var line in lines) line.Status = "Cancelled";
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { plan.CPCode, status = plan.Status, plan.TotalQty, plan.TotalArrivedQty, plan.TotalPendingQty };
+    }
+
+    // Ghi nhận 1 xe VIN đã về kho theo kế hoạch: tăng ArrivedQty của dòng khớp model/spec/màu, cập nhật tổng.
+    public async Task<object?> RecordCarPlanArrivalAsync(string cpCode, CarPlanArrivalDto dto)
+    {
+        cpCode = cpCode.Trim().ToUpperInvariant();
+        var plan = await db.CarPlans.FirstOrDefaultAsync(c => c.OrgId == Org && c.CPCode == cpCode);
+        if (plan is null) return null;
+        if (plan.Status is not ("Approved" or "Completed")) return null;
+        if (string.IsNullOrWhiteSpace(dto.Vin)) throw new InvalidOperationException("Cần Vin của xe về.");
+
+        var lines = await db.CarPlanLines.Where(l => l.OrgId == Org && l.CarPlanId == plan.Id).ToListAsync();
+        var line = lines.FirstOrDefault(l =>
+            (dto.Model is not null && l.Model == dto.Model) &&
+            (dto.SpecCode is null || l.SpecCode == dto.SpecCode) &&
+            (dto.Color is null || l.Color == dto.Color))
+            ?? lines.FirstOrDefault(l => dto.Model is not null && l.Model == dto.Model);
+        if (line is null) return null;
+
+        line.ArrivedQty += 1;
+        line.PendingQty = Math.Max(0, line.Qty - line.ArrivedQty);
+        if (line.PendingQty == 0) line.Status = "Arrived";
+
+        plan.TotalArrivedQty = lines.Sum(l => l.ArrivedQty);
+        plan.TotalPendingQty = lines.Sum(l => l.PendingQty);
+        if (plan.TotalPendingQty == 0 && plan.Status == "Approved") plan.Status = "Completed";
+
+        await db.SaveChangesAsync();
+        return new { plan.CPCode, line.Model, line.ArrivedQty, line.PendingQty, status = plan.Status };
+    }
+
+    public async Task<object> GetCarPlanSummaryAsync(string? dealerCode, string? planMonth)
+    {
+        var q = db.CarPlans.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode)) q = q.Where(c => c.DealerCode == dealerCode);
+        if (!string.IsNullOrWhiteSpace(planMonth)) q = q.Where(c => c.PlanMonth == planMonth);
+
+        var plans = await q.ToListAsync();
+        var byStatus = plans.GroupBy(c => c.Status)
+            .Select(g => new { status = g.Key, count = g.Count() })
+            .OrderByDescending(x => x.count)
+            .ToList();
+
+        return new
+        {
+            totalPlans = plans.Count,
+            totalQtyOrder = plans.Sum(c => c.TotalQtyOrder),
+            totalQty = plans.Sum(c => c.TotalQty),
+            totalArrivedQty = plans.Sum(c => c.TotalArrivedQty),
+            totalPendingQty = plans.Sum(c => c.TotalPendingQty),
+            byStatus
         };
     }
 }
