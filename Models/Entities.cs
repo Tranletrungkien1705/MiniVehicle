@@ -7774,6 +7774,21 @@ public sealed class StorageLocal
     public string? LogLUBy { get; set; }            // Người cập nhật gần nhất
 }
 
+/// <summary>Danh mục Giá xe tồn kho theo phiên bản (BizHTC.DMS40.Mst_CarPriceInStock): giá nhập/giá tồn kho
+/// áp dụng cho từng phiên bản xe (SpecCode) theo ngày hiệu lực (EffectiveDate). Khóa nghiệp vụ = (SpecCode, EffectiveDate).</summary>
+public sealed class CarPriceInStock
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SpecCode { get; set; } = "";       // Mã phiên bản xe (SpecCode) — phải tồn tại & đang hiệu lực
+    public DateTime EffectiveDate { get; set; }       // Ngày hiệu lực áp dụng giá (không được ở quá khứ khi tạo)
+    public decimal UnitPriceIn { get; set; } = 0;     // Đơn giá tồn kho (VNĐ), >= 0
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? CreatedBy { get; set; }            // Người tạo bản ghi
+    public DateTime? LogLUDateTime { get; set; }      // Thời điểm cập nhật gần nhất
+    public string? LogLUBy { get; set; }              // Người cập nhật gần nhất
+}
+
 /// <summary>Trang thiết bị gắn trên xe (BizHTC.WH.Mng_Device_Car): quản lý thiết bị/phụ kiện lắp trên từng
 /// số khung VIN (AVN, GPS, camera hành trình, bệ bước, giá nóc...) kèm hóa đơn đầu vào (InputInvoiceNo/Date).
 /// Khóa nghiệp vụ = (VIN, DeviceTypeCode, SpecCode).</summary>

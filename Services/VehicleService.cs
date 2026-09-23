@@ -1700,6 +1700,10 @@ public record CreateStorageGlobalDto(string StorageCode, string ModelCode);
 public record UpdateStorageGlobalDto(string? ModelCode = null, bool? FlagActive = null, string? By = null);
 public record CreateStorageLocalDto(string DealerCode, string StorageCode);
 
+// ---- Danh mục Giá xe tồn kho theo phiên bản (BizHTC.DMS40.Mst_CarPriceInStock) ----
+public record CreateCarPriceInStockDto(string SpecCode, DateTime EffectiveDate, decimal UnitPriceIn, string? CreatedBy = null);
+public record UpdateCarPriceInStockDto(decimal? UnitPriceIn = null, DateTime? EffectiveDate = null, string? By = null);
+
 // Trang thiết bị gắn trên xe (BizHTC.WH.Mng_Device_Car)
 public record VehicleDeviceItemInputDto(string Vin, string DeviceTypeCode, string? SpecCode = null, string? InputInvoiceNo = null, DateTime? InputInvoiceDate = null);
 public record UpdateVehicleDeviceDto(string? InputInvoiceNo = null, DateTime? InputInvoiceDate = null, string? By = null);
@@ -2547,6 +2551,13 @@ public interface IVehicleService
     Task<object?> UpdateStorageGlobalAsync(string storageCode, string modelCode, UpdateStorageGlobalDto dto);
     Task<object?> DeleteStorageGlobalAsync(string storageCode, string modelCode);
     Task<object> CreateStorageLocalAsync(CreateStorageLocalDto dto);
+
+    // Danh mục Giá xe tồn kho theo phiên bản (Mst_CarPriceInStock)
+    Task<object> CreateCarPriceInStockAsync(CreateCarPriceInStockDto dto);
+    Task<object> ListCarPriceInStocksAsync(string? specCode, DateTime? fromDate, DateTime? toDate);
+    Task<object?> GetCarPriceInStockAsync(string specCode, DateTime effectiveDate);
+    Task<object?> UpdateCarPriceInStockAsync(string specCode, DateTime effectiveDate, UpdateCarPriceInStockDto dto);
+    Task<object?> DeleteCarPriceInStockAsync(string specCode, DateTime effectiveDate);
     Task<object> ListStorageLocalsAsync(string? dealerCode, string? storageCode, bool? activeOnly);
     Task<object?> GetStorageLocalAsync(string dealerCode, string storageCode);
     Task<object?> UpdateStorageLocalAsync(string dealerCode, string storageCode, UpdateStorageLocalDto dto);
@@ -43355,6 +43366,100 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         db.StorageGlobals.Remove(s);
         await db.SaveChangesAsync();
         return new { deleted = true, s.StorageCode, s.ModelCode };
+    }
+
+    // ===== Danh mục Giá xe tồn kho theo phiên bản (BizHTC.DMS40.Mst_CarPriceInStock) =====
+    // Mst_CarPriceInStock: giá nhập/giá tồn kho theo phiên bản xe, khóa nghiệp vụ = (SpecCode, EffectiveDate).
+    public async Task<object> CreateCarPriceInStockAsync(CreateCarPriceInStockDto dto)
+    {
+        var specCode = dto.SpecCode?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(specCode))
+            throw new InvalidOperationException("Cần mã phiên bản xe SpecCode.");
+        if (dto.UnitPriceIn < 0)
+            throw new InvalidOperationException("Đơn giá tồn kho UnitPriceIn phải >= 0.");
+        if (dto.EffectiveDate.Date < DateTime.Now.Date)
+            throw new InvalidOperationException("Ngày hiệu lực EffectiveDate không được ở quá khứ.");
+
+        if (await db.CarPriceInStocks.AnyAsync(p => p.OrgId == Org && p.SpecCode == specCode && p.EffectiveDate == dto.EffectiveDate.Date))
+            throw new InvalidOperationException($"Giá tồn kho cho phiên bản {specCode} ngày {dto.EffectiveDate:yyyy-MM-dd} đã tồn tại.");
+
+        var entity = new CarPriceInStock
+        {
+            OrgId = Org,
+            SpecCode = specCode,
+            EffectiveDate = dto.EffectiveDate.Date,
+            UnitPriceIn = dto.UnitPriceIn,
+            CreatedAt = DateTime.Now,
+            CreatedBy = dto.CreatedBy?.Trim(),
+            LogLUDateTime = DateTime.Now,
+            LogLUBy = dto.CreatedBy?.Trim()
+        };
+        db.CarPriceInStocks.Add(entity);
+        await db.SaveChangesAsync();
+        return new { entity.Id, entity.SpecCode, entity.EffectiveDate, entity.UnitPriceIn };
+    }
+
+    public async Task<object> ListCarPriceInStocksAsync(string? specCode, DateTime? fromDate, DateTime? toDate)
+    {
+        var q = db.CarPriceInStocks.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(specCode))
+        {
+            var sc = specCode.Trim().ToUpperInvariant();
+            q = q.Where(p => p.SpecCode.Contains(sc));
+        }
+        if (fromDate.HasValue) q = q.Where(p => p.EffectiveDate >= fromDate.Value.Date);
+        if (toDate.HasValue) q = q.Where(p => p.EffectiveDate <= toDate.Value.Date);
+
+        var items = await q.OrderBy(p => p.SpecCode).ThenByDescending(p => p.EffectiveDate)
+            .Select(p => new { p.Id, p.SpecCode, p.EffectiveDate, p.UnitPriceIn, p.CreatedAt, p.CreatedBy, p.LogLUDateTime, p.LogLUBy })
+            .ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCarPriceInStockAsync(string specCode, DateTime effectiveDate)
+    {
+        var sc = specCode.Trim().ToUpperInvariant();
+        var ed = effectiveDate.Date;
+        var p = await db.CarPriceInStocks.FirstOrDefaultAsync(x => x.OrgId == Org && x.SpecCode == sc && x.EffectiveDate == ed);
+        if (p is null) return null;
+        return new { p.Id, p.SpecCode, p.EffectiveDate, p.UnitPriceIn, p.CreatedAt, p.CreatedBy, p.LogLUDateTime, p.LogLUBy };
+    }
+
+    public async Task<object?> UpdateCarPriceInStockAsync(string specCode, DateTime effectiveDate, UpdateCarPriceInStockDto dto)
+    {
+        var sc = specCode.Trim().ToUpperInvariant();
+        var ed = effectiveDate.Date;
+        var p = await db.CarPriceInStocks.FirstOrDefaultAsync(x => x.OrgId == Org && x.SpecCode == sc && x.EffectiveDate == ed);
+        if (p is null) return null;
+
+        if (dto.UnitPriceIn.HasValue)
+        {
+            if (dto.UnitPriceIn.Value < 0)
+                throw new InvalidOperationException("Đơn giá tồn kho UnitPriceIn phải >= 0.");
+            p.UnitPriceIn = dto.UnitPriceIn.Value;
+        }
+        if (dto.EffectiveDate.HasValue)
+        {
+            var newDate = dto.EffectiveDate.Value.Date;
+            if (newDate != p.EffectiveDate && await db.CarPriceInStocks.AnyAsync(x => x.OrgId == Org && x.SpecCode == sc && x.EffectiveDate == newDate))
+                throw new InvalidOperationException($"Giá tồn kho cho phiên bản {sc} ngày {newDate:yyyy-MM-dd} đã tồn tại.");
+            p.EffectiveDate = newDate;
+        }
+        p.LogLUDateTime = DateTime.Now;
+        p.LogLUBy = dto.By?.Trim();
+        await db.SaveChangesAsync();
+        return new { p.SpecCode, p.EffectiveDate, p.UnitPriceIn, p.LogLUDateTime, p.LogLUBy };
+    }
+
+    public async Task<object?> DeleteCarPriceInStockAsync(string specCode, DateTime effectiveDate)
+    {
+        var sc = specCode.Trim().ToUpperInvariant();
+        var ed = effectiveDate.Date;
+        var p = await db.CarPriceInStocks.FirstOrDefaultAsync(x => x.OrgId == Org && x.SpecCode == sc && x.EffectiveDate == ed);
+        if (p is null) return null;
+        db.CarPriceInStocks.Remove(p);
+        await db.SaveChangesAsync();
+        return new { deleted = true, p.SpecCode, p.EffectiveDate };
     }
 
     // Dlr_StorageLocal: kho/bãi cục bộ của Đại lý, khóa nghiệp vụ = (DealerCode, StorageCode).

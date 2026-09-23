@@ -6213,6 +6213,40 @@ app.MapDelete("/api/storage-globals/{storageCode}/{modelCode}", async (string st
     return r is null ? Results.NotFound(new { storageCode, modelCode, error = "Không tìm thấy vị trí kho OEM." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Danh mục Giá xe tồn kho theo phiên bản (BizHTC.DMS40.Mst_CarPriceInStock) ----
+app.MapPost("/api/car-price-in-stocks", async (CreateCarPriceInStockDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.SpecCode))
+        return Results.BadRequest(new { error = "Cần SpecCode." });
+    try { return Results.Ok(await svc.CreateCarPriceInStockAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/car-price-in-stocks", async (IVehicleService svc, string? specCode, DateTime? fromDate, DateTime? toDate) =>
+    Results.Ok(await svc.ListCarPriceInStocksAsync(specCode, fromDate, toDate))).RequireAuthorization();
+
+app.MapGet("/api/car-price-in-stocks/{specCode}/{effectiveDate}", async (string specCode, DateTime effectiveDate, IVehicleService svc) =>
+{
+    var r = await svc.GetCarPriceInStockAsync(specCode, effectiveDate);
+    return r is null ? Results.NotFound(new { specCode, effectiveDate, error = "Không tìm thấy giá tồn kho." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/car-price-in-stocks/{specCode}/{effectiveDate}", async (string specCode, DateTime effectiveDate, UpdateCarPriceInStockDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateCarPriceInStockAsync(specCode, effectiveDate, dto);
+        return r is null ? Results.NotFound(new { specCode, effectiveDate, error = "Không tìm thấy giá tồn kho." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/car-price-in-stocks/{specCode}/{effectiveDate}", async (string specCode, DateTime effectiveDate, IVehicleService svc) =>
+{
+    var r = await svc.DeleteCarPriceInStockAsync(specCode, effectiveDate);
+    return r is null ? Results.NotFound(new { specCode, effectiveDate, error = "Không tìm thấy giá tồn kho." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 app.MapPost("/api/storage-locals", async (CreateStorageLocalDto dto, IVehicleService svc) =>
 {
     if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.StorageCode))
