@@ -1927,6 +1927,26 @@ public interface IVehicleService
     Task<object?> GetVehiclePdiPaymentInfoAsync(string vin);
     Task<object?> GetVehiclePdiPaymentHistoryAsync(string vin);
     Task<object> GetPdiPaymentSummaryAsync(string? dealerCode, string? periodMonth, string? storageCode);
+
+    // Chính sách hỗ trợ bán lẻ xe ô tô cho Đại lý & Quyết toán hỗ trợ theo VIN (BizHTC.DealerSales / SPL_SalesPolicyMst & SPL_SPSupportRetail)
+    Task<object> CreateSalesPolicyAsync(CreateSalesPolicyDto dto);
+    Task<object> ListSalesPoliciesAsync(string? status, string? spsrType, string? q);
+    Task<object?> GetSalesPolicyAsync(string spsrCode);
+    Task<object?> UpdateSalesPolicyHeaderAsync(string spsrCode, UpdateSalesPolicyHeaderDto dto);
+    Task<object?> SalesPolicyTransitionAsync(string spsrCode, string action, SalesPolicyTransitionDto? dto);
+    Task<object?> AddSalesPolicyLinesAsync(string spsrCode, List<SalesPolicyLineInputDto> items);
+    Task<object?> UpdateSalesPolicyLineAsync(string spsrCode, long lineId, UpdateSalesPolicyLineDto dto);
+    Task<object?> RemoveSalesPolicyLineAsync(string spsrCode, long lineId);
+    Task<object> CreateSalesPolicySupportAsync(CreateSalesPolicySupportDto dto);
+    Task<object> BatchAssignPolicySupportVinsAsync(BatchAssignPolicySupportDto dto);
+    Task<object> ListSalesPolicySupportsAsync(string? status, string? dealer, string? spsrCode, string? vin, string? supportNo);
+    Task<object?> GetSalesPolicySupportAsync(string supportNo);
+    Task<object?> UpdateSalesPolicySupportAsync(string supportNo, UpdateSalesPolicySupportDto dto);
+    Task<object?> SalesPolicySupportTransitionAsync(string supportNo, string action, SalesPolicySupportTransitionDto? dto);
+    Task<object?> RemoveSalesPolicySupportAsync(string supportNo);
+    Task<object?> GetVehiclePolicySupportInfoAsync(string vin);
+    Task<object?> GetVehiclePolicySupportHistoryAsync(string vin);
+    Task<object> GetSalesPolicySummaryAsync(string? spsrCode, string? dealerCode);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -24682,5 +24702,938 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byStorage,
             byPeriodMonth
         };
+    }
+
+    // ===== Chính sách hỗ trợ bán lẻ xe ô tô cho Đại lý & Quyết toán hỗ trợ theo VIN (BizHTC.DealerSales / SPL_SalesPolicyMst & SPL_SPSupportRetail) =====
+
+    public async Task<object> CreateSalesPolicyAsync(CreateSalesPolicyDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.SPNo))
+            throw new InvalidOperationException("Cần số hiệu văn bản chính sách SPNo.");
+        if (dto.EndDate < dto.StartDate)
+            throw new InvalidOperationException("Ngày kết thúc EndDate không được trước ngày bắt đầu StartDate.");
+
+        var spsrCode = string.IsNullOrWhiteSpace(dto.SPSRCode)
+            ? "SPL-" + DateTime.Now.ToString("yyyyMMdd-HHmmss")
+            : dto.SPSRCode!.Trim().ToUpperInvariant();
+
+        if (await db.SalesPolicies.AnyAsync(p => p.OrgId == Org && p.SPSRCode == spsrCode))
+            throw new InvalidOperationException($"Mã chính sách {spsrCode} đã tồn tại.");
+
+        var policy = new SalesPolicy
+        {
+            OrgId = Org,
+            SPSRCode = spsrCode,
+            SPNo = dto.SPNo.Trim(),
+            SPSRType = string.IsNullOrWhiteSpace(dto.SPSRType) ? "RetailSupport" : dto.SPSRType.Trim(),
+            SPSRRoot = dto.SPSRRoot?.Trim(),
+            FormBusinessSupportCode = string.IsNullOrWhiteSpace(dto.FormBusinessSupportCode) ? "DirectCash" : dto.FormBusinessSupportCode.Trim(),
+            StartDate = dto.StartDate,
+            EndDate = dto.EndDate,
+            TotalModelsCount = dto.Lines?.Count ?? 0,
+            TotalSupportBudget = dto.TotalSupportBudget ?? 0,
+            TotalVinApplied = 0,
+            TotalActualPaidAmount = 0,
+            FilePath = dto.FilePath?.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.SalesPolicies.Add(policy);
+        await db.SaveChangesAsync();
+
+        if (dto.Lines != null && dto.Lines.Count > 0)
+        {
+            int idx = 1;
+            foreach (var item in dto.Lines)
+            {
+                if (string.IsNullOrWhiteSpace(item.Model))
+                    throw new InvalidOperationException("Mỗi dòng chính sách cần có Model xe.");
+
+                db.SalesPolicyLines.Add(new SalesPolicyLine
+                {
+                    OrgId = Org,
+                    SalesPolicyId = policy.Id,
+                    SPSRCode = spsrCode,
+                    LineIndex = idx++,
+                    Model = item.Model.Trim(),
+                    SpecCode = item.SpecCode?.Trim() ?? "",
+                    SpecDescription = item.SpecDescription?.Trim(),
+                    DealerCode = item.DealerCode?.Trim(),
+                    ModelYear = item.ModelYear ?? 2026,
+                    AmountSupport = item.AmountSupport,
+                    Status = "Active",
+                    Remark = item.Remark?.Trim()
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        return new
+        {
+            policy.SPSRCode,
+            policy.SPNo,
+            policy.SPSRType,
+            policy.FormBusinessSupportCode,
+            policy.StartDate,
+            policy.EndDate,
+            policy.TotalModelsCount,
+            policy.TotalSupportBudget,
+            policy.Status,
+            policy.CreatedAt
+        };
+    }
+
+    public async Task<object> ListSalesPoliciesAsync(string? status, string? spsrType, string? q)
+    {
+        var query = db.SalesPolicies.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(p => p.Status == status);
+        if (!string.IsNullOrWhiteSpace(spsrType)) query = query.Where(p => p.SPSRType == spsrType);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var search = q.Trim().ToLowerInvariant();
+            query = query.Where(p => p.SPSRCode.ToLower().Contains(search) || p.SPNo.ToLower().Contains(search) || (p.Remark != null && p.Remark.ToLower().Contains(search)));
+        }
+
+        var list = await query.OrderByDescending(p => p.Id).ToListAsync();
+
+        var now = DateTime.Now;
+        foreach (var p in list)
+        {
+            if (p.Status == "Active" && p.EndDate < now)
+            {
+                p.Status = "Expired";
+            }
+        }
+        await db.SaveChangesAsync();
+
+        var policyIds = list.Select(p => p.Id).ToList();
+        var linesCountDict = await db.SalesPolicyLines
+            .Where(l => l.OrgId == Org && policyIds.Contains(l.SalesPolicyId))
+            .GroupBy(l => l.SalesPolicyId)
+            .ToDictionaryAsync(g => g.Key, g => g.Count());
+
+        var items = list.Select(p => new
+        {
+            p.Id,
+            p.SPSRCode,
+            p.SPNo,
+            p.SPSRType,
+            p.SPSRRoot,
+            p.FormBusinessSupportCode,
+            p.StartDate,
+            p.EndDate,
+            TotalModelsCount = linesCountDict.TryGetValue(p.Id, out var c) ? c : p.TotalModelsCount,
+            p.TotalSupportBudget,
+            p.TotalVinApplied,
+            p.TotalActualPaidAmount,
+            p.FilePath,
+            p.Status,
+            p.Remark,
+            p.CreatedBy,
+            p.CreatedAt,
+            p.ApprovedBy,
+            p.ApprovedAt,
+            p.SuspendedBy,
+            p.SuspendedAt,
+            p.CancelledBy,
+            p.CancelledAt,
+            p.CancelReason
+        }).ToList();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetSalesPolicyAsync(string spsrCode)
+    {
+        spsrCode = spsrCode.Trim().ToUpperInvariant();
+        var policy = await db.SalesPolicies.FirstOrDefaultAsync(p => p.OrgId == Org && p.SPSRCode == spsrCode);
+        if (policy is null) return null;
+
+        if (policy.Status == "Active" && policy.EndDate < DateTime.Now)
+        {
+            policy.Status = "Expired";
+            await db.SaveChangesAsync();
+        }
+
+        var lines = await db.SalesPolicyLines
+            .Where(l => l.OrgId == Org && l.SalesPolicyId == policy.Id)
+            .OrderBy(l => l.LineIndex)
+            .ToListAsync();
+
+        var supportsCount = await db.SalesPolicySupports
+            .CountAsync(s => s.OrgId == Org && s.SPSRCode == spsrCode && s.Status != "Cancelled");
+
+        var actualPaid = await db.SalesPolicySupports
+            .Where(s => s.OrgId == Org && s.SPSRCode == spsrCode && s.Status == "Settled")
+            .SumAsync(s => s.AmountSupport);
+
+        return new
+        {
+            policy.Id,
+            policy.SPSRCode,
+            policy.SPNo,
+            policy.SPSRType,
+            policy.SPSRRoot,
+            policy.FormBusinessSupportCode,
+            policy.StartDate,
+            policy.EndDate,
+            TotalModelsCount = lines.Count,
+            policy.TotalSupportBudget,
+            TotalVinApplied = supportsCount,
+            TotalActualPaidAmount = actualPaid,
+            policy.FilePath,
+            policy.Status,
+            policy.Remark,
+            policy.CreatedBy,
+            policy.CreatedAt,
+            policy.ApprovedBy,
+            policy.ApprovedAt,
+            policy.SuspendedBy,
+            policy.SuspendedAt,
+            policy.CancelledBy,
+            policy.CancelledAt,
+            policy.CancelReason,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.LineIndex,
+                l.Model,
+                l.SpecCode,
+                l.SpecDescription,
+                l.DealerCode,
+                l.ModelYear,
+                l.AmountSupport,
+                l.Status,
+                l.Remark
+            })
+        };
+    }
+
+    public async Task<object?> UpdateSalesPolicyHeaderAsync(string spsrCode, UpdateSalesPolicyHeaderDto dto)
+    {
+        spsrCode = spsrCode.Trim().ToUpperInvariant();
+        var policy = await db.SalesPolicies.FirstOrDefaultAsync(p => p.OrgId == Org && p.SPSRCode == spsrCode);
+        if (policy is null) return null;
+
+        if (policy.Status is "Cancelled" or "Expired")
+            throw new InvalidOperationException($"Không thể sửa chính sách đang ở trạng thái {policy.Status}.");
+
+        if (!string.IsNullOrWhiteSpace(dto.SPNo)) policy.SPNo = dto.SPNo.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SPSRType)) policy.SPSRType = dto.SPSRType.Trim();
+        if (dto.SPSRRoot != null) policy.SPSRRoot = dto.SPSRRoot.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.FormBusinessSupportCode)) policy.FormBusinessSupportCode = dto.FormBusinessSupportCode.Trim();
+        if (dto.StartDate.HasValue) policy.StartDate = dto.StartDate.Value;
+        if (dto.EndDate.HasValue) policy.EndDate = dto.EndDate.Value;
+        if (dto.TotalSupportBudget.HasValue) policy.TotalSupportBudget = dto.TotalSupportBudget.Value;
+        if (dto.FilePath != null) policy.FilePath = dto.FilePath.Trim();
+        if (dto.Remark != null) policy.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return new { policy.SPSRCode, policy.SPNo, policy.Status, message = "Cập nhật thông tin chính sách thành công." };
+    }
+
+    public async Task<object?> SalesPolicyTransitionAsync(string spsrCode, string action, SalesPolicyTransitionDto? dto)
+    {
+        spsrCode = spsrCode.Trim().ToUpperInvariant();
+        var policy = await db.SalesPolicies.FirstOrDefaultAsync(p => p.OrgId == Org && p.SPSRCode == spsrCode);
+        if (policy is null) return null;
+
+        var act = action.Trim().ToLowerInvariant();
+        var now = dto?.TransitionDate ?? DateTime.Now;
+
+        switch (act)
+        {
+            case "approve" or "activate" or "active":
+                if (policy.Status is not ("Draft" or "Suspended")) return null;
+                policy.Status = "Active";
+                policy.ApprovedBy = dto?.Actor?.Trim() ?? "SalesDirector";
+                policy.ApprovedAt = now;
+                break;
+
+            case "suspend":
+                if (policy.Status != "Active") return null;
+                policy.Status = "Suspended";
+                policy.SuspendedBy = dto?.Actor?.Trim() ?? "SalesManager";
+                policy.SuspendedAt = now;
+                break;
+
+            case "expire":
+                if (policy.Status != "Active") return null;
+                policy.Status = "Expired";
+                break;
+
+            case "cancel":
+                if (policy.Status is "Cancelled") return null;
+                policy.Status = "Cancelled";
+                policy.CancelledBy = dto?.Actor?.Trim() ?? "SalesDirector";
+                policy.CancelledAt = now;
+                policy.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+                break;
+
+            default:
+                return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            policy.Remark = string.IsNullOrWhiteSpace(policy.Remark) ? dto.Note : $"{policy.Remark} | {act}: {dto.Note}";
+
+        await db.SaveChangesAsync();
+        return new { policy.SPSRCode, status = policy.Status, policy.ApprovedAt, policy.SuspendedAt, policy.CancelledAt };
+    }
+
+    public async Task<object?> AddSalesPolicyLinesAsync(string spsrCode, List<SalesPolicyLineInputDto> items)
+    {
+        spsrCode = spsrCode.Trim().ToUpperInvariant();
+        var policy = await db.SalesPolicies.FirstOrDefaultAsync(p => p.OrgId == Org && p.SPSRCode == spsrCode);
+        if (policy is null) return null;
+
+        if (policy.Status is "Cancelled" or "Expired")
+            throw new InvalidOperationException($"Không thể thêm dòng vào chính sách đang ở trạng thái {policy.Status}.");
+
+        var maxIdx = await db.SalesPolicyLines
+            .Where(l => l.OrgId == Org && l.SalesPolicyId == policy.Id)
+            .MaxAsync(l => (int?)l.LineIndex) ?? 0;
+
+        var addedLines = new List<SalesPolicyLine>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Model))
+                throw new InvalidOperationException("Mỗi dòng chính sách cần có Model xe.");
+
+            var line = new SalesPolicyLine
+            {
+                OrgId = Org,
+                SalesPolicyId = policy.Id,
+                SPSRCode = spsrCode,
+                LineIndex = ++maxIdx,
+                Model = item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim() ?? "",
+                SpecDescription = item.SpecDescription?.Trim(),
+                DealerCode = item.DealerCode?.Trim(),
+                ModelYear = item.ModelYear ?? 2026,
+                AmountSupport = item.AmountSupport,
+                Status = "Active",
+                Remark = item.Remark?.Trim()
+            };
+            db.SalesPolicyLines.Add(line);
+            addedLines.Add(line);
+        }
+
+        policy.TotalModelsCount += items.Count;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            policy.SPSRCode,
+            addedCount = addedLines.Count,
+            totalModelsCount = policy.TotalModelsCount,
+            lines = addedLines.Select(l => new { l.Id, l.LineIndex, l.Model, l.SpecCode, l.AmountSupport })
+        };
+    }
+
+    public async Task<object?> UpdateSalesPolicyLineAsync(string spsrCode, long lineId, UpdateSalesPolicyLineDto dto)
+    {
+        spsrCode = spsrCode.Trim().ToUpperInvariant();
+        var line = await db.SalesPolicyLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.Id == lineId && l.SPSRCode == spsrCode);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.Model)) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (dto.SpecDescription != null) line.SpecDescription = dto.SpecDescription.Trim();
+        if (dto.DealerCode != null) line.DealerCode = dto.DealerCode.Trim();
+        if (dto.ModelYear.HasValue) line.ModelYear = dto.ModelYear.Value;
+        if (dto.AmountSupport.HasValue) line.AmountSupport = dto.AmountSupport.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return new { line.Id, line.SPSRCode, line.Model, line.SpecCode, line.AmountSupport, line.Status, message = "Cập nhật dòng chính sách thành công." };
+    }
+
+    public async Task<object?> RemoveSalesPolicyLineAsync(string spsrCode, long lineId)
+    {
+        spsrCode = spsrCode.Trim().ToUpperInvariant();
+        var line = await db.SalesPolicyLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.Id == lineId && l.SPSRCode == spsrCode);
+        if (line is null) return null;
+
+        var policy = await db.SalesPolicies.FirstOrDefaultAsync(p => p.OrgId == Org && p.Id == line.SalesPolicyId);
+
+        db.SalesPolicyLines.Remove(line);
+        if (policy != null && policy.TotalModelsCount > 0) policy.TotalModelsCount--;
+
+        await db.SaveChangesAsync();
+        return new { lineId, spsrCode, message = "Đã xóa dòng chính sách thành công." };
+    }
+
+    public async Task<object> CreateSalesPolicySupportAsync(CreateSalesPolicySupportDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.SPSRCode))
+            throw new InvalidOperationException("Cần mã chính sách hỗ trợ SPSRCode.");
+        if (string.IsNullOrWhiteSpace(dto.Vin))
+            throw new InvalidOperationException("Cần số khung xe VIN để lập đề nghị hỗ trợ.");
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null)
+            throw new InvalidOperationException($"Không tìm thấy số khung VIN {vin} trong hệ thống.");
+
+        var spsrCode = dto.SPSRCode.Trim().ToUpperInvariant();
+        var policy = await db.SalesPolicies.FirstOrDefaultAsync(p => p.OrgId == Org && p.SPSRCode == spsrCode);
+        if (policy is null)
+            throw new InvalidOperationException($"Không tìm thấy chính sách {spsrCode}.");
+
+        if (policy.Status is "Cancelled")
+            throw new InvalidOperationException($"Chính sách {spsrCode} đã bị hủy.");
+
+        var existingSupport = await db.SalesPolicySupports
+            .FirstOrDefaultAsync(s => s.OrgId == Org && s.Vin == vin && s.SPSRCode == spsrCode && s.Status != "Cancelled" && s.Status != "Rejected");
+        if (existingSupport != null)
+            throw new InvalidOperationException($"Xe VIN {vin} đã có hồ sơ hỗ trợ {existingSupport.SupportNo} thuộc chính sách {spsrCode}.");
+
+        var policyLines = await db.SalesPolicyLines
+            .Where(l => l.OrgId == Org && l.SalesPolicyId == policy.Id && l.Status == "Active")
+            .ToListAsync();
+
+        var matchedLine = policyLines.FirstOrDefault(l => vehicle.Model.Contains(l.Model, StringComparison.OrdinalIgnoreCase))
+            ?? policyLines.FirstOrDefault();
+
+        decimal amountSupport = dto.AmountSupport ?? matchedLine?.AmountSupport ?? 0;
+        if (amountSupport <= 0 && matchedLine != null) amountSupport = matchedLine.AmountSupport;
+
+        var supportNo = string.IsNullOrWhiteSpace(dto.SupportNo)
+            ? "SPSR-" + DateTime.Now.ToString("yyyyMMdd-HHmmss")
+            : dto.SupportNo.Trim().ToUpperInvariant();
+
+        if (await db.SalesPolicySupports.AnyAsync(s => s.OrgId == Org && s.SupportNo == supportNo))
+            throw new InvalidOperationException($"Mã phiếu hỗ trợ {supportNo} đã tồn tại.");
+
+        var support = new SalesPolicySupport
+        {
+            OrgId = Org,
+            SupportNo = supportNo,
+            SPSRCode = spsrCode,
+            SPNo = policy.SPNo,
+            Vin = vin,
+            DealerCode = dto.DealerCode?.Trim() ?? vehicle.DealerCode ?? "DLR-OEM",
+            DealerName = dto.DealerName?.Trim(),
+            Model = vehicle.Model,
+            SpecCode = matchedLine?.SpecCode ?? "",
+            EngineNo = vehicle.EngineNo,
+            Color = vehicle.Color,
+            DateSupport = dto.DateSupport ?? DateTime.Now,
+            DateFullStatus = dto.DateFullStatus ?? (vehicle.DeliveredAt ?? DateTime.Now),
+            AmountSupport = amountSupport,
+            HTCInvoiceNo = dto.HTCInvoiceNo?.Trim() ?? vehicle.InvoiceNo,
+            HTCInvoiceDate = dto.HTCInvoiceDate ?? vehicle.InvoiceDate,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.SalesPolicySupports.Add(support);
+        policy.TotalVinApplied++;
+
+        Log(vin, "SalesPolicySupportCreated", $"{supportNo} Đề nghị hỗ trợ bán lẻ theo chính sách {spsrCode} mức {amountSupport:N0} VNĐ");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            support.SupportNo,
+            support.SPSRCode,
+            support.SPNo,
+            support.Vin,
+            support.DealerCode,
+            support.Model,
+            support.AmountSupport,
+            support.Status,
+            support.CreatedAt
+        };
+    }
+
+    public async Task<object> BatchAssignPolicySupportVinsAsync(BatchAssignPolicySupportDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.SPSRCode))
+            throw new InvalidOperationException("Cần mã chính sách hỗ trợ SPSRCode.");
+        if (dto.Vins is null || dto.Vins.Count == 0)
+            throw new InvalidOperationException("Cần danh sách số khung VINs để gán hỗ trợ.");
+
+        var spsrCode = dto.SPSRCode.Trim().ToUpperInvariant();
+        var policy = await db.SalesPolicies.FirstOrDefaultAsync(p => p.OrgId == Org && p.SPSRCode == spsrCode);
+        if (policy is null)
+            throw new InvalidOperationException($"Không tìm thấy chính sách {spsrCode}.");
+
+        var policyLines = await db.SalesPolicyLines
+            .Where(l => l.OrgId == Org && l.SalesPolicyId == policy.Id && l.Status == "Active")
+            .ToListAsync();
+
+        var distinctVins = dto.Vins.Select(v => v.Trim().ToUpperInvariant()).Distinct().ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && distinctVins.Contains(v.Vin)).ToListAsync();
+        var vDict = vehicles.ToDictionary(v => v.Vin);
+
+        var existingSupports = await db.SalesPolicySupports
+            .Where(s => s.OrgId == Org && distinctVins.Contains(s.Vin) && s.SPSRCode == spsrCode && s.Status != "Cancelled" && s.Status != "Rejected")
+            .Select(s => s.Vin)
+            .ToListAsync();
+
+        var createdList = new List<SalesPolicySupport>();
+        int seq = 1;
+        var now = DateTime.Now;
+
+        foreach (var vin in distinctVins)
+        {
+            if (!vDict.TryGetValue(vin, out var v)) continue;
+            if (existingSupports.Contains(vin)) continue;
+
+            var matchedLine = policyLines.FirstOrDefault(l => v.Model.Contains(l.Model, StringComparison.OrdinalIgnoreCase))
+                ?? policyLines.FirstOrDefault();
+
+            decimal amount = matchedLine?.AmountSupport ?? 0;
+            var sNo = $"SPSR-{now:yyyyMMddHHmmss}-{seq++:D3}";
+
+            var supp = new SalesPolicySupport
+            {
+                OrgId = Org,
+                SupportNo = sNo,
+                SPSRCode = spsrCode,
+                SPNo = policy.SPNo,
+                Vin = vin,
+                DealerCode = dto.DealerCode?.Trim() ?? v.DealerCode ?? "DLR-OEM",
+                Model = v.Model,
+                SpecCode = matchedLine?.SpecCode ?? "",
+                EngineNo = v.EngineNo,
+                Color = v.Color,
+                DateSupport = dto.DateSupport ?? now,
+                DateFullStatus = dto.DateFullStatus ?? (v.DeliveredAt ?? now),
+                AmountSupport = amount,
+                HTCInvoiceNo = v.InvoiceNo,
+                HTCInvoiceDate = v.InvoiceDate,
+                Status = "Draft",
+                Remark = dto.Remark?.Trim(),
+                CreatedBy = dto.CreatedBy?.Trim(),
+                CreatedAt = now
+            };
+
+            db.SalesPolicySupports.Add(supp);
+            createdList.Add(supp);
+            Log(vin, "SalesPolicySupportCreated", $"{sNo} Gán hỗ trợ bán lẻ chính sách {spsrCode} mức {amount:N0} VNĐ");
+        }
+
+        policy.TotalVinApplied += createdList.Count;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            policy.SPSRCode,
+            policy.SPNo,
+            totalRequested = distinctVins.Count,
+            assignedCount = createdList.Count,
+            skippedCount = distinctVins.Count - createdList.Count,
+            items = createdList.Select(s => new { s.SupportNo, s.Vin, s.Model, s.AmountSupport, s.DealerCode })
+        };
+    }
+
+    public async Task<object> ListSalesPolicySupportsAsync(string? status, string? dealer, string? spsrCode, string? vin, string? supportNo)
+    {
+        var q = db.SalesPolicySupports.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(s => s.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(s => s.DealerCode == dealer);
+        if (!string.IsNullOrWhiteSpace(spsrCode)) q = q.Where(s => s.SPSRCode == spsrCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(vin)) q = q.Where(s => s.Vin == vin.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(supportNo)) q = q.Where(s => s.SupportNo == supportNo.Trim().ToUpperInvariant());
+
+        var items = await q.OrderByDescending(s => s.Id).Take(500).Select(s => new
+        {
+            s.Id,
+            s.SupportNo,
+            s.SPSRCode,
+            s.SPNo,
+            s.Vin,
+            s.DealerCode,
+            s.DealerName,
+            s.Model,
+            s.SpecCode,
+            s.EngineNo,
+            s.Color,
+            s.DateSupport,
+            s.DateFullStatus,
+            s.AmountSupport,
+            s.HTCInvoiceNo,
+            s.HTCInvoiceDate,
+            s.HTCDatePayment,
+            s.BankRefNo,
+            s.Status,
+            s.Remark,
+            s.CreatedBy,
+            s.CreatedAt,
+            s.ApprovedBy,
+            s.ApprovedAt,
+            s.SettledBy,
+            s.SettledAt,
+            s.RejectedBy,
+            s.RejectedAt,
+            s.RejectReason,
+            s.CancelledBy,
+            s.CancelledAt,
+            s.CancelReason
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetSalesPolicySupportAsync(string supportNo)
+    {
+        supportNo = supportNo.Trim().ToUpperInvariant();
+        var supp = await db.SalesPolicySupports.FirstOrDefaultAsync(s => s.OrgId == Org && s.SupportNo == supportNo);
+        if (supp is null) return null;
+
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == supp.Vin);
+
+        return new
+        {
+            supp.Id,
+            supp.SupportNo,
+            supp.SPSRCode,
+            supp.SPNo,
+            supp.Vin,
+            supp.DealerCode,
+            supp.DealerName,
+            supp.Model,
+            supp.SpecCode,
+            supp.EngineNo,
+            supp.Color,
+            supp.DateSupport,
+            supp.DateFullStatus,
+            supp.AmountSupport,
+            supp.HTCInvoiceNo,
+            supp.HTCInvoiceDate,
+            supp.HTCDatePayment,
+            supp.BankRefNo,
+            supp.Status,
+            supp.Remark,
+            supp.CreatedBy,
+            supp.CreatedAt,
+            supp.ApprovedBy,
+            supp.ApprovedAt,
+            supp.SettledBy,
+            supp.SettledAt,
+            supp.RejectedBy,
+            supp.RejectedAt,
+            supp.RejectReason,
+            supp.CancelledBy,
+            supp.CancelledAt,
+            supp.CancelReason,
+            vehicle = v != null ? new
+            {
+                v.ModelYear,
+                v.StorageCode,
+                v.DealerCode,
+                status = v.Status.ToString(),
+                v.OwnerName,
+                v.PlateNo,
+                v.IsInvoiced,
+                v.InvoiceNo,
+                v.DeliveredAt,
+                v.IsPolicySupported,
+                v.PolicySupportAmount
+            } : null
+        };
+    }
+
+    public async Task<object?> UpdateSalesPolicySupportAsync(string supportNo, UpdateSalesPolicySupportDto dto)
+    {
+        supportNo = supportNo.Trim().ToUpperInvariant();
+        var supp = await db.SalesPolicySupports.FirstOrDefaultAsync(s => s.OrgId == Org && s.SupportNo == supportNo);
+        if (supp is null) return null;
+
+        if (supp.Status is "Settled" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa hồ sơ hỗ trợ đang ở trạng thái {supp.Status}.");
+
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) supp.DealerCode = dto.DealerCode.Trim();
+        if (dto.DealerName != null) supp.DealerName = dto.DealerName.Trim();
+        if (dto.DateSupport.HasValue) supp.DateSupport = dto.DateSupport.Value;
+        if (dto.DateFullStatus.HasValue) supp.DateFullStatus = dto.DateFullStatus.Value;
+        if (dto.AmountSupport.HasValue) supp.AmountSupport = dto.AmountSupport.Value;
+        if (dto.HTCInvoiceNo != null) supp.HTCInvoiceNo = dto.HTCInvoiceNo.Trim();
+        if (dto.HTCInvoiceDate.HasValue) supp.HTCInvoiceDate = dto.HTCInvoiceDate.Value;
+        if (dto.BankRefNo != null) supp.BankRefNo = dto.BankRefNo.Trim();
+        if (dto.Remark != null) supp.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return new { supp.SupportNo, supp.Vin, supp.AmountSupport, supp.Status, message = "Cập nhật hồ sơ hỗ trợ thành công." };
+    }
+
+    public async Task<object?> SalesPolicySupportTransitionAsync(string supportNo, string action, SalesPolicySupportTransitionDto? dto)
+    {
+        supportNo = supportNo.Trim().ToUpperInvariant();
+        var supp = await db.SalesPolicySupports.FirstOrDefaultAsync(s => s.OrgId == Org && s.SupportNo == supportNo);
+        if (supp is null) return null;
+
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == supp.Vin);
+        var policy = await db.SalesPolicies.FirstOrDefaultAsync(p => p.OrgId == Org && p.SPSRCode == supp.SPSRCode);
+
+        var act = action.Trim().ToLowerInvariant();
+        var now = dto?.TransitionDate ?? DateTime.Now;
+
+        switch (act)
+        {
+            case "submit":
+                if (supp.Status != "Draft") return null;
+                supp.Status = "Submitted";
+                Log(supp.Vin, "SalesPolicySupportSubmitted", $"{supportNo} Đã nộp hồ sơ đề nghị hỗ trợ bán lẻ {supp.AmountSupport:N0} VNĐ lên Hãng");
+                break;
+
+            case "approve":
+                if (supp.Status is not ("Draft" or "Submitted")) return null;
+                supp.Status = "Approved";
+                supp.ApprovedBy = dto?.Actor?.Trim() ?? "SalesDirector";
+                supp.ApprovedAt = now;
+
+                if (v != null)
+                {
+                    v.IsPolicySupported = true;
+                    v.PolicySupportAmount += supp.AmountSupport;
+                    v.LastPolicyCode = supp.SPSRCode;
+                    v.LastPolicyDate = now;
+                    v.PolicySupportCount++;
+                }
+
+                Log(supp.Vin, "SalesPolicySupportApproved", $"{supportNo} Hãng phê duyệt mức hỗ trợ bán lẻ {supp.AmountSupport:N0} VNĐ (Chính sách: {supp.SPSRCode})");
+                break;
+
+            case "settle" or "complete":
+                if (supp.Status != "Approved") return null;
+                supp.Status = "Settled";
+                supp.SettledBy = dto?.Actor?.Trim() ?? "ChiefAccountant";
+                supp.SettledAt = now;
+                supp.HTCDatePayment = dto?.HTCDatePayment ?? now;
+                if (!string.IsNullOrWhiteSpace(dto?.BankRefNo)) supp.BankRefNo = dto.BankRefNo.Trim();
+
+                if (policy != null)
+                {
+                    policy.TotalActualPaidAmount += supp.AmountSupport;
+                }
+
+                Log(supp.Vin, "SalesPolicySupportSettled", $"{supportNo} Hãng đã quyết toán chi trả tiền hỗ trợ {supp.AmountSupport:N0} VNĐ cho đại lý {supp.DealerCode}. UNC: {supp.BankRefNo ?? "N/A"}");
+                break;
+
+            case "reject":
+                if (supp.Status is not ("Draft" or "Submitted")) return null;
+                supp.Status = "Rejected";
+                supp.RejectedBy = dto?.Actor?.Trim() ?? "SalesDirector";
+                supp.RejectedAt = now;
+                supp.RejectReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+
+                Log(supp.Vin, "SalesPolicySupportRejected", $"{supportNo} Từ chối duyệt hỗ trợ bán lẻ: {supp.RejectReason ?? "N/A"}");
+                break;
+
+            case "cancel":
+                if (supp.Status is "Cancelled") return null;
+
+                if (supp.Status == "Approved" && v != null)
+                {
+                    v.PolicySupportAmount = Math.Max(0, v.PolicySupportAmount - supp.AmountSupport);
+                    if (v.PolicySupportAmount == 0) v.IsPolicySupported = false;
+                }
+                else if (supp.Status == "Settled" && policy != null)
+                {
+                    policy.TotalActualPaidAmount = Math.Max(0, policy.TotalActualPaidAmount - supp.AmountSupport);
+                    if (v != null)
+                    {
+                        v.PolicySupportAmount = Math.Max(0, v.PolicySupportAmount - supp.AmountSupport);
+                        if (v.PolicySupportAmount == 0) v.IsPolicySupported = false;
+                    }
+                }
+
+                supp.Status = "Cancelled";
+                supp.CancelledBy = dto?.Actor?.Trim() ?? "SalesManager";
+                supp.CancelledAt = now;
+                supp.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+
+                Log(supp.Vin, "SalesPolicySupportCancelled", $"{supportNo} Hủy hồ sơ hỗ trợ bán lẻ: {supp.CancelReason ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            supp.Remark = string.IsNullOrWhiteSpace(supp.Remark) ? dto.Note : $"{supp.Remark} | {act}: {dto.Note}";
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            supp.SupportNo,
+            supp.Vin,
+            supp.AmountSupport,
+            status = supp.Status,
+            supp.ApprovedAt,
+            supp.SettledAt,
+            supp.HTCDatePayment,
+            supp.BankRefNo
+        };
+    }
+
+    public async Task<object?> RemoveSalesPolicySupportAsync(string supportNo)
+    {
+        supportNo = supportNo.Trim().ToUpperInvariant();
+        var supp = await db.SalesPolicySupports.FirstOrDefaultAsync(s => s.OrgId == Org && s.SupportNo == supportNo);
+        if (supp is null) return null;
+
+        if (supp.Status is not ("Draft" or "Cancelled" or "Rejected"))
+            throw new InvalidOperationException($"Chỉ có thể xóa hồ sơ ở trạng thái Draft, Cancelled hoặc Rejected. Trạng thái hiện tại: {supp.Status}");
+
+        var policy = await db.SalesPolicies.FirstOrDefaultAsync(p => p.OrgId == Org && p.SPSRCode == supp.SPSRCode);
+        if (policy != null && policy.TotalVinApplied > 0) policy.TotalVinApplied--;
+
+        db.SalesPolicySupports.Remove(supp);
+        await db.SaveChangesAsync();
+
+        return new { supportNo, message = "Đã xóa hồ sơ hỗ trợ thành công." };
+    }
+
+    public async Task<object?> GetVehiclePolicySupportInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var supports = await db.SalesPolicySupports
+            .Where(s => s.OrgId == Org && s.Vin == vin)
+            .OrderByDescending(s => s.Id)
+            .ToListAsync();
+
+        return new VehiclePolicySupportInfoDto(
+            v.Vin,
+            v.Model,
+            supports.FirstOrDefault()?.SpecCode,
+            v.EngineNo,
+            v.Color,
+            v.ModelYear,
+            v.IsPolicySupported,
+            v.PolicySupportAmount,
+            v.LastPolicyCode,
+            v.LastPolicyDate,
+            v.PolicySupportCount,
+            supports
+        );
+    }
+
+    public async Task<object?> GetVehiclePolicySupportHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var supports = await db.SalesPolicySupports
+            .Where(s => s.OrgId == Org && s.Vin == vin)
+            .OrderByDescending(s => s.Id)
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && e.Kind.StartsWith("SalesPolicySupport"))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                v.Vin,
+                v.Model,
+                v.EngineNo,
+                v.Color,
+                v.ModelYear,
+                status = v.Status.ToString(),
+                v.DealerCode,
+                v.IsPolicySupported,
+                v.PolicySupportAmount,
+                v.LastPolicyCode,
+                v.LastPolicyDate,
+                v.PolicySupportCount
+            },
+            totalSupports = supports.Count,
+            supports,
+            events
+        };
+    }
+
+    public async Task<object> GetSalesPolicySummaryAsync(string? spsrCode, string? dealerCode)
+    {
+        var pQuery = db.SalesPolicies.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(spsrCode)) pQuery = pQuery.Where(p => p.SPSRCode == spsrCode.Trim().ToUpperInvariant());
+
+        var policies = await pQuery.ToListAsync();
+
+        var sQuery = db.SalesPolicySupports.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(spsrCode)) sQuery = sQuery.Where(s => s.SPSRCode == spsrCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(dealerCode)) sQuery = sQuery.Where(s => s.DealerCode == dealerCode.Trim());
+
+        var supports = await sQuery.ToListAsync();
+
+        int totalPolicies = policies.Count;
+        int totalActivePolicies = policies.Count(p => p.Status == "Active");
+        int totalDraftPolicies = policies.Count(p => p.Status == "Draft");
+        int totalExpiredPolicies = policies.Count(p => p.Status == "Expired");
+
+        int totalSupports = supports.Count;
+        int totalDraftSupports = supports.Count(s => s.Status == "Draft");
+        int totalSubmittedSupports = supports.Count(s => s.Status == "Submitted");
+        int totalApprovedSupports = supports.Count(s => s.Status == "Approved");
+        int totalSettledSupports = supports.Count(s => s.Status == "Settled");
+        int totalCancelledSupports = supports.Count(s => s.Status is "Cancelled" or "Rejected");
+
+        decimal totalBudgetAmount = policies.Sum(p => p.TotalSupportBudget);
+        decimal totalApprovedAmount = supports.Where(s => s.Status is "Approved" or "Settled").Sum(s => s.AmountSupport);
+        decimal totalSettledAmount = supports.Where(s => s.Status == "Settled").Sum(s => s.AmountSupport);
+
+        decimal settlementRatePercent = totalSupports > 0 ? Math.Round((decimal)totalSettledSupports / totalSupports * 100, 1) : 0;
+
+        var byModel = supports.Where(s => s.Status != "Cancelled" && s.Status != "Rejected")
+            .GroupBy(s => s.Model)
+            .Select(g => new SalesPolicyModelStatsDto(
+                g.Key,
+                g.Count(),
+                g.Sum(x => x.AmountSupport),
+                g.Where(x => x.Status == "Settled").Sum(x => x.AmountSupport)
+            ))
+            .OrderByDescending(x => x.TotalAmount)
+            .ToList();
+
+        var byDealer = supports.Where(s => s.Status != "Cancelled" && s.Status != "Rejected")
+            .GroupBy(s => s.DealerCode)
+            .Select(g => new SalesPolicyDealerStatsDto(
+                g.Key,
+                g.First().DealerName ?? g.Key,
+                g.Count(),
+                g.Sum(x => x.AmountSupport),
+                g.Where(x => x.Status == "Settled").Sum(x => x.AmountSupport)
+            ))
+            .OrderByDescending(x => x.TotalAmount)
+            .ToList();
+
+        return new SalesPolicySummaryDto(
+            totalPolicies,
+            totalActivePolicies,
+            totalDraftPolicies,
+            totalExpiredPolicies,
+            totalSupports,
+            totalDraftSupports,
+            totalSubmittedSupports,
+            totalApprovedSupports,
+            totalSettledSupports,
+            totalCancelledSupports,
+            totalBudgetAmount,
+            totalApprovedAmount,
+            totalSettledAmount,
+            settlementRatePercent,
+            byModel,
+            byDealer
+        );
     }
 }

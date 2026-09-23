@@ -3131,6 +3131,204 @@ public static class Seeder
                 v2.PdiPaymentCount = 1;
             }
         }
+
+        if (!await db.SalesPolicies.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var sp1 = new SalesPolicy
+            {
+                OrgId = org,
+                SPSRCode = "SPL-2026-03-01",
+                SPNo = "CV-2026/03/HTV-SALES-01",
+                SPSRType = "RetailSupport",
+                SPSRRoot = null,
+                FormBusinessSupportCode = "DirectCash",
+                StartDate = DateTime.Now.AddDays(-15),
+                EndDate = DateTime.Now.AddDays(45),
+                TotalModelsCount = 2,
+                TotalSupportBudget = 500000000m,
+                TotalVinApplied = 2,
+                TotalActualPaidAmount = 15000000m,
+                FilePath = "https://doc.hyundai.thanhcong.vn/policies/SPL-2026-03-01.pdf",
+                Status = "Active",
+                Remark = "Chính sách hỗ trợ giá kích cầu bán lẻ xe Hyundai Accent và Creta quý 1 năm 2026 toàn quốc",
+                CreatedBy = "sales.planner",
+                CreatedAt = DateTime.Now.AddDays(-16),
+                ApprovedBy = "SalesDirector.NguyenVanTuan",
+                ApprovedAt = DateTime.Now.AddDays(-15)
+            };
+            db.SalesPolicies.Add(sp1);
+            await db.SaveChangesAsync();
+
+            db.SalesPolicyLines.AddRange(
+                new SalesPolicyLine
+                {
+                    OrgId = org,
+                    SalesPolicyId = sp1.Id,
+                    SPSRCode = sp1.SPSRCode,
+                    LineIndex = 1,
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    SpecDescription = "Hỗ trợ kích cầu dòng sedan Accent 1.4 bản Đặc biệt",
+                    DealerCode = null,
+                    ModelYear = 2026,
+                    AmountSupport = 15000000m,
+                    Status = "Active",
+                    Remark = "Hỗ trợ 15 triệu VNĐ trực tiếp cho mỗi xe bán lẻ có kích hoạt BH"
+                },
+                new SalesPolicyLine
+                {
+                    OrgId = org,
+                    SalesPolicyId = sp1.Id,
+                    SPSRCode = sp1.SPSRCode,
+                    LineIndex = 2,
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    SpecDescription = "Hỗ trợ dòng B-SUV Creta 1.5 bản Cao cấp",
+                    DealerCode = null,
+                    ModelYear = 2026,
+                    AmountSupport = 20000000m,
+                    Status = "Active",
+                    Remark = "Hỗ trợ 20 triệu VNĐ trực tiếp cho mỗi xe bán lẻ có kích hoạt BH"
+                }
+            );
+
+            var sp2 = new SalesPolicy
+            {
+                OrgId = org,
+                SPSRCode = "SPL-2026-03-02",
+                SPNo = "CV-2026/03/HTV-SALES-02",
+                SPSRType = "RegistrationSupport",
+                FormBusinessSupportCode = "InvoiceDeduction",
+                StartDate = DateTime.Now.AddDays(-5),
+                EndDate = DateTime.Now.AddDays(55),
+                TotalModelsCount = 2,
+                TotalSupportBudget = 800000000m,
+                TotalVinApplied = 0,
+                TotalActualPaidAmount = 0m,
+                FilePath = "https://doc.hyundai.thanhcong.vn/policies/SPL-2026-03-02.pdf",
+                Status = "Active",
+                Remark = "Chương trình hỗ trợ 50% lệ phí trước bạ cho xe SUV SantaFe & Tucson sản xuất 2026",
+                CreatedBy = "sales.planner",
+                CreatedAt = DateTime.Now.AddDays(-6),
+                ApprovedBy = "SalesDirector.NguyenVanTuan",
+                ApprovedAt = DateTime.Now.AddDays(-5)
+            };
+            db.SalesPolicies.Add(sp2);
+            await db.SaveChangesAsync();
+
+            db.SalesPolicyLines.AddRange(
+                new SalesPolicyLine
+                {
+                    OrgId = org,
+                    SalesPolicyId = sp2.Id,
+                    SPSRCode = sp2.SPSRCode,
+                    LineIndex = 1,
+                    Model = "SantaFe 2.5T AWD",
+                    SpecCode = "2.5T Calligraphy 6 chỗ",
+                    SpecDescription = "Hỗ trợ 50% trước bạ SantaFe Calligraphy",
+                    DealerCode = null,
+                    ModelYear = 2026,
+                    AmountSupport = 64000000m,
+                    Status = "Active",
+                    Remark = "Trừ trực tiếp trên hóa đơn bán lẻ"
+                },
+                new SalesPolicyLine
+                {
+                    OrgId = org,
+                    SalesPolicyId = sp2.Id,
+                    SPSRCode = sp2.SPSRCode,
+                    LineIndex = 2,
+                    Model = "Tucson 1.6T HTRAC",
+                    SpecCode = "1.6 Turbo AWD",
+                    SpecDescription = "Hỗ trợ 50% trước bạ Tucson 1.6 Turbo HTRAC",
+                    DealerCode = null,
+                    ModelYear = 2026,
+                    AmountSupport = 44500000m,
+                    Status = "Active",
+                    Remark = "Trừ trực tiếp trên hóa đơn bán lẻ"
+                }
+            );
+
+            var spsr1 = new SalesPolicySupport
+            {
+                OrgId = org,
+                SupportNo = "SPSR-202603-0001",
+                SPSRCode = sp1.SPSRCode,
+                SPNo = sp1.SPNo,
+                Vin = "DEMOVIN00000001",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                Model = "Accent 1.4 AT",
+                SpecCode = "1.4 AT Đặc biệt",
+                EngineNo = "G4LC0001",
+                Color = "Trắng",
+                DateSupport = DateTime.Now.AddDays(-6),
+                DateFullStatus = DateTime.Now.AddDays(-4),
+                AmountSupport = 15000000m,
+                HTCInvoiceNo = "HD26-0001001",
+                HTCInvoiceDate = DateTime.Now.AddDays(-4),
+                HTCDatePayment = DateTime.Now.AddDays(-2),
+                BankRefNo = "UNC-SPL-20260318-001",
+                Status = "Settled",
+                Remark = "Đã quyết toán chi trả 15 triệu tiền hỗ trợ bán lẻ cho xe Accent",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-6),
+                ApprovedBy = "SalesDirector.NguyenVanTuan",
+                ApprovedAt = DateTime.Now.AddDays(-3),
+                SettledBy = "ChiefAccountant.HoangThiMai",
+                SettledAt = DateTime.Now.AddDays(-2)
+            };
+            db.SalesPolicySupports.Add(spsr1);
+
+            var spsr2 = new SalesPolicySupport
+            {
+                OrgId = org,
+                SupportNo = "SPSR-202603-0002",
+                SPSRCode = sp1.SPSRCode,
+                SPNo = sp1.SPNo,
+                Vin = "DEMOVIN00000002",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                Model = "Creta 1.5 Cao cấp",
+                SpecCode = "1.5 Cao cấp 2 tông màu",
+                EngineNo = "G4FL0002",
+                Color = "Đen",
+                DateSupport = DateTime.Now.AddDays(-4),
+                DateFullStatus = DateTime.Now.AddDays(-3),
+                AmountSupport = 20000000m,
+                HTCInvoiceNo = "HD26-0001002",
+                HTCInvoiceDate = DateTime.Now.AddDays(-4),
+                Status = "Approved",
+                Remark = "Đã duyệt hỗ trợ 20 triệu tiền khuyến mại bán lẻ cho xe Creta, chờ chuyển khoản",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-4),
+                ApprovedBy = "SalesDirector.NguyenVanTuan",
+                ApprovedAt = DateTime.Now.AddDays(-2)
+            };
+            db.SalesPolicySupports.Add(spsr2);
+            await db.SaveChangesAsync();
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.IsPolicySupported = true;
+                v1.PolicySupportAmount = 15000000m;
+                v1.LastPolicyCode = sp1.SPSRCode;
+                v1.LastPolicyDate = DateTime.Now.AddDays(-3);
+                v1.PolicySupportCount = 1;
+            }
+
+            var v2Policy = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Policy != null)
+            {
+                v2Policy.IsPolicySupported = true;
+                v2Policy.PolicySupportAmount = 20000000m;
+                v2Policy.LastPolicyCode = sp1.SPSRCode;
+                v2Policy.LastPolicyDate = DateTime.Now.AddDays(-2);
+                v2Policy.PolicySupportCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -3287,7 +3485,15 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastPdiPaymentDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PdiPaymentCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"PdiPayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PmtPdiNo\" text NOT NULL DEFAULT '', \"PmtPdiNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"StorageCode\" text NULL, \"PeriodMonth\" text NOT NULL DEFAULT '', \"PaymentDate\" timestamp NOT NULL DEFAULT now(), \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalCostIn\" numeric NOT NULL DEFAULT 0, \"TotalCostOut\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"VatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmountAfterVAT\" numeric NOT NULL DEFAULT 0, \"FileSigned\" text NULL, \"BankRefNo\" text NULL, \"SettledDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"TCMSSignedBy\" text NULL, \"TCMSSignedAt\" timestamp NULL, \"HTVSignedBy\" text NULL, \"HTVSignedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"PdiPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PdiPaymentId\" bigint NOT NULL, \"PmtPdiNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCode\" text NULL, \"DealerCode\" text NULL, \"PdiReqNo\" text NULL, \"DlvMnNo\" text NULL, \"CostInCheck\" numeric NOT NULL DEFAULT 0, \"CostOutCheck\" numeric NOT NULL DEFAULT 0, \"TotalCostCheck\" numeric NOT NULL DEFAULT 0, \"PdiCompletedDate\" timestamp NULL, \"PdiResult\" text NOT NULL DEFAULT 'Passed', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"PdiPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PdiPaymentId\" bigint NOT NULL, \"PmtPdiNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCode\" text NULL, \"DealerCode\" text NULL, \"PdiReqNo\" text NULL, \"DlvMnNo\" text NULL, \"CostInCheck\" numeric NOT NULL DEFAULT 0, \"CostOutCheck\" numeric NOT NULL DEFAULT 0, \"TotalCostCheck\" numeric NOT NULL DEFAULT 0, \"PdiCompletedDate\" timestamp NULL, \"PdiResult\" text NOT NULL DEFAULT 'Passed', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsPolicySupported\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PolicySupportAmount\" numeric NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastPolicyCode\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastPolicyDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PolicySupportCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"SalesPolicies\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SPSRCode\" text NOT NULL DEFAULT '', \"SPNo\" text NOT NULL DEFAULT '', \"SPSRType\" text NULL DEFAULT 'RetailSupport', \"SPSRRoot\" text NULL, \"FormBusinessSupportCode\" text NULL DEFAULT 'DirectCash', \"StartDate\" timestamp NOT NULL DEFAULT now(), \"EndDate\" timestamp NOT NULL DEFAULT now(), \"TotalModelsCount\" integer NOT NULL DEFAULT 0, \"TotalSupportBudget\" numeric NOT NULL DEFAULT 0, \"TotalVinApplied\" integer NOT NULL DEFAULT 0, \"TotalActualPaidAmount\" numeric NOT NULL DEFAULT 0, \"FilePath\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SuspendedBy\" text NULL, \"SuspendedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"SalesPolicyLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SalesPolicyId\" bigint NOT NULL, \"SPSRCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"SpecDescription\" text NULL, \"DealerCode\" text NULL, \"ModelYear\" integer NULL DEFAULT 2026, \"AmountSupport\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Active', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"SalesPolicySupports\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SupportNo\" text NOT NULL DEFAULT '', \"SPSRCode\" text NOT NULL DEFAULT '', \"SPNo\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"DateSupport\" timestamp NOT NULL DEFAULT now(), \"DateFullStatus\" timestamp NULL, \"AmountSupport\" numeric NOT NULL DEFAULT 0, \"HTCInvoiceNo\" text NULL, \"HTCInvoiceDate\" timestamp NULL, \"HTCDatePayment\" timestamp NULL, \"BankRefNo\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

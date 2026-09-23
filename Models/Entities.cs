@@ -85,6 +85,11 @@ public sealed class Vehicle
     public string? LastPdiPaymentNo { get; set; }     // Mã bảng kê quyết toán PDI gần nhất (Pmt_PaymentPDI)
     public DateTime? LastPdiPaymentDate { get; set; } // Ngày quyết toán PDI gần nhất
     public int PdiPaymentCount { get; set; } = 0;     // Tổng số lần phát sinh quyết toán PDI
+    public bool IsPolicySupported { get; set; } = false; // Đã duyệt hưởng chính sách hỗ trợ bán lẻ (BizHTC.DealerSales.SPL_SPSupportRetail)
+    public decimal PolicySupportAmount { get; set; } = 0; // Tổng tiền hỗ trợ bán lẻ đã duyệt chi (VNĐ)
+    public string? LastPolicyCode { get; set; }       // Mã chính sách hỗ trợ bán lẻ gần nhất (SPSRCode)
+    public DateTime? LastPolicyDate { get; set; }     // Ngày hưởng chính sách hỗ trợ gần nhất
+    public int PolicySupportCount { get; set; } = 0;   // Số lần đã được duyệt hưởng chính sách hỗ trợ bán lẻ
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -2665,4 +2670,231 @@ public sealed record VehiclePdiPaymentInfoDto(
     PdiPayment? PdiPayment,
     PdiPaymentLine? PdiPaymentLine
 );
+
+/// <summary>Chính sách giá &amp; Hỗ trợ bán hàng / Kích cầu bán lẻ xe ô tô cho Đại lý (BizHTC.DealerSales / SPL_SalesPolicyMst &amp; SPL_SalesPolicyMstDetail): Hãng OEM ban hành văn bản chính sách hỗ trợ giá theo từng dòng xe, phiên bản và thời gian áp dụng.</summary>
+public sealed class SalesPolicy
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SPSRCode { get; set; } = "";             // Mã chính sách hỗ trợ bán hàng (SPL-2026-03-01, SPSR...)
+    public string SPNo { get; set; } = "";                 // Số hiệu văn bản ban hành chính thức (CV-2026/HTV-SALES-01)
+    public string? SPSRType { get; set; } = "RetailSupport"; // Loại chính sách: RetailSupport (Hỗ trợ bán lẻ), TradeDiscount (Chiết khấu thương mại), CampaignPromotion (Khuyến mại tháng), InterestSubsidy (Hỗ trợ lãi suất), RegistrationSupport (Hỗ trợ trước bạ)
+    public string? SPSRRoot { get; set; }                  // Mã chính sách cha / gốc (nếu là chính sách bổ sung/gia hạn)
+    public string? FormBusinessSupportCode { get; set; } = "DirectCash"; // Hình thức hỗ trợ: DirectCash (Tiền mặt), InvoiceDeduction (Giảm trừ hóa đơn), GiftVoucher (Phiếu quà tặng), FuelVoucher (Hỗ trợ nhiên liệu)
+    public DateTime StartDate { get; set; } = DateTime.Now; // Ngày bắt đầu áp dụng chính sách
+    public DateTime EndDate { get; set; } = DateTime.Now.AddDays(30); // Ngày kết thúc chính sách
+    public int TotalModelsCount { get; set; } = 0;         // Tổng số lượng model/phiên bản áp dụng
+    public decimal TotalSupportBudget { get; set; } = 0;   // Tổng ngân sách dự toán hỗ trợ của chính sách (VNĐ)
+    public int TotalVinApplied { get; set; } = 0;          // Tổng số lượng xe VIN đã gán hỗ trợ
+    public decimal TotalActualPaidAmount { get; set; } = 0; // Tổng số tiền thực tế đã quyết toán chi trả (VNĐ)
+    public string? FilePath { get; set; }                  // Văn bản quyết định ban hành chính sách có ký số (PDF)
+    public string Status { get; set; } = "Draft";          // Draft → Active → Expired (hoặc Suspended / Cancelled)
+    public string? Remark { get; set; }                    // Diễn giải / điều kiện chi tiết của chính sách
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                // Lãnh đạo Khối Bán hàng / Ban Giám Đốc phê duyệt
+    public DateTime? ApprovedAt { get; set; }
+    public string? SuspendedBy { get; set; }               // Người tạm dừng áp dụng chính sách
+    public DateTime? SuspendedAt { get; set; }
+    public string? CancelledBy { get; set; }               // Người hủy chính sách
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe áp dụng trong Chính sách hỗ trợ bán hàng (BizHTC.DealerSales / SPL_SalesPolicyMstDetail / SalesPolicyLine): model xe, phiên bản spec, đại lý chỉ định, năm sản xuất và mức tiền hỗ trợ.</summary>
+public sealed class SalesPolicyLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long SalesPolicyId { get; set; }
+    public string SPSRCode { get; set; } = "";
+    public int LineIndex { get; set; } = 1;                // Thứ tự dòng trong chính sách
+    public string Model { get; set; } = "";                // Dòng xe áp dụng (Accent, Creta, Tucson, SantaFe, Grand i10, Custin, Palisade...)
+    public string SpecCode { get; set; } = "";            // Mã phiên bản (1.4 AT Đặc biệt, 1.5 Cao cấp, 2.0 AT, 2.5T...)
+    public string? SpecDescription { get; set; }          // Mô tả chi tiết cấu hình xe
+    public string? DealerCode { get; set; }                // Áp dụng riêng cho 1 đại lý cụ thể (nếu rỗng/null = áp dụng Toàn quốc)
+    public int? ModelYear { get; set; } = 2026;            // Năm sản xuất áp dụng
+    public decimal AmountSupport { get; set; } = 0;        // Mức tiền hỗ trợ cho mỗi xe VIN bán ra (VNĐ)
+    public string Status { get; set; } = "Active";         // Active, Inactive
+    public string? Remark { get; set; }
+}
+
+/// <summary>Gán &amp; Quyết toán Hỗ trợ bán lẻ xe ô tô theo số khung VIN (BizHTC.DealerSales / SPL_SPSupportRetail / SalesPolicySupport): ghi nhận xe bán ra đủ điều kiện hưởng chính sách, lưu thông tin hóa đơn Hãng và ngày Hãng quyết toán chi trả cho Đại lý.</summary>
+public sealed class SalesPolicySupport
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SupportNo { get; set; } = "";             // Mã số phiếu hỗ trợ VIN (SPSR-2026-03-0001, SPSR...)
+    public string SPSRCode { get; set; } = "";             // Mã chính sách hỗ trợ áp dụng (SPL-2026-03-01)
+    public string? SPNo { get; set; }                      // Số hiệu văn bản chính sách liên kết
+    public string Vin { get; set; } = "";                  // Số khung xe VIN được hưởng hỗ trợ
+    public string DealerCode { get; set; } = "";           // Mã đại lý bán lẻ được nhận hỗ trợ
+    public string? DealerName { get; set; }                // Tên đại lý
+    public string Model { get; set; } = "";                // Dòng xe
+    public string? SpecCode { get; set; }                  // Mã phiên bản xe
+    public string? EngineNo { get; set; }                  // Số máy
+    public string? Color { get; set; }                     // Màu sắc
+    public DateTime DateSupport { get; set; } = DateTime.Now; // Ngày bán xe / Ngày phát sinh đề nghị hỗ trợ
+    public DateTime? DateFullStatus { get; set; }          // Ngày xe đạt đủ điều kiện nhận hỗ trợ (sau khi xuất hóa đơn HTC và bàn giao xe)
+    public decimal AmountSupport { get; set; } = 0;        // Số tiền hỗ trợ được hưởng cho xe này (VNĐ)
+    public string? HTCInvoiceNo { get; set; }              // Số hóa đơn GTGT của Hãng cho xe này (HD26-...)
+    public DateTime? HTCInvoiceDate { get; set; }          // Ngày hóa đơn của Hãng
+    public DateTime? HTCDatePayment { get; set; }          // Ngày Hãng hoàn tất chi trả / bù trừ công nợ hỗ trợ cho Đại lý
+    public string? BankRefNo { get; set; }                 // Mã ủy nhiệm chi / giao dịch ngân hàng thanh toán
+    public string Status { get; set; } = "Draft";          // Draft → Submitted → Approved → Settled (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                    // Ghi chú hồ sơ hỗ trợ
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                // Lãnh đạo bán hàng OEM duyệt hỗ trợ
+    public DateTime? ApprovedAt { get; set; }
+    public string? SettledBy { get; set; }                 // Kế toán thanh toán OEM xác nhận chi trả
+    public DateTime? SettledAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+// ===== DTOs cho Chính sách hỗ trợ bán hàng & Gán hỗ trợ theo VIN (BizHTC.DealerSales / SPL_SalesPolicyMst & SPL_SPSupportRetail) =====
+
+public sealed record CreateSalesPolicyDto(
+    string? SPSRCode,
+    string SPNo,
+    string? SPSRType,
+    string? SPSRRoot,
+    string? FormBusinessSupportCode,
+    DateTime StartDate,
+    DateTime EndDate,
+    decimal? TotalSupportBudget,
+    string? FilePath,
+    string? Remark,
+    string? CreatedBy,
+    List<SalesPolicyLineInputDto>? Lines
+);
+
+public sealed record SalesPolicyLineInputDto(
+    string Model,
+    string SpecCode,
+    string? SpecDescription,
+    string? DealerCode,
+    int? ModelYear,
+    decimal AmountSupport,
+    string? Remark
+);
+
+public sealed record UpdateSalesPolicyHeaderDto(
+    string? SPNo,
+    string? SPSRType,
+    string? SPSRRoot,
+    string? FormBusinessSupportCode,
+    DateTime? StartDate,
+    DateTime? EndDate,
+    decimal? TotalSupportBudget,
+    string? FilePath,
+    string? Remark
+);
+
+public sealed record SalesPolicyTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record UpdateSalesPolicyLineDto(
+    string? Model,
+    string? SpecCode,
+    string? SpecDescription,
+    string? DealerCode,
+    int? ModelYear,
+    decimal? AmountSupport,
+    string? Status,
+    string? Remark
+);
+
+public sealed record CreateSalesPolicySupportDto(
+    string? SupportNo,
+    string SPSRCode,
+    string Vin,
+    string? DealerCode,
+    string? DealerName,
+    DateTime? DateSupport,
+    DateTime? DateFullStatus,
+    decimal? AmountSupport,
+    string? HTCInvoiceNo,
+    DateTime? HTCInvoiceDate,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record BatchAssignPolicySupportDto(
+    string SPSRCode,
+    List<string> Vins,
+    string? DealerCode,
+    DateTime? DateSupport,
+    DateTime? DateFullStatus,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record UpdateSalesPolicySupportDto(
+    string? DealerCode,
+    string? DealerName,
+    DateTime? DateSupport,
+    DateTime? DateFullStatus,
+    decimal? AmountSupport,
+    string? HTCInvoiceNo,
+    DateTime? HTCInvoiceDate,
+    string? BankRefNo,
+    string? Remark
+);
+
+public sealed record SalesPolicySupportTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate,
+    string? BankRefNo,
+    DateTime? HTCDatePayment
+);
+
+public sealed record SalesPolicySummaryDto(
+    int TotalPolicies,
+    int TotalActivePolicies,
+    int TotalDraftPolicies,
+    int TotalExpiredPolicies,
+    int TotalSupports,
+    int TotalDraftSupports,
+    int TotalSubmittedSupports,
+    int TotalApprovedSupports,
+    int TotalSettledSupports,
+    int TotalCancelledSupports,
+    decimal TotalBudgetAmount,
+    decimal TotalApprovedAmount,
+    decimal TotalSettledAmount,
+    decimal SettlementRatePercent,
+    List<SalesPolicyModelStatsDto> ByModel,
+    List<SalesPolicyDealerStatsDto> ByDealer
+);
+
+public sealed record SalesPolicyModelStatsDto(string Model, int SupportCount, decimal TotalAmount, decimal SettledAmount);
+public sealed record SalesPolicyDealerStatsDto(string DealerCode, string DealerName, int SupportCount, decimal TotalAmount, decimal SettledAmount);
+
+public sealed record VehiclePolicySupportInfoDto(
+    string Vin,
+    string Model,
+    string? SpecCode,
+    string? EngineNo,
+    string? Color,
+    int? ModelYear,
+    bool IsPolicySupported,
+    decimal PolicySupportAmount,
+    string? LastPolicyCode,
+    DateTime? LastPolicyDate,
+    int PolicySupportCount,
+    List<SalesPolicySupport> Supports
+);
+
 

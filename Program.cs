@@ -3015,6 +3015,190 @@ app.MapGet("/api/vehicles/{vin}/pdi-payment-history", async (string vin, IVehicl
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Chính sách hỗ trợ bán lẻ xe ô tô cho Đại lý & Quyết toán hỗ trợ theo VIN (BizHTC.DealerSales / SPL_SalesPolicyMst & SPL_SPSupportRetail) =====
+
+app.MapPost("/api/sales-policies", async (CreateSalesPolicyDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.SPNo))
+        return Results.BadRequest(new { error = "Cần số hiệu văn bản chính sách SPNo." });
+    try { return Results.Ok(await svc.CreateSalesPolicyAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/sales-policies", async (IVehicleService svc, string? status, string? spsrType, string? q) =>
+    Results.Ok(await svc.ListSalesPoliciesAsync(status, spsrType, q))).RequireAuthorization();
+
+app.MapGet("/api/sales-policies/summary", async (IVehicleService svc, string? spsrCode, string? dealerCode) =>
+    Results.Ok(await svc.GetSalesPolicySummaryAsync(spsrCode, dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/reports/sales-policies/summary", async (IVehicleService svc, string? spsrCode, string? dealerCode) =>
+    Results.Ok(await svc.GetSalesPolicySummaryAsync(spsrCode, dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/sales-policies/{spsrCode}", async (string spsrCode, IVehicleService svc) =>
+{
+    var r = await svc.GetSalesPolicyAsync(spsrCode);
+    return r is null ? Results.NotFound(new { spsrCode, error = "Không tìm thấy chính sách hỗ trợ bán hàng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/sales-policies/{spsrCode}", async (string spsrCode, UpdateSalesPolicyHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesPolicyHeaderAsync(spsrCode, dto);
+        return r is null ? Results.NotFound(new { spsrCode, error = "Không tìm thấy chính sách hỗ trợ bán hàng." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-policies/{spsrCode}/update", async (string spsrCode, UpdateSalesPolicyHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesPolicyHeaderAsync(spsrCode, dto);
+        return r is null ? Results.NotFound(new { spsrCode, error = "Không tìm thấy chính sách hỗ trợ bán hàng." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-policies/{spsrCode}/{action}", async (string spsrCode, string action, SalesPolicyTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "activate" or "active" or "suspend" or "expire" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|activate|suspend|expire|cancel" });
+    try
+    {
+        var r = await svc.SalesPolicyTransitionAsync(spsrCode, action, dto);
+        return r is null ? Results.NotFound(new { spsrCode, error = "Không tìm thấy chính sách hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-policies/{spsrCode}/lines", async (string spsrCode, List<SalesPolicyLineInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách các dòng model xe áp dụng chính sách." });
+    try
+    {
+        var r = await svc.AddSalesPolicyLinesAsync(spsrCode, items);
+        return r is null ? Results.NotFound(new { spsrCode, error = "Không tìm thấy chính sách." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-policies/{spsrCode}/lines/{lineId:long}/update", async (string spsrCode, long lineId, UpdateSalesPolicyLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesPolicyLineAsync(spsrCode, lineId, dto);
+        return r is null ? Results.NotFound(new { spsrCode, lineId, error = "Không tìm thấy dòng chi tiết chính sách." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/sales-policies/{spsrCode}/lines/{lineId:long}", async (string spsrCode, long lineId, UpdateSalesPolicyLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesPolicyLineAsync(spsrCode, lineId, dto);
+        return r is null ? Results.NotFound(new { spsrCode, lineId, error = "Không tìm thấy dòng chi tiết chính sách." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/sales-policies/{spsrCode}/lines/{lineId:long}", async (string spsrCode, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveSalesPolicyLineAsync(spsrCode, lineId);
+        return r is null ? Results.NotFound(new { spsrCode, lineId, error = "Không tìm thấy dòng chi tiết chính sách hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-policy-supports", async (CreateSalesPolicySupportDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.SPSRCode) || string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần mã chính sách SPSRCode và số khung xe VIN." });
+    try { return Results.Ok(await svc.CreateSalesPolicySupportAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-policy-supports/batch-assign", async (BatchAssignPolicySupportDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.SPSRCode) || dto.Vins is null || dto.Vins.Count == 0)
+        return Results.BadRequest(new { error = "Cần mã chính sách SPSRCode và danh sách số khung xe VINs." });
+    try { return Results.Ok(await svc.BatchAssignPolicySupportVinsAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/sales-policy-supports", async (IVehicleService svc, string? status, string? dealer, string? spsrCode, string? vin, string? supportNo) =>
+    Results.Ok(await svc.ListSalesPolicySupportsAsync(status, dealer, spsrCode, vin, supportNo))).RequireAuthorization();
+
+app.MapGet("/api/sales-policy-supports/{supportNo}", async (string supportNo, IVehicleService svc) =>
+{
+    var r = await svc.GetSalesPolicySupportAsync(supportNo);
+    return r is null ? Results.NotFound(new { supportNo, error = "Không tìm thấy hồ sơ hỗ trợ bán lẻ." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/sales-policy-supports/{supportNo}", async (string supportNo, UpdateSalesPolicySupportDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesPolicySupportAsync(supportNo, dto);
+        return r is null ? Results.NotFound(new { supportNo, error = "Không tìm thấy hồ sơ hỗ trợ bán lẻ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-policy-supports/{supportNo}/update", async (string supportNo, UpdateSalesPolicySupportDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesPolicySupportAsync(supportNo, dto);
+        return r is null ? Results.NotFound(new { supportNo, error = "Không tìm thấy hồ sơ hỗ trợ bán lẻ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-policy-supports/{supportNo}/{action}", async (string supportNo, string action, SalesPolicySupportTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "settle" or "complete" or "finish" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|settle|reject|cancel" });
+    try
+    {
+        var r = await svc.SalesPolicySupportTransitionAsync(supportNo, action, dto);
+        return r is null ? Results.NotFound(new { supportNo, error = "Không tìm thấy hồ sơ hỗ trợ bán lẻ hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/sales-policy-supports/{supportNo}", async (string supportNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveSalesPolicySupportAsync(supportNo);
+        return r is null ? Results.NotFound(new { supportNo, error = "Không tìm thấy hồ sơ hỗ trợ hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/policy-supports", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePolicySupportInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/policy-support-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePolicySupportInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/policy-support-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePolicySupportHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
