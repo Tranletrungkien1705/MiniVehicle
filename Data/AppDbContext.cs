@@ -149,6 +149,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<SalesManViolation> SalesManViolations => Set<SalesManViolation>();
     public DbSet<DocRequestList> DocRequestLists => Set<DocRequestList>();
     public DbSet<DocRequestListLine> DocRequestListLines => Set<DocRequestListLine>();
+    public DbSet<AccessoryContract> AccessoryContracts => Set<AccessoryContract>();
+    public DbSet<AccessoryContractLine> AccessoryContractLines => Set<AccessoryContractLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -305,5 +307,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<DocRequestList>().HasIndex(x => new { x.OrgId, x.DealerCode });
         b.Entity<DocRequestListLine>().HasIndex(x => new { x.OrgId, x.DRListCode, x.Vin });
         b.Entity<DocRequestListLine>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<AccessoryContract>().HasIndex(x => new { x.OrgId, x.DlrContractPartNo }).IsUnique();
+        b.Entity<AccessoryContract>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<AccessoryContract>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<AccessoryContractLine>().HasIndex(x => new { x.OrgId, x.DlrContractPartNo, x.PartCode });
     }
 }

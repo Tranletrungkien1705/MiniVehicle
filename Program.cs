@@ -645,6 +645,40 @@ app.MapPost("/api/contracts/{contractNo}/lines/{vin}/update", async (string cont
     return r is null ? Results.NotFound(new { contractNo, vin, error = "Không tìm thấy dòng xe trong hợp đồng hoặc hợp đồng đã chốt/hủy." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Hợp đồng phụ kiện xe ô tô của Đại lý (HCare.idocNet Dlr_ContractMstPart / Dlr_ContractMstPartDtl) ----
+app.MapPost("/api/accessory-contracts", async (CreateAccessoryContractDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode." });
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách phụ kiện Items trong phụ lục hợp đồng." });
+    try { return Results.Ok(await svc.CreateAccessoryContractAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/accessory-contracts", async (IVehicleService svc, string? status, string? dealer, string? dlrContractPartNo, string? customer, string? partCode) =>
+    Results.Ok(await svc.ListAccessoryContractsAsync(status, dealer, dlrContractPartNo, customer, partCode))).RequireAuthorization();
+
+app.MapGet("/api/accessory-contracts/{dlrContractPartNo}", async (string dlrContractPartNo, IVehicleService svc) =>
+{
+    var r = await svc.GetAccessoryContractAsync(dlrContractPartNo);
+    return r is null ? Results.NotFound(new { dlrContractPartNo, error = "Không tìm thấy phụ lục hợp đồng phụ kiện." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/accessory-contracts/{dlrContractPartNo}/{action}", async (string dlrContractPartNo, string action, AccessoryContractTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|cancel" });
+    var r = await svc.AccessoryContractTransitionAsync(dlrContractPartNo, action, dto);
+    return r is null ? Results.NotFound(new { dlrContractPartNo, error = "Không thấy phụ lục hợp đồng phụ kiện hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/accessory-contracts/{dlrContractPartNo}/lines/{partCode}/update", async (string dlrContractPartNo, string partCode, UpdateAccessoryContractLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateAccessoryContractLineAsync(dlrContractPartNo, partCode, dto);
+    return r is null ? Results.NotFound(new { dlrContractPartNo, partCode, error = "Không tìm thấy dòng phụ kiện hoặc phụ lục đã duyệt/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Yêu cầu & Quyết toán Chiết khấu thanh toán mua xe ô tô cho Đại lý (BizHTC.PaymentDiscount / Req_PaymentDiscount) ----
 app.MapPost("/api/payment-discounts", async (CreatePaymentDiscountDto dto, IVehicleService svc) =>
 {

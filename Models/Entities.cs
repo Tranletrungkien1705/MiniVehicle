@@ -7426,3 +7426,46 @@ public sealed class DocRequestListLine
     public string? CancelledBy { get; set; }
     public DateTime? CancelledAt { get; set; }
 }
+
+/// <summary>Hợp đồng phụ kiện xe ô tô của Đại lý (HCare.idocNet Dlr_ContractMstPart / Dlr_ContractMstPartController): phụ lục hợp đồng mua bán phụ kiện chính hãng giữa Hãng OEM và Đại lý, gồm số phụ lục, loại phụ lục (PHUKIEN), ngày ký, tiền đặt cọc, đại lý, khách hàng, tài khoản ngân hàng và danh mục phụ kiện kèm số lượng/đơn giá.</summary>
+public sealed class AccessoryContract
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string DlrContractPartNo { get; set; } = "";     // Số phụ lục hợp đồng phụ kiện (PLHĐ...)
+    public string DlrCtrPartType { get; set; } = "PHUKIEN"; // Loại phụ lục (PHUKIEN = Phụ kiện)
+    public DateTime? ContractPartDate { get; set; }         // Ngày ký phụ lục hợp đồng
+    public decimal DepositVal { get; set; } = 0;            // Số tiền đặt cọc (VNĐ)
+    public string? UserCodeOwner { get; set; }              // Mã nhân viên phụ trách (TVBH)
+    public string? UserNameOwner { get; set; }              // Tên nhân viên phụ trách
+    public string DealerCode { get; set; } = "";            // Mã đại lý ký phụ lục
+    public string? BankAccountNo { get; set; }              // Số tài khoản ngân hàng thanh toán
+    public string? CustomerCode { get; set; }               // Mã khách hàng (nếu phụ lục gắn khách)
+    public string? CustomerName { get; set; }               // Tên khách hàng
+    public decimal TotalValBeforeVAT { get; set; } = 0;     // Tổng giá trị phụ kiện trước thuế VAT (VNĐ)
+    public string Status { get; set; } = "Pending";         // Pending (P) → Approved (A) → Cancelled (C)
+    public string? Remark { get; set; }                     // Ghi chú phụ lục
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+
+/// <summary>Chi tiết phụ kiện trong phụ lục hợp đồng phụ kiện (HCare.idocNet Dlr_ContractMstPartDtl): dòng phụ kiện chính hãng (PartCode), số lượng, đơn giá và thành tiền trước VAT.</summary>
+public sealed class AccessoryContractLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long AccessoryContractId { get; set; }
+    public string DlrContractPartNo { get; set; } = "";
+    public string PartCode { get; set; } = "";              // Mã phụ kiện chính hãng
+    public string? PartName { get; set; }                   // Tên phụ kiện
+    public string? PartUnitCode { get; set; }               // Đơn vị tính
+    public decimal Qty { get; set; } = 1;                   // Số lượng
+    public decimal UnitPrice { get; set; } = 0;             // Đơn giá phụ kiện (VNĐ)
+    public decimal ValABeforeVAT { get; set; } = 0;         // Thành tiền trước VAT = Qty * UnitPrice
+    public string Status { get; set; } = "Pending";         // Pending → Approved → Cancelled
+    public string? Remark { get; set; }
+}

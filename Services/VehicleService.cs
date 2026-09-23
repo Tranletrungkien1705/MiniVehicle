@@ -81,6 +81,11 @@ public record CreateDealerContractDto(string DealerCode, List<DealerContractItem
 public record DealerContractTransitionDto(string? Note = null, string? ApprovedBy = null, DateTime? DeliveryDeadline = null);
 public record UpdateDealerContractLineDto(decimal? UnitPrice = null, decimal? Discount = null, string? Remark = null);
 
+public record AccessoryContractItemInputDto(string PartCode, decimal Qty = 1, decimal UnitPrice = 0, string? PartName = null, string? PartUnitCode = null, string? Remark = null);
+public record CreateAccessoryContractDto(string DealerCode, List<AccessoryContractItemInputDto> Items, string? DlrContractPartNo = null, string? DlrCtrPartType = "PHUKIEN", DateTime? ContractPartDate = null, decimal DepositVal = 0, string? UserCodeOwner = null, string? UserNameOwner = null, string? BankAccountNo = null, string? CustomerCode = null, string? CustomerName = null, string? Remark = null, string? CreatedBy = null);
+public record AccessoryContractTransitionDto(string? Note = null, string? User = null);
+public record UpdateAccessoryContractLineDto(decimal? Qty = null, decimal? UnitPrice = null, string? Remark = null);
+
 public record PaymentDiscountPhaseInputDto(DateTime? PaymentEndDate = null, decimal Amount = 0, int DiscountDateNumber = 0, decimal DiscountPercent = 0, decimal? DiscountPrice = null);
 public record PaymentDiscountItemInputDto(string Vin, decimal? UnitPrice = null, string? GuaranteeNo = null, DateTime? PG_DateEnd = null, PaymentDiscountPhaseInputDto? Phase1 = null, PaymentDiscountPhaseInputDto? Phase2 = null, PaymentDiscountPhaseInputDto? Phase3 = null, decimal? TotalAmount = null, decimal? TotalDiscountPrice = null, string? Remark = null);
 public record CreatePaymentDiscountDto(string DealerCode, List<PaymentDiscountItemInputDto> Items, DateTime? DateEndFrom = null, DateTime? DateEndTo = null, decimal DiscountPercent = 0, decimal PenaltyPercent = 0, string? FilePath = null, string? Remark = null, string? PaymentDiscountNo = null, string? CreatedBy = null);
@@ -1693,6 +1698,11 @@ public interface IVehicleService
     Task<object?> GetDealerContractAsync(string contractNo);
     Task<object?> DealerContractTransitionAsync(string contractNo, string action, DealerContractTransitionDto? dto);
     Task<object?> UpdateDealerContractLineAsync(string contractNo, string vin, UpdateDealerContractLineDto dto);
+    Task<object> CreateAccessoryContractAsync(CreateAccessoryContractDto dto);
+    Task<object> ListAccessoryContractsAsync(string? status, string? dealer, string? dlrContractPartNo, string? customer, string? partCode);
+    Task<object?> GetAccessoryContractAsync(string dlrContractPartNo);
+    Task<object?> AccessoryContractTransitionAsync(string dlrContractPartNo, string action, AccessoryContractTransitionDto? dto);
+    Task<object?> UpdateAccessoryContractLineAsync(string dlrContractPartNo, string partCode, UpdateAccessoryContractLineDto dto);
     Task<object> CreatePaymentDiscountAsync(CreatePaymentDiscountDto dto);
     Task<object> ListPaymentDiscountsAsync(string? status, string? dealer, string? paymentDiscountNo, string? vin);
     Task<object?> GetPaymentDiscountAsync(string paymentDiscountNo);
@@ -6237,6 +6247,257 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             contractTotalAmount = ctr.TotalAmount,
             contractDiscountAmount = ctr.DiscountAmount,
             contractFinalAmount = ctr.FinalAmount
+        };
+    }
+
+    // ===== Hợp đồng phụ kiện xe ô tô của Đại lý (HCare.idocNet Dlr_ContractMstPart / Dlr_ContractMstPartDtl) =====
+    public async Task<object> CreateAccessoryContractAsync(CreateAccessoryContractDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã Đại lý (DealerCode) để lập phụ lục hợp đồng phụ kiện.");
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng phụ kiện trong phụ lục hợp đồng.");
+
+        var distinctItems = dto.Items
+            .Where(i => !string.IsNullOrWhiteSpace(i.PartCode))
+            .GroupBy(i => i.PartCode.Trim().ToUpperInvariant())
+            .Select(g => g.First())
+            .ToList();
+
+        if (distinctItems.Count == 0)
+            throw new InvalidOperationException("Danh sách phụ kiện (PartCode) hợp lệ không được rỗng.");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+        var partType = string.IsNullOrWhiteSpace(dto.DlrCtrPartType) ? "PHUKIEN" : dto.DlrCtrPartType.Trim().ToUpperInvariant();
+
+        var no = string.IsNullOrWhiteSpace(dto.DlrContractPartNo)
+            ? "PLHD" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.DlrContractPartNo!.Trim().ToUpperInvariant();
+
+        if (await db.AccessoryContracts.AnyAsync(c => c.OrgId == Org && c.DlrContractPartNo == no))
+            throw new InvalidOperationException($"Số phụ lục hợp đồng phụ kiện {no} đã tồn tại.");
+
+        decimal totalBeforeVat = 0;
+        foreach (var item in distinctItems)
+            totalBeforeVat += item.Qty * item.UnitPrice;
+
+        var ctr = new AccessoryContract
+        {
+            OrgId = Org,
+            DlrContractPartNo = no,
+            DlrCtrPartType = partType,
+            ContractPartDate = dto.ContractPartDate ?? DateTime.Now,
+            DepositVal = dto.DepositVal,
+            UserCodeOwner = dto.UserCodeOwner?.Trim(),
+            UserNameOwner = dto.UserNameOwner?.Trim(),
+            DealerCode = dealer,
+            BankAccountNo = dto.BankAccountNo?.Trim(),
+            CustomerCode = dto.CustomerCode?.Trim(),
+            CustomerName = dto.CustomerName?.Trim(),
+            TotalValBeforeVAT = totalBeforeVat,
+            Status = "Pending",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.AccessoryContracts.Add(ctr);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            var partCode = item.PartCode.Trim().ToUpperInvariant();
+            var amount = item.Qty * item.UnitPrice;
+            db.AccessoryContractLines.Add(new AccessoryContractLine
+            {
+                OrgId = Org,
+                AccessoryContractId = ctr.Id,
+                DlrContractPartNo = no,
+                PartCode = partCode,
+                PartName = item.PartName?.Trim(),
+                PartUnitCode = item.PartUnitCode?.Trim(),
+                Qty = item.Qty,
+                UnitPrice = item.UnitPrice,
+                ValABeforeVAT = amount,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ctr.DlrContractPartNo,
+            ctr.DlrCtrPartType,
+            ctr.ContractPartDate,
+            ctr.DepositVal,
+            ctr.DealerCode,
+            ctr.CustomerCode,
+            ctr.CustomerName,
+            ctr.TotalValBeforeVAT,
+            ctr.Status,
+            linesCount = distinctItems.Count
+        };
+    }
+
+    public async Task<object> ListAccessoryContractsAsync(string? status, string? dealer, string? dlrContractPartNo, string? customer, string? partCode)
+    {
+        var q = db.AccessoryContracts.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim().ToUpperInvariant(); q = q.Where(c => c.DealerCode == d); }
+        if (!string.IsNullOrWhiteSpace(dlrContractPartNo)) { var n = dlrContractPartNo.Trim().ToUpperInvariant(); q = q.Where(c => c.DlrContractPartNo.Contains(n)); }
+        if (!string.IsNullOrWhiteSpace(customer)) { var cu = customer.Trim(); q = q.Where(c => (c.CustomerName != null && c.CustomerName.Contains(cu)) || (c.CustomerCode != null && c.CustomerCode.Contains(cu))); }
+        if (!string.IsNullOrWhiteSpace(partCode))
+        {
+            var pc = partCode.Trim().ToUpperInvariant();
+            var matchedNos = await db.AccessoryContractLines.Where(l => l.OrgId == Org && l.PartCode == pc).Select(l => l.DlrContractPartNo).Distinct().ToListAsync();
+            q = q.Where(c => matchedNos.Contains(c.DlrContractPartNo));
+        }
+
+        var items = await q.OrderByDescending(c => c.Id).Take(500).Select(c => new
+        {
+            c.DlrContractPartNo,
+            c.DlrCtrPartType,
+            c.ContractPartDate,
+            c.DepositVal,
+            c.DealerCode,
+            c.UserCodeOwner,
+            c.UserNameOwner,
+            c.CustomerCode,
+            c.CustomerName,
+            c.TotalValBeforeVAT,
+            c.Status,
+            c.CreatedBy,
+            c.CreatedAt,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            c.CancelledBy,
+            c.CancelledAt,
+            lineCount = db.AccessoryContractLines.Count(l => l.OrgId == Org && l.AccessoryContractId == c.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetAccessoryContractAsync(string dlrContractPartNo)
+    {
+        dlrContractPartNo = dlrContractPartNo.Trim().ToUpperInvariant();
+        var ctr = await db.AccessoryContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.DlrContractPartNo == dlrContractPartNo);
+        if (ctr is null) return null;
+
+        var lines = await db.AccessoryContractLines.Where(l => l.OrgId == Org && l.AccessoryContractId == ctr.Id).ToListAsync();
+
+        return new
+        {
+            ctr.DlrContractPartNo,
+            ctr.DlrCtrPartType,
+            ctr.ContractPartDate,
+            ctr.DepositVal,
+            ctr.DealerCode,
+            ctr.BankAccountNo,
+            ctr.UserCodeOwner,
+            ctr.UserNameOwner,
+            ctr.CustomerCode,
+            ctr.CustomerName,
+            ctr.TotalValBeforeVAT,
+            ctr.Status,
+            ctr.Remark,
+            ctr.CreatedBy,
+            ctr.CreatedAt,
+            ctr.ApprovedBy,
+            ctr.ApprovedAt,
+            ctr.CancelledBy,
+            ctr.CancelledAt,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.PartCode,
+                l.PartName,
+                l.PartUnitCode,
+                l.Qty,
+                l.UnitPrice,
+                l.ValABeforeVAT,
+                l.Status,
+                l.Remark
+            }).ToList()
+        };
+    }
+
+    public async Task<object?> AccessoryContractTransitionAsync(string dlrContractPartNo, string action, AccessoryContractTransitionDto? dto)
+    {
+        dlrContractPartNo = dlrContractPartNo.Trim().ToUpperInvariant();
+        var ctr = await db.AccessoryContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.DlrContractPartNo == dlrContractPartNo);
+        if (ctr is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.AccessoryContractLines.Where(l => l.OrgId == Org && l.AccessoryContractId == ctr.Id).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (ctr.Status != "Pending") return null;
+                ctr.Status = "Approved";
+                ctr.ApprovedBy = dto?.User?.Trim() ?? "SalesDirector";
+                ctr.ApprovedAt = now;
+                foreach (var l in lines) l.Status = "Approved";
+                break;
+
+            case "cancel":
+                if (ctr.Status is not ("Pending" or "Approved")) return null;
+                ctr.Status = "Cancelled";
+                ctr.CancelledBy = dto?.User?.Trim() ?? "SalesDirector";
+                ctr.CancelledAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    ctr.Remark = string.IsNullOrWhiteSpace(ctr.Remark) ? dto.Note : $"{ctr.Remark} | Hủy: {dto.Note}";
+                foreach (var l in lines) l.Status = "Cancelled";
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            ctr.DlrContractPartNo,
+            ctr.DealerCode,
+            status = ctr.Status,
+            ctr.ApprovedAt,
+            ctr.CancelledAt
+        };
+    }
+
+    public async Task<object?> UpdateAccessoryContractLineAsync(string dlrContractPartNo, string partCode, UpdateAccessoryContractLineDto dto)
+    {
+        dlrContractPartNo = dlrContractPartNo.Trim().ToUpperInvariant();
+        partCode = partCode.Trim().ToUpperInvariant();
+
+        var ctr = await db.AccessoryContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.DlrContractPartNo == dlrContractPartNo);
+        if (ctr is null || ctr.Status is "Approved" or "Cancelled") return null;
+
+        var line = await db.AccessoryContractLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.AccessoryContractId == ctr.Id && l.PartCode == partCode);
+        if (line is null) return null;
+
+        if (dto.Qty.HasValue && dto.Qty.Value > 0) line.Qty = dto.Qty.Value;
+        if (dto.UnitPrice.HasValue && dto.UnitPrice.Value >= 0) line.UnitPrice = dto.UnitPrice.Value;
+        line.ValABeforeVAT = line.Qty * line.UnitPrice;
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.AccessoryContractLines.Where(l => l.OrgId == Org && l.AccessoryContractId == ctr.Id).ToListAsync();
+        ctr.TotalValBeforeVAT = allLines.Sum(l => l.ValABeforeVAT);
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            ctr.DlrContractPartNo,
+            line.PartCode,
+            line.Qty,
+            line.UnitPrice,
+            line.ValABeforeVAT,
+            line.Remark,
+            contractTotalValBeforeVAT = ctr.TotalValBeforeVAT
         };
     }
 
