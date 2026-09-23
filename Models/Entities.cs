@@ -7610,3 +7610,43 @@ public sealed class DealerContractCancelMinutes
     public string HTCSignCcMnStatus { get; set; } = "P";   // Trạng thái ký của Hãng (TConst.HTCSignCcMnStatus): P → A1 (Approved1) → A2 (Approved2) / C
     public string CancelMinutesStatus { get; set; } = "NS"; // Trạng thái biên bản (TConst.CancelMinutesStatus): NS (NotSign) → S (Signed) / AJ (Adjusted) / C (Cancel)
 }
+
+/// <summary>Điều chuyển lại yêu cầu vận chuyển xe ô tô (BizHTC.Storage.Sto_RearrangeTranspReq / Sto_RearrangeTranspReq): gom nhóm các xe VIN (mỗi VIN gắn 1 lệnh tái sắp xếp kho StorageRearrange) vào 1 yêu cầu vận chuyển lại theo nhà xe + hợp đồng vận tải, phục vụ điều độ lại xe lồng khi thay đổi kế hoạch.</summary>
+public sealed class RearrangeTransportRequest
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SRTReqNo { get; set; } = "";              // Mã yêu cầu điều chuyển lại vận chuyển (SRT...)
+    public string? TransporterCode { get; set; }            // Đơn vị / Nhà xe vận chuyển (NYK, Traco, Vinafco...)
+    public string? TransportContractNo { get; set; }        // Số hợp đồng vận chuyển
+    public string? TruckPlateNo { get; set; }               // Biển số xe tải / xe lồng chuyên dụng
+    public string? DriverName { get; set; }                 // Tên lái xe lồng
+    public string? DriverPhone { get; set; }                // SĐT lái xe
+    public string? FromStorage { get; set; }                // Kho bãi xuất phát
+    public string? ToStorage { get; set; }                  // Kho / Điểm hạ tải đích
+    public DateTime? EstimatedDeparture { get; set; }       // Ngày dự kiến xuất bến
+    public DateTime? EstimatedArrival { get; set; }         // Ngày dự kiến đến nơi
+    public string Status { get; set; } = "P";               // Trạng thái (TConst.Stage): P (Pending) → A (Approved) / R (Rejected)
+    public string? Remark { get; set; }                     // Ghi chú điều vận
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? RejectBy { get; set; }
+    public DateTime? RejectAt { get; set; }
+}
+
+/// <summary>Chi tiết xe trong yêu cầu điều chuyển lại vận chuyển (Sto_RearrangeTranspReqDtl): danh sách VIN và liên kết lệnh tái sắp xếp kho nguồn.</summary>
+public sealed class RearrangeTransportRequestLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long RearrangeTransportRequestId { get; set; }
+    public string SRTReqNo { get; set; } = "";
+    public string Vin { get; set; } = "";
+    public string? StorageRearrangeNo { get; set; }          // Lệnh tái sắp xếp kho nguồn của xe (Sto_StorageRearrange)
+    public string? StorageCodeFrom { get; set; }             // Vị trí/bãi đỗ cũ
+    public string? StorageCodeTo { get; set; }               // Vị trí/bãi đỗ mới
+    public string Status { get; set; } = "P";                // Trạng thái dòng (TConst.Stage): P → A / R
+    public string? Remark { get; set; }
+}

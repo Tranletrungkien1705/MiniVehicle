@@ -1634,6 +1634,11 @@ public record SaveStoragePdiVinDto(List<StoragePdiVinInputDto> Items, bool IsDel
 public record CreateDealerContractCancelMinutesDto(string DlrCtrNo, string? CancelMinutesNo = null, string? FilePath = null, string? Remark = null);
 public record DealerContractCancelMinutesTransitionDto(string? Remark = null, string? By = null);
 
+// ===== Điều chuyển lại yêu cầu vận chuyển (BizHTC.Storage.Sto_RearrangeTranspReq) =====
+public record RearrangeTransportRequestItemInputDto(string Vin, string? StorageRearrangeNo = null, string? StorageCodeFrom = null, string? StorageCodeTo = null, string? Remark = null);
+public record CreateRearrangeTransportRequestDto(List<RearrangeTransportRequestItemInputDto> Items, string? TransporterCode = null, string? TransportContractNo = null, string? TruckPlateNo = null, string? DriverName = null, string? DriverPhone = null, string? FromStorage = null, string? ToStorage = null, DateTime? EstimatedDeparture = null, DateTime? EstimatedArrival = null, string? Remark = null, string? SRTReqNo = null, string? CreatedBy = null);
+public record RearrangeTransportRequestTransitionDto(string? Note = null, string? By = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2374,6 +2379,14 @@ public interface IVehicleService
     Task<object?> GetDealerContractCancelMinutesAsync(string cancelMinutesNo);
     Task<object?> DealerContractCancelMinutesTransitionAsync(string cancelMinutesNo, string action, DealerContractCancelMinutesTransitionDto? dto);
     Task<object?> GetVehicleDealerContractCancelMinutesInfoAsync(string vin);
+
+    // ===== Điều chuyển lại yêu cầu vận chuyển (BizHTC.Storage.Sto_RearrangeTranspReq) =====
+    Task<object> CreateRearrangeTransportRequestAsync(CreateRearrangeTransportRequestDto dto);
+    Task<object> ListRearrangeTransportRequestsAsync(string? status, string? transporter, string? srtReqNo, string? vin);
+    Task<object?> GetRearrangeTransportRequestAsync(string srtReqNo);
+    Task<object?> RearrangeTransportRequestTransitionAsync(string srtReqNo, string action, RearrangeTransportRequestTransitionDto? dto);
+    Task<object?> RemoveRearrangeTransportRequestLineAsync(string srtReqNo, string vin);
+    Task<object?> GetVehicleRearrangeTransportRequestInfoAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -42227,6 +42240,268 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 m.DlrApprAt,
                 m.HTCAppr2At,
                 m.Remark
+            }).ToList()
+        };
+    }
+
+    // ===== Điều chuyển lại yêu cầu vận chuyển (BizHTC.Storage.Sto_RearrangeTranspReq) =====
+    public async Task<object> CreateRearrangeTransportRequestAsync(CreateRearrangeTransportRequestDto dto)
+    {
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe (VIN) để tạo yêu cầu điều chuyển lại vận chuyển.");
+
+        var distinctItems = dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+            .GroupBy(i => i.Vin.Trim().ToUpperInvariant())
+            .Select(g => g.First())
+            .ToList();
+
+        if (distinctItems.Count == 0)
+            throw new InvalidOperationException("Danh sách xe không hợp lệ (cần VIN).");
+
+        var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        var missing = vins.Except(vehicles.Select(v => v.Vin)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException("VIN không tồn tại trong hệ thống: " + string.Join(", ", missing));
+
+        var invalidDelivered = vehicles.Where(v => v.Status == VehicleStatus.Delivered).Select(v => v.Vin).ToList();
+        if (invalidDelivered.Count > 0)
+            throw new InvalidOperationException("Xe đã giao cho khách (Delivered) không thể điều chuyển lại vận chuyển: " + string.Join(", ", invalidDelivered));
+
+        var reqNo = string.IsNullOrWhiteSpace(dto.SRTReqNo)
+            ? "SRT" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.SRTReqNo.Trim().ToUpperInvariant();
+
+        if (await db.RearrangeTransportRequests.AnyAsync(r => r.OrgId == Org && r.SRTReqNo == reqNo))
+            throw new InvalidOperationException($"Mã yêu cầu điều chuyển lại vận chuyển {reqNo} đã tồn tại.");
+
+        var vMap = vehicles.ToDictionary(v => v.Vin);
+        var req = new RearrangeTransportRequest
+        {
+            OrgId = Org,
+            SRTReqNo = reqNo,
+            TransporterCode = dto.TransporterCode?.Trim(),
+            TransportContractNo = dto.TransportContractNo?.Trim(),
+            TruckPlateNo = dto.TruckPlateNo?.Trim(),
+            DriverName = dto.DriverName?.Trim(),
+            DriverPhone = dto.DriverPhone?.Trim(),
+            FromStorage = dto.FromStorage?.Trim(),
+            ToStorage = dto.ToStorage?.Trim(),
+            EstimatedDeparture = dto.EstimatedDeparture,
+            EstimatedArrival = dto.EstimatedArrival,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            Status = "P",
+            CreatedAt = DateTime.Now
+        };
+        db.RearrangeTransportRequests.Add(req);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            var currentStorage = item.StorageCodeFrom?.Trim() ?? (vMap.TryGetValue(vin, out var v) ? v.StorageCode : null);
+
+            db.RearrangeTransportRequestLines.Add(new RearrangeTransportRequestLine
+            {
+                OrgId = Org,
+                RearrangeTransportRequestId = req.Id,
+                SRTReqNo = reqNo,
+                Vin = vin,
+                StorageRearrangeNo = item.StorageRearrangeNo?.Trim().ToUpperInvariant(),
+                StorageCodeFrom = currentStorage,
+                StorageCodeTo = item.StorageCodeTo?.Trim(),
+                Status = "P",
+                Remark = item.Remark?.Trim()
+            });
+
+            Log(vin, "RearrangeTransportRequested", $"{reqNo} Điều chuyển lại vận chuyển: {currentStorage} -> {item.StorageCodeTo}");
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            req.SRTReqNo,
+            req.TransporterCode,
+            req.TransportContractNo,
+            req.TruckPlateNo,
+            req.DriverName,
+            req.FromStorage,
+            req.ToStorage,
+            req.Status,
+            totalVins = distinctItems.Count,
+            items = distinctItems.Select(i => new { i.Vin, i.StorageRearrangeNo, i.StorageCodeTo })
+        };
+    }
+
+    public async Task<object> ListRearrangeTransportRequestsAsync(string? status, string? transporter, string? srtReqNo, string? vin)
+    {
+        var q = db.RearrangeTransportRequests.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(transporter)) q = q.Where(r => r.TransporterCode == transporter);
+        if (!string.IsNullOrWhiteSpace(srtReqNo)) q = q.Where(r => r.SRTReqNo == srtReqNo.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.RearrangeTransportRequestLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.SRTReqNo).Distinct().ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.SRTReqNo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.SRTReqNo,
+            r.TransporterCode,
+            r.TransportContractNo,
+            r.TruckPlateNo,
+            r.DriverName,
+            r.FromStorage,
+            r.ToStorage,
+            r.EstimatedDeparture,
+            r.EstimatedArrival,
+            r.Status,
+            r.Remark,
+            r.CreatedAt,
+            r.ApprovedAt,
+            vinCount = db.RearrangeTransportRequestLines.Count(l => l.OrgId == Org && l.RearrangeTransportRequestId == r.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetRearrangeTransportRequestAsync(string srtReqNo)
+    {
+        srtReqNo = srtReqNo.Trim().ToUpperInvariant();
+        var req = await db.RearrangeTransportRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.SRTReqNo == srtReqNo);
+        if (req is null) return null;
+
+        var lines = await db.RearrangeTransportRequestLines.Where(l => l.OrgId == Org && l.RearrangeTransportRequestId == req.Id).ToListAsync();
+        var vins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.StorageRearrangeNo,
+            l.StorageCodeFrom,
+            l.StorageCodeTo,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), currentStorage = v.StorageCode, v.DealerCode } : null
+        }).ToList();
+
+        return new
+        {
+            req.SRTReqNo,
+            req.TransporterCode,
+            req.TransportContractNo,
+            req.TruckPlateNo,
+            req.DriverName,
+            req.DriverPhone,
+            req.FromStorage,
+            req.ToStorage,
+            req.EstimatedDeparture,
+            req.EstimatedArrival,
+            req.Status,
+            req.Remark,
+            req.CreatedBy,
+            req.CreatedAt,
+            req.ApprovedBy,
+            req.ApprovedAt,
+            req.RejectBy,
+            req.RejectAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> RearrangeTransportRequestTransitionAsync(string srtReqNo, string action, RearrangeTransportRequestTransitionDto? dto)
+    {
+        srtReqNo = srtReqNo.Trim().ToUpperInvariant();
+        var req = await db.RearrangeTransportRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.SRTReqNo == srtReqNo);
+        if (req is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.RearrangeTransportRequestLines.Where(l => l.OrgId == Org && l.RearrangeTransportRequestId == req.Id).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                if (req.Status != "P") return null;
+                req.Status = "A";
+                req.ApprovedBy = dto?.By;
+                req.ApprovedAt = now;
+                foreach (var l in lines) if (l.Status == "P") l.Status = "A";
+                foreach (var l in lines) Log(l.Vin, "RearrangeTransportApproved", srtReqNo);
+                break;
+
+            case "reject":
+                if (req.Status != "P") return null;
+                req.Status = "R";
+                req.RejectBy = dto?.By;
+                req.RejectAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    req.Remark = string.IsNullOrWhiteSpace(req.Remark) ? dto.Note : $"{req.Remark} | Từ chối: {dto.Note}";
+                foreach (var l in lines) l.Status = "R";
+                foreach (var l in lines) Log(l.Vin, "RearrangeTransportRejected", $"{srtReqNo} Lý do: {dto?.Note ?? "N/A"}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return new { req.SRTReqNo, status = req.Status, req.ApprovedAt, req.RejectAt };
+    }
+
+    public async Task<object?> RemoveRearrangeTransportRequestLineAsync(string srtReqNo, string vin)
+    {
+        srtReqNo = srtReqNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var req = await db.RearrangeTransportRequests.FirstOrDefaultAsync(r => r.OrgId == Org && r.SRTReqNo == srtReqNo);
+        if (req is null || req.Status != "P") return null;
+
+        var line = await db.RearrangeTransportRequestLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.RearrangeTransportRequestId == req.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.RearrangeTransportRequestLines.Remove(line);
+        Log(vin, "RearrangeTransportLineRemoved", srtReqNo);
+        await db.SaveChangesAsync();
+
+        var remaining = await db.RearrangeTransportRequestLines.CountAsync(l => l.OrgId == Org && l.RearrangeTransportRequestId == req.Id);
+        return new { req.SRTReqNo, removedVin = vin, remainingVins = remaining };
+    }
+
+    public async Task<object?> GetVehicleRearrangeTransportRequestInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null) return null;
+
+        var reqNos = await db.RearrangeTransportRequestLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .Select(l => l.SRTReqNo).Distinct().ToListAsync();
+
+        var requests = await db.RearrangeTransportRequests
+            .Where(r => r.OrgId == Org && reqNos.Contains(r.SRTReqNo))
+            .OrderByDescending(r => r.Id).ToListAsync();
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            status = vehicle.Status.ToString(),
+            requests = requests.Select(r => new
+            {
+                r.SRTReqNo,
+                r.TransporterCode,
+                r.TransportContractNo,
+                r.TruckPlateNo,
+                r.FromStorage,
+                r.ToStorage,
+                r.Status,
+                r.CreatedAt,
+                r.ApprovedAt
             }).ToList()
         };
     }

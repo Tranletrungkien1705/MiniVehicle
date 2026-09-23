@@ -6058,6 +6058,44 @@ app.MapGet("/api/vehicles/{vin}/dealer-contract-cancel-minutes", async (string v
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Điều chuyển lại yêu cầu vận chuyển (BizHTC.Storage.Sto_RearrangeTranspReq) ----
+app.MapPost("/api/rearrange-transport-requests", async (CreateRearrangeTransportRequestDto dto, IVehicleService svc) =>
+{
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách Items (VIN)." });
+    try { return Results.Ok(await svc.CreateRearrangeTransportRequestAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/rearrange-transport-requests", async (IVehicleService svc, string? status, string? transporter, string? srtReqNo, string? vin) =>
+    Results.Ok(await svc.ListRearrangeTransportRequestsAsync(status, transporter, srtReqNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/rearrange-transport-requests/{srtReqNo}", async (string srtReqNo, IVehicleService svc) =>
+{
+    var r = await svc.GetRearrangeTransportRequestAsync(srtReqNo);
+    return r is null ? Results.NotFound(new { srtReqNo, error = "Không tìm thấy yêu cầu điều chuyển lại vận chuyển." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/rearrange-transport-requests/{srtReqNo}/{action}", async (string srtReqNo, string action, RearrangeTransportRequestTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "reject"))
+        return Results.BadRequest(new { error = "action = approve|reject" });
+    var r = await svc.RearrangeTransportRequestTransitionAsync(srtReqNo, action, dto);
+    return r is null ? Results.NotFound(new { srtReqNo, error = "Không thấy yêu cầu hoặc sai trạng thái." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapDelete("/api/rearrange-transport-requests/{srtReqNo}/lines/{vin}", async (string srtReqNo, string vin, IVehicleService svc) =>
+{
+    var r = await svc.RemoveRearrangeTransportRequestLineAsync(srtReqNo, vin);
+    return r is null ? Results.NotFound(new { srtReqNo, vin, error = "Không thấy dòng xe hoặc yêu cầu đã duyệt." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/rearrange-transport-requests", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleRearrangeTransportRequestInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
