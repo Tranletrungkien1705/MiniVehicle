@@ -1620,6 +1620,16 @@ public record CreateSalesProcessDto(string? SalesID, string? CustomerCode, strin
 public record SalesProcessTransitionDto(string? SPStatus = null, string? SPLevelCode = null, string? Note = null, string? User = null);
 public record UpdateSalesProcessLineDto(int? Qty = null, string? ColorCode = null, string? SpecCode = null, string? SPStatusDtl = null, string? Remark = null);
 
+// ===== Đề nghị nhận xe & kiểm tra PDI tại nhà máy OEM (BizHTC.HTMV.HTMV_PDI) =====
+public record HtmvPdiItemInputDto(string VIN, string? RefNo = null, string? LCTemp = null, string? SpecCode = null, string? ColorCode = null, string? ProductionMonth = null, string? EngineNo = null, string? Remark = null);
+public record CreateHtmvPdiDto(string? PDINo = null, string? Remark = null, List<HtmvPdiItemInputDto>? Items = null, List<string>? Vins = null);
+public record HtmvPdiApproveItemDto(string VIN, DateTime? PDIDate = null, string? Remark = null);
+public record HtmvPdiApproveDto(List<HtmvPdiApproveItemDto>? Items = null, string? ApprovedBy = null);
+public record HtmvPdiCancelDto(List<HtmvPdiApproveItemDto>? Items = null, string? Note = null);
+public record HtmvPdiUpdateLineDto(string? FlagRepair = null, string? RepairRemark = null);
+public record StoragePdiVinInputDto(string VIN, string? ModelCode = null, string? SpecCode = null, string? ColorCode = null, string? OrderNoMMS = null, string? OrderNoMMSDelivery = null, string? EngineNo = null, string? KeyNo = null, string? AVNSerialNo = null, string? BatteryNo = null, string? PDIStorageStatus = null, string? Remark = null);
+public record SaveStoragePdiVinDto(List<StoragePdiVinInputDto> Items, bool IsDelete = false);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2342,6 +2352,17 @@ public interface IVehicleService
     Task<object?> UpdateSalesProcessLineAsync(string salesId, string modelCode, UpdateSalesProcessLineDto dto);
     Task<object?> GetVehicleSalesProcessInfoAsync(string vin);
     Task<object> GetSalesProcessSummaryAsync(string? dealerCode);
+
+    // ===== Đề nghị nhận xe & kiểm tra PDI tại nhà máy OEM (BizHTC.HTMV.HTMV_PDI) =====
+    Task<object> CreateHtmvPdiAsync(CreateHtmvPdiDto dto);
+    Task<object> ListHtmvPdisAsync(string? status, string? pdiNo, string? vin);
+    Task<object?> GetHtmvPdiAsync(string pdiNo);
+    Task<object?> HtmvPdiApproveAsync(string pdiNo, HtmvPdiApproveDto dto);
+    Task<object?> HtmvPdiCancelAsync(string pdiNo, HtmvPdiCancelDto dto);
+    Task<object?> HtmvPdiUpdateLineAsync(string pdiNo, string vin, HtmvPdiUpdateLineDto dto);
+    Task<object> ListStoragePdiVinsAsync(string? vin, string? modelCode, string? pdiStorageStatus, bool? activeOnly);
+    Task<object> SaveStoragePdiVinsAsync(SaveStoragePdiVinDto dto);
+    Task<object?> GetVehicleHtmvPdiInfoAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -41521,6 +41542,425 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             conversionRatePercent = conversionRate,
             totalBudget = all.Sum(s => s.BudgetVal),
             byStatus
+        };
+    }
+
+    // ===== Đề nghị nhận xe & kiểm tra PDI tại nhà máy OEM (BizHTC.HTMV.HTMV_PDI) =====
+    public async Task<object> CreateHtmvPdiAsync(CreateHtmvPdiDto dto)
+    {
+        // Thu thập danh sách VIN (từ Items hoặc Vins)
+        var itemList = new List<HtmvPdiItemInputDto>();
+        if (dto.Items != null && dto.Items.Count > 0)
+            itemList.AddRange(dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.VIN)));
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+            itemList.AddRange(dto.Vins.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => new HtmvPdiItemInputDto(v.Trim())));
+
+        if (itemList.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 xe (VIN) để tạo đề nghị nhận xe PDI.");
+
+        // Khử trùng lặp VIN trong cùng 1 đề nghị
+        var distinctItems = itemList
+            .GroupBy(i => i.VIN.Trim().ToUpperInvariant())
+            .Select(g => g.First())
+            .ToList();
+
+        var vins = distinctItems.Select(i => i.VIN.Trim().ToUpperInvariant()).ToList();
+
+        // VIN không được đang nằm trong 1 đề nghị PDI khác ở trạng thái P/F (HTMV_PDICreate_ExistPDIOther)
+        var busyVins = await db.HtmvPdiDtls
+            .Where(l => l.OrgId == Org && vins.Contains(l.VIN) && (l.PDIDtlStatus == "P" || l.PDIDtlStatus == "F"))
+            .Select(l => l.VIN).Distinct().ToListAsync();
+        if (busyVins.Count > 0)
+            throw new InvalidOperationException("VIN đã nằm trong đề nghị PDI khác (P/F): " + string.Join(", ", busyVins));
+
+        var pdiNo = string.IsNullOrWhiteSpace(dto.PDINo)
+            ? "PDI" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.PDINo.Trim().ToUpperInvariant();
+
+        if (await db.HtmvPdis.AnyAsync(r => r.OrgId == Org && r.PDINo == pdiNo))
+            throw new InvalidOperationException($"Mã đề nghị PDI {pdiNo} đã tồn tại.");
+
+        var pdi = new HtmvPdi
+        {
+            OrgId = Org,
+            PDINo = pdiNo,
+            Status = "P",
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.HtmvPdis.Add(pdi);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            var vin = item.VIN.Trim().ToUpperInvariant();
+            db.HtmvPdiDtls.Add(new HtmvPdiDtl
+            {
+                OrgId = Org,
+                HtmvPdiId = pdi.Id,
+                PDINo = pdiNo,
+                VIN = vin,
+                RefNo = item.RefNo?.Trim(),
+                LCTemp = item.LCTemp?.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                ColorCode = item.ColorCode?.Trim(),
+                ProductionMonth = item.ProductionMonth?.Trim(),
+                EngineNo = item.EngineNo?.Trim(),
+                PDIDtlStatus = "P",
+                PDIStorageStatus = "P",
+                PdiResult = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+            Log(vin, "HtmvPdiRequested", $"{pdiNo} Đề nghị nhận xe PDI nhà máy");
+        }
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            pdi.PDINo,
+            pdi.Status,
+            pdi.Remark,
+            totalVins = distinctItems.Count,
+            vins = distinctItems.Select(i => new { i.VIN, i.RefNo, i.SpecCode, i.ColorCode })
+        };
+    }
+
+    public async Task<object> ListHtmvPdisAsync(string? status, string? pdiNo, string? vin)
+    {
+        var q = db.HtmvPdis.Where(r => r.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(r => r.Status == status);
+        if (!string.IsNullOrWhiteSpace(pdiNo)) { var p = pdiNo.Trim().ToUpperInvariant(); q = q.Where(r => r.PDINo == p); }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.HtmvPdiDtls.Where(l => l.OrgId == Org && l.VIN == vv).Select(l => l.PDINo).Distinct().ToListAsync();
+            q = q.Where(r => matchedNos.Contains(r.PDINo));
+        }
+
+        var items = await q.OrderByDescending(r => r.Id).Take(500).Select(r => new
+        {
+            r.PDINo,
+            r.Status,
+            r.Remark,
+            r.CreatedBy,
+            r.CreatedAt,
+            r.ApprovedBy,
+            r.ApprovedAt,
+            vinCount = db.HtmvPdiDtls.Count(l => l.OrgId == Org && l.HtmvPdiId == r.Id),
+            finishedCount = db.HtmvPdiDtls.Count(l => l.OrgId == Org && l.HtmvPdiId == r.Id && l.PDIDtlStatus == "F"),
+            cancelledCount = db.HtmvPdiDtls.Count(l => l.OrgId == Org && l.HtmvPdiId == r.Id && l.PDIDtlStatus == "C")
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetHtmvPdiAsync(string pdiNo)
+    {
+        pdiNo = pdiNo.Trim().ToUpperInvariant();
+        var pdi = await db.HtmvPdis.FirstOrDefaultAsync(r => r.OrgId == Org && r.PDINo == pdiNo);
+        if (pdi is null) return null;
+
+        var lines = await db.HtmvPdiDtls.Where(l => l.OrgId == Org && l.HtmvPdiId == pdi.Id).ToListAsync();
+        var vins = lines.Select(l => l.VIN).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.VIN,
+            l.RefNo,
+            l.LCTemp,
+            l.SpecCode,
+            l.ModelCode,
+            l.ColorCode,
+            l.ProductionMonth,
+            l.EngineNo,
+            l.PDIDtlStatus,
+            l.PDIStorageStatus,
+            l.PdiResult,
+            l.FlagRepair,
+            l.RepairRemark,
+            l.PDIDate,
+            l.Remark,
+            l.ApprovedBy,
+            l.ApprovedAt,
+            vehicle = vehicles.TryGetValue(l.VIN, out var v) ? new { v.Model, v.Color, v.EngineNo, status = v.Status.ToString(), v.StorageCode } : null
+        }).ToList();
+
+        return new
+        {
+            pdi.PDINo,
+            pdi.Status,
+            pdi.Remark,
+            pdi.CreatedBy,
+            pdi.CreatedAt,
+            pdi.ApprovedBy,
+            pdi.ApprovedAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> HtmvPdiApproveAsync(string pdiNo, HtmvPdiApproveDto dto)
+    {
+        pdiNo = pdiNo.Trim().ToUpperInvariant();
+        var pdi = await db.HtmvPdis.FirstOrDefaultAsync(r => r.OrgId == Org && r.PDINo == pdiNo);
+        if (pdi is null || pdi.Status != "P") return null;
+
+        var lines = await db.HtmvPdiDtls.Where(l => l.OrgId == Org && l.HtmvPdiId == pdi.Id).ToListAsync();
+        if (lines.Count == 0) return null;
+
+        var now = DateTime.Now;
+        var approveMap = (dto.Items ?? new List<HtmvPdiApproveItemDto>())
+            .GroupBy(i => i.VIN.Trim().ToUpperInvariant())
+            .ToDictionary(g => g.Key, g => g.First());
+
+        // Nếu client không gửi danh sách thì duyệt toàn bộ dòng đang P
+        var targetVins = approveMap.Count > 0
+            ? approveMap.Keys.ToList()
+            : lines.Where(l => l.PDIDtlStatus == "P").Select(l => l.VIN).ToList();
+
+        foreach (var vin in targetVins)
+        {
+            var line = lines.FirstOrDefault(l => l.VIN == vin);
+            if (line is null || line.PDIDtlStatus != "P") continue;
+
+            var pdiDate = approveMap.TryGetValue(vin, out var it) && it.PDIDate.HasValue ? it.PDIDate.Value : now;
+            line.PDIDtlStatus = "F";
+            line.PDIDate = pdiDate;
+            if (approveMap.TryGetValue(vin, out var it2) && !string.IsNullOrWhiteSpace(it2.Remark))
+                line.Remark = it2.Remark.Trim();
+            line.ApprovedBy = dto.ApprovedBy?.Trim() ?? pdi.ApprovedBy;
+            line.ApprovedAt = now;
+
+            // Đồng bộ kho PDI: VIN đã duyệt ⇒ nhập kho PDI (PDIStorageStatus = F)
+            var storage = await db.StoragePdiVins.FirstOrDefaultAsync(s => s.OrgId == Org && s.VIN == vin);
+            if (storage is null)
+            {
+                storage = new StoragePdiVin
+                {
+                    OrgId = Org,
+                    VIN = vin,
+                    ModelCode = line.ModelCode,
+                    SpecCode = line.SpecCode,
+                    ColorCode = line.ColorCode,
+                    EngineNo = line.EngineNo,
+                    FlagActive = "1",
+                    PDIStorageStatus = "F",
+                    FinishDTime = pdiDate,
+                    UpdatedAt = now
+                };
+                db.StoragePdiVins.Add(storage);
+            }
+            else
+            {
+                storage.PDIStorageStatus = "F";
+                storage.FinishDTime ??= pdiDate;
+                storage.UpdatedAt = now;
+            }
+
+            Log(vin, "HtmvPdiApproved", $"{pdiNo} Duyệt nhận xe PDI ngày {pdiDate:yyyy-MM-dd}");
+        }
+
+        // Header chuyển F khi mọi dòng đã F (hoặc C)
+        if (lines.All(l => l.PDIDtlStatus is "F" or "C"))
+        {
+            pdi.Status = "F";
+            pdi.ApprovedAt = now;
+            pdi.ApprovedBy = dto.ApprovedBy?.Trim() ?? pdi.ApprovedBy;
+        }
+
+        await db.SaveChangesAsync();
+        return new { pdi.PDINo, pdi.Status, pdi.ApprovedBy, pdi.ApprovedAt, approvedVins = targetVins };
+    }
+
+    public async Task<object?> HtmvPdiCancelAsync(string pdiNo, HtmvPdiCancelDto dto)
+    {
+        pdiNo = pdiNo.Trim().ToUpperInvariant();
+        var pdi = await db.HtmvPdis.FirstOrDefaultAsync(r => r.OrgId == Org && r.PDINo == pdiNo);
+        if (pdi is null) return null;
+
+        var lines = await db.HtmvPdiDtls.Where(l => l.OrgId == Org && l.HtmvPdiId == pdi.Id).ToListAsync();
+        var cancelMap = (dto.Items ?? new List<HtmvPdiApproveItemDto>())
+            .GroupBy(i => i.VIN.Trim().ToUpperInvariant())
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var targetVins = cancelMap.Count > 0
+            ? cancelMap.Keys.ToList()
+            : lines.Where(l => l.PDIDtlStatus == "P").Select(l => l.VIN).ToList();
+
+        var now = DateTime.Now;
+        foreach (var vin in targetVins)
+        {
+            var line = lines.FirstOrDefault(l => l.VIN == vin);
+            if (line is null || line.PDIDtlStatus != "P") continue;
+            line.PDIDtlStatus = "C";
+            if (cancelMap.TryGetValue(vin, out var it) && !string.IsNullOrWhiteSpace(it.Remark))
+                line.Remark = it.Remark.Trim();
+            Log(vin, "HtmvPdiCancelled", $"{pdiNo} Hủy nhận xe PDI. Lý do: {dto.Note ?? "N/A"}");
+        }
+
+        if (lines.All(l => l.PDIDtlStatus is "F" or "C"))
+        {
+            pdi.Status = "F";
+            pdi.ApprovedAt = now;
+        }
+
+        await db.SaveChangesAsync();
+        return new { pdi.PDINo, pdi.Status, cancelledVins = targetVins };
+    }
+
+    public async Task<object?> HtmvPdiUpdateLineAsync(string pdiNo, string vin, HtmvPdiUpdateLineDto dto)
+    {
+        pdiNo = pdiNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+        var pdi = await db.HtmvPdis.FirstOrDefaultAsync(r => r.OrgId == Org && r.PDINo == pdiNo);
+        if (pdi is null) return null;
+
+        var line = await db.HtmvPdiDtls.FirstOrDefaultAsync(l => l.OrgId == Org && l.HtmvPdiId == pdi.Id && l.VIN == vin);
+        if (line is null) return null;
+
+        // HTMV_PDIUpdate chỉ ghi 2 cột FlagRepair / RepairRemark, không đụng trạng thái
+        if (dto.FlagRepair != null) line.FlagRepair = dto.FlagRepair.Trim();
+        if (dto.RepairRemark != null) line.RepairRemark = dto.RepairRemark.Trim();
+
+        await db.SaveChangesAsync();
+        return new { line.PDINo, line.VIN, line.FlagRepair, line.RepairRemark, line.PDIDtlStatus, line.PDIStorageStatus };
+    }
+
+    public async Task<object> ListStoragePdiVinsAsync(string? vin, string? modelCode, string? pdiStorageStatus, bool? activeOnly)
+    {
+        var q = db.StoragePdiVins.Where(s => s.OrgId == Org);
+        if (activeOnly == true) q = q.Where(s => s.FlagActive == "1");
+        if (!string.IsNullOrWhiteSpace(vin)) { var v = vin.Trim().ToUpperInvariant(); q = q.Where(s => s.VIN == v); }
+        if (!string.IsNullOrWhiteSpace(modelCode)) { var m = modelCode.Trim().ToUpperInvariant(); q = q.Where(s => s.ModelCode == m); }
+        if (!string.IsNullOrWhiteSpace(pdiStorageStatus)) { var st = pdiStorageStatus.Trim().ToUpperInvariant(); q = q.Where(s => s.PDIStorageStatus == st); }
+
+        var items = await q.OrderByDescending(s => s.Id).Take(1000).Select(s => new
+        {
+            s.VIN,
+            s.ModelCode,
+            s.SpecCode,
+            s.ColorCode,
+            s.OrderNoMMS,
+            s.OrderNoMMSDelivery,
+            s.EngineNo,
+            s.KeyNo,
+            s.AVNSerialNo,
+            s.BatteryNo,
+            s.FlagActive,
+            s.PDIStorageStatus,
+            s.FinishDTime,
+            s.Remark,
+            s.UpdatedAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object> SaveStoragePdiVinsAsync(SaveStoragePdiVinDto dto)
+    {
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần danh sách xe PDI_VIN để lưu.");
+
+        int inserted = 0, updated = 0, deleted = 0;
+        var now = DateTime.Now;
+
+        foreach (var item in dto.Items)
+        {
+            if (string.IsNullOrWhiteSpace(item.VIN)) continue;
+            var vin = item.VIN.Trim().ToUpperInvariant();
+            var existing = await db.StoragePdiVins.FirstOrDefaultAsync(s => s.OrgId == Org && s.VIN == vin);
+
+            if (dto.IsDelete)
+            {
+                if (existing != null) { existing.FlagActive = "0"; existing.UpdatedAt = now; deleted++; }
+                continue;
+            }
+
+            if (existing is null)
+            {
+                db.StoragePdiVins.Add(new StoragePdiVin
+                {
+                    OrgId = Org,
+                    VIN = vin,
+                    ModelCode = item.ModelCode?.Trim(),
+                    SpecCode = item.SpecCode?.Trim(),
+                    ColorCode = item.ColorCode?.Trim(),
+                    OrderNoMMS = item.OrderNoMMS?.Trim(),
+                    OrderNoMMSDelivery = item.OrderNoMMSDelivery?.Trim(),
+                    EngineNo = item.EngineNo?.Trim(),
+                    KeyNo = item.KeyNo?.Trim(),
+                    AVNSerialNo = item.AVNSerialNo?.Trim(),
+                    BatteryNo = item.BatteryNo?.Trim(),
+                    FlagActive = "1",
+                    PDIStorageStatus = item.PDIStorageStatus?.Trim() ?? "P",
+                    Remark = item.Remark?.Trim(),
+                    UpdatedAt = now
+                });
+                inserted++;
+            }
+            else
+            {
+                existing.ModelCode = item.ModelCode?.Trim() ?? existing.ModelCode;
+                existing.SpecCode = item.SpecCode?.Trim() ?? existing.SpecCode;
+                existing.ColorCode = item.ColorCode?.Trim() ?? existing.ColorCode;
+                existing.OrderNoMMS = item.OrderNoMMS?.Trim() ?? existing.OrderNoMMS;
+                existing.OrderNoMMSDelivery = item.OrderNoMMSDelivery?.Trim() ?? existing.OrderNoMMSDelivery;
+                existing.EngineNo = item.EngineNo?.Trim() ?? existing.EngineNo;
+                existing.KeyNo = item.KeyNo?.Trim() ?? existing.KeyNo;
+                existing.AVNSerialNo = item.AVNSerialNo?.Trim() ?? existing.AVNSerialNo;
+                existing.BatteryNo = item.BatteryNo?.Trim() ?? existing.BatteryNo;
+                if (!string.IsNullOrWhiteSpace(item.PDIStorageStatus)) existing.PDIStorageStatus = item.PDIStorageStatus.Trim();
+                if (item.Remark != null) existing.Remark = item.Remark.Trim();
+                existing.FlagActive = "1";
+                existing.UpdatedAt = now;
+                updated++;
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return new { inserted, updated, deleted, total = dto.Items.Count };
+    }
+
+    public async Task<object?> GetVehicleHtmvPdiInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null) return null;
+
+        var lines = await db.HtmvPdiDtls.Where(l => l.OrgId == Org && l.VIN == vin).OrderByDescending(l => l.Id).ToListAsync();
+        var storage = await db.StoragePdiVins.FirstOrDefaultAsync(s => s.OrgId == Org && s.VIN == vin);
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            vehicle.Color,
+            vehicle.EngineNo,
+            status = vehicle.Status.ToString(),
+            storagePdi = storage is null ? null : new
+            {
+                storage.ModelCode,
+                storage.SpecCode,
+                storage.ColorCode,
+                storage.KeyNo,
+                storage.AVNSerialNo,
+                storage.BatteryNo,
+                storage.FlagActive,
+                storage.PDIStorageStatus,
+                storage.FinishDTime
+            },
+            pdiHistory = lines.Select(l => new
+            {
+                l.PDINo,
+                l.PDIDtlStatus,
+                l.PDIStorageStatus,
+                l.PdiResult,
+                l.FlagRepair,
+                l.RepairRemark,
+                l.PDIDate,
+                l.ApprovedBy,
+                l.ApprovedAt
+            }).ToList()
         };
     }
 }

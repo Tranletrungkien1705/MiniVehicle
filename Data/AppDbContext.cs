@@ -154,6 +154,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<SalesProcess> SalesProcesses => Set<SalesProcess>();
     public DbSet<SalesProcessLine> SalesProcessLines => Set<SalesProcessLine>();
     public DbSet<SalesProcessKpi> SalesProcessKpis => Set<SalesProcessKpi>();
+    public DbSet<HtmvPdi> HtmvPdis => Set<HtmvPdi>();
+    public DbSet<HtmvPdiDtl> HtmvPdiDtls => Set<HtmvPdiDtl>();
+    public DbSet<StoragePdiVin> StoragePdiVins => Set<StoragePdiVin>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -322,5 +325,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<SalesProcessLine>().HasIndex(x => new { x.OrgId, x.ModelCode });
         b.Entity<SalesProcessKpi>().HasIndex(x => new { x.OrgId, x.SalesID });
         b.Entity<SalesProcessKpi>().HasIndex(x => new { x.OrgId, x.KPICode });
+        b.Entity<HtmvPdi>().HasIndex(x => new { x.OrgId, x.PDINo }).IsUnique();
+        b.Entity<HtmvPdi>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<HtmvPdiDtl>().HasIndex(x => new { x.OrgId, x.PDINo, x.VIN });
+        b.Entity<HtmvPdiDtl>().HasIndex(x => new { x.OrgId, x.VIN });
+        b.Entity<HtmvPdiDtl>().HasIndex(x => new { x.OrgId, x.PDIDtlStatus });
+        b.Entity<StoragePdiVin>().HasIndex(x => new { x.OrgId, x.VIN }).IsUnique();
+        b.Entity<StoragePdiVin>().HasIndex(x => new { x.OrgId, x.PDIStorageStatus });
     }
 }

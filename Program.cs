@@ -5972,6 +5972,60 @@ app.MapGet("/api/vehicles/{vin}/sales-processes", async (string vin, IVehicleSer
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Đề nghị nhận xe & kiểm tra PDI tại nhà máy OEM (BizHTC.HTMV.HTMV_PDI / HTMV_PDI) ----
+app.MapPost("/api/htmv-pdis", async (CreateHtmvPdiDto dto, IVehicleService svc) =>
+{
+    if ((dto.Items is null || dto.Items.Count == 0) && (dto.Vins is null || dto.Vins.Count == 0))
+        return Results.BadRequest(new { error = "Cần danh sách xe Items hoặc Vins trong đề nghị nhận xe PDI." });
+    try { return Results.Ok(await svc.CreateHtmvPdiAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/htmv-pdis", async (IVehicleService svc, string? status, string? pdiNo, string? vin) =>
+    Results.Ok(await svc.ListHtmvPdisAsync(status, pdiNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/htmv-pdis/{pdiNo}", async (string pdiNo, IVehicleService svc) =>
+{
+    var r = await svc.GetHtmvPdiAsync(pdiNo);
+    return r is null ? Results.NotFound(new { pdiNo, error = "Không tìm thấy đề nghị nhận xe PDI." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/htmv-pdis/{pdiNo}/approve", async (string pdiNo, HtmvPdiApproveDto dto, IVehicleService svc) =>
+{
+    var r = await svc.HtmvPdiApproveAsync(pdiNo, dto);
+    return r is null ? Results.NotFound(new { pdiNo, error = "Không thấy đề nghị PDI hoặc đề nghị không ở trạng thái P." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/htmv-pdis/{pdiNo}/cancel", async (string pdiNo, HtmvPdiCancelDto dto, IVehicleService svc) =>
+{
+    var r = await svc.HtmvPdiCancelAsync(pdiNo, dto);
+    return r is null ? Results.NotFound(new { pdiNo, error = "Không tìm thấy đề nghị nhận xe PDI." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/htmv-pdis/{pdiNo}/lines/{vin}/update", async (string pdiNo, string vin, HtmvPdiUpdateLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.HtmvPdiUpdateLineAsync(pdiNo, vin, dto);
+    return r is null ? Results.NotFound(new { pdiNo, vin, error = "Không tìm thấy dòng xe trong đề nghị PDI." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+// ---- Kho xe PDI nhà máy (BizHTC.HTMV.PDI_VIN / PDI_VIN) ----
+app.MapGet("/api/storage-pdi-vins", async (IVehicleService svc, string? vin, string? modelCode, string? pdiStorageStatus, bool? activeOnly) =>
+    Results.Ok(await svc.ListStoragePdiVinsAsync(vin, modelCode, pdiStorageStatus, activeOnly))).RequireAuthorization();
+
+app.MapPost("/api/storage-pdi-vins", async (SaveStoragePdiVinDto dto, IVehicleService svc) =>
+{
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách xe PDI_VIN để lưu." });
+    try { return Results.Ok(await svc.SaveStoragePdiVinsAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/htmv-pdi", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleHtmvPdiInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

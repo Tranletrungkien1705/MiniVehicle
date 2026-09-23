@@ -7522,3 +7522,65 @@ public sealed class SalesProcessKpi
     public DateTime? CreatedDate { get; set; }             // Ngày ghi nhận KPI
     public string? Remark { get; set; }
 }
+/// <summary>Đề nghị nhận xe &amp; kiểm tra PDI tại nhà máy OEM (BizHTC.HTMV.HTMV_PDI / HTMV_PDI): hãng xe lập đề nghị nhận lô xe từ nhà máy sản xuất (HTMV Ninh Bình) để kiểm tra chất lượng tiền xuất xưởng theo từng VIN trước khi nhập kho PDI.</summary>
+public sealed class HtmvPdi
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PDINo { get; set; } = "";               // Mã đề nghị nhận xe PDI (PDI...)
+    public string Status { get; set; } = "P";             // Trạng thái header (HTMV_PDI.PDIStatus, TConst.Stage): P (Pending) → F (Finished) / C (Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú đề nghị nhận xe
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }               // Người duyệt (HTMV_PDI.ApprovedBy)
+    public DateTime? ApprovedAt { get; set; }             // Ngày duyệt (HTMV_PDI.ApprovedDate)
+}
+
+/// <summary>Chi tiết xe VIN trong đề nghị nhận xe PDI nhà máy (BizHTC.HTMV.HTMV_PDIDtl / HTMV_PDIDtl): mỗi dòng 1 VIN với 2 trục trạng thái độc lập — trạng thái dòng (PDIDtlStatus) và trạng thái kho PDI (PDIStorageStatus).</summary>
+public sealed class HtmvPdiDtl
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long HtmvPdiId { get; set; }
+    public string PDINo { get; set; } = "";
+    public string VIN { get; set; } = "";
+    public string? RefNo { get; set; }                    // Số Proforma Invoice / PI liên quan (Ord_PI)
+    public string? LCTemp { get; set; }                   // Mã L/C tạm (đối chiếu PI)
+    public string? SpecCode { get; set; }                 // Phiên bản xe
+    public string? ModelCode { get; set; }                // Dòng xe (suy ra từ SpecCode)
+    public string? ColorCode { get; set; }                // Màu xe
+    public string? ProductionMonth { get; set; }          // Tháng sản xuất (yyyy-MM)
+    public string? EngineNo { get; set; }                 // Số máy
+    public string PDIDtlStatus { get; set; } = "P";       // Trạng thái DÒNG (TConst.Stage): P → F (đã duyệt) / C (đã hủy)
+    public string PDIStorageStatus { get; set; } = "P";   // Trạng thái KHO PDI (TConst.Stage): P → F (đã nhập kho PDI)
+    public string PdiResult { get; set; } = "Pending";    // Kết quả kiểm PDI: Pending → Passed / Failed
+    public string? FlagRepair { get; set; }               // Cờ cần sửa chữa sau kiểm PDI (HTMV_PDIDtl.FlagRepair)
+    public string? RepairRemark { get; set; }             // Ghi chú sửa chữa (HTMV_PDIDtl.RepairRemark)
+    public DateTime? PDIDate { get; set; }                // Ngày đề nghị nhận xe / ngày nhập kho PDI (HTMV_PDIDtl.PDIDate)
+    public string? Remark { get; set; }
+    public string? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Xe nhập kho PDI (BizHTC.HTMV.PDI_VIN / PDI_VIN): danh mục xe đã hoàn tất kiểm tra PDI và nhập kho PDI nhà máy, lưu model/spec/màu, số chìa khóa, serial AVN và số ắc quy.</summary>
+public sealed class StoragePdiVin
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string VIN { get; set; } = "";
+    public string? ModelCode { get; set; }
+    public string? SpecCode { get; set; }
+    public string? ColorCode { get; set; }
+    public string? OrderNoMMS { get; set; }               // Số lệnh sản xuất MMS
+    public string? OrderNoMMSDelivery { get; set; }       // Số lệnh giao MMS
+    public string? EngineNo { get; set; }
+    public string? KeyNo { get; set; }                    // Số chìa khóa
+    public string? AVNSerialNo { get; set; }              // Serial màn hình AVN
+    public string? BatteryNo { get; set; }                // Số ắc quy
+    public string FlagActive { get; set; } = "1";         // Còn hiệu lực (1) / đã xóa (0)
+    public string? PDIStorageStatus { get; set; }         // Trạng thái kho PDI của VIN (PDI_VIN.PDIStorageStatus)
+    public DateTime? FinishDTime { get; set; }            // Thời điểm hoàn tất PDI = thời gian nhập kho
+    public string? Remark { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
+}
