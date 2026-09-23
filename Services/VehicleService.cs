@@ -2039,6 +2039,26 @@ public interface IVehicleService
     Task<object> GetAvailableTestDriveVehiclesAsync(string? dealerCode, string? model);
     Task<object?> GetVehicleTestDriveInfoAsync(string vin);
     Task<object?> GetVehicleTestDriveHistoryAsync(string vin);
+
+    // Kế hoạch Điều độ Vận tải & Phân bổ Xe ô tô OEM (BizHTC.Storage / Sto_TranspPlan, Sto_TranspPlanDetail / FrmSto_TranspPlan, FrmLenKeHoach_BanHang, FrmUpdateFVINToRVIN)
+    Task<object> CreateTransportPlanAsync(CreateTransportPlanDto dto);
+    Task<object> ListTransportPlansAsync(string? status, string? month, string? storageCode, string? tpType, string? planNo, string? vin, string? dealerCode, string? transporterCode);
+    Task<object?> GetTransportPlanAsync(string planNo);
+    Task<object?> UpdateTransportPlanHeaderAsync(string planNo, UpdateTransportPlanDto dto);
+    Task<object?> TransportPlanTransitionAsync(string planNo, string action, TransportPlanTransitionDto? dto);
+    Task<object?> AddTransportPlanLineAsync(string planNo, AddTransportPlanLineDto dto);
+    Task<object?> UpdateTransportPlanLineByKeHoachAsync(string planNo, long lineId, UpdateTransportPlanLineByKeHoachDto dto);
+    Task<object?> UpdateTransportPlanLineByBanHangAsync(string planNo, long lineId, UpdateTransportPlanLineByBanHangDto dto);
+    Task<object?> UpdateTransportPlanLineByLogisticAsync(string planNo, long lineId, UpdateTransportPlanLineByLogisticDto dto);
+    Task<object?> MapVinRealAsync(string planNo, long lineId, MapVinRealDto dto);
+    Task<object> MapVinRealBatchAsync(string planNo, MapVinRealBatchDto dto);
+    Task<object?> UnmapVinRealAsync(string planNo, long lineId, UnmapVinRealDto dto);
+    Task<object?> TransporterApproveLineAsync(string planNo, long lineId, TransporterApproveLineDto dto);
+    Task<bool> RemoveTransportPlanLineAsync(string planNo, long lineId);
+    Task<bool> RemoveTransportPlanAsync(string planNo);
+    Task<TransportPlanSummaryDto> GetTransportPlanSummaryAsync(string? planMonth, string? storageCode);
+    Task<object?> GetVehicleTransportPlanInfoAsync(string vin);
+    Task<object?> GetVehicleTransportPlanHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -29661,6 +29681,927 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 veh.LastOdoKm
             },
             testDrives = drives,
+            events
+        };
+    }
+
+    // ===== Kế hoạch Điều độ Vận tải & Phân bổ Xe ô tô OEM (BizHTC.Storage / Sto_TranspPlan, Sto_TranspPlanDetail / FrmSto_TranspPlan, FrmLenKeHoach_BanHang, FrmUpdateFVINToRVIN) =====
+
+    public async Task<object> CreateTransportPlanAsync(CreateTransportPlanDto dto)
+    {
+        var planMonth = string.IsNullOrWhiteSpace(dto.PlanMonth) ? DateTime.Now.ToString("yyyy-MM") : dto.PlanMonth.Trim();
+        var planNo = string.IsNullOrWhiteSpace(dto.PlanNo)
+            ? "TP" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.PlanNo.Trim().ToUpperInvariant();
+
+        if (await db.TransportPlans.AnyAsync(p => p.OrgId == Org && p.PlanNo == planNo))
+            throw new InvalidOperationException($"Mã kế hoạch điều độ vận tải {planNo} đã tồn tại.");
+
+        var plan = new TransportPlan
+        {
+            OrgId = Org,
+            PlanNo = planNo,
+            PlanNoUser = dto.PlanNoUser?.Trim(),
+            PlanMonth = planMonth,
+            PlanDate = dto.PlanDate ?? DateTime.Now,
+            StorageCode = string.IsNullOrWhiteSpace(dto.StorageCode) ? "PLANT-HTMV1" : dto.StorageCode.Trim().ToUpperInvariant(),
+            StorageName = dto.StorageName?.Trim() ?? "Kho Tổng Nhà máy HTMV Ninh Bình 1",
+            TPType = string.IsNullOrWhiteSpace(dto.TPType) ? "Road" : dto.TPType.Trim(),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.TransportPlans.Add(plan);
+        await db.SaveChangesAsync();
+
+        int lineIdx = 1;
+        int realVinCount = 0;
+        if (dto.Lines != null && dto.Lines.Count > 0)
+        {
+            foreach (var lineDto in dto.Lines)
+            {
+                var fvin = string.IsNullOrWhiteSpace(lineDto.VINPlan) ? $"PLN-{planNo}-{lineIdx:D3}" : lineDto.VINPlan.Trim().ToUpperInvariant();
+                string? rvin = string.IsNullOrWhiteSpace(lineDto.Vin) ? null : lineDto.Vin.Trim().ToUpperInvariant();
+                bool isReal = false;
+                if (!string.IsNullOrWhiteSpace(rvin))
+                {
+                    var exists = await db.Vehicles.AnyAsync(v => v.OrgId == Org && v.Vin == rvin);
+                    if (exists)
+                    {
+                        isReal = true;
+                        realVinCount++;
+                    }
+                }
+
+                var line = new TransportPlanLine
+                {
+                    OrgId = Org,
+                    TransportPlanId = plan.Id,
+                    PlanNo = plan.PlanNo,
+                    LineIndex = lineIdx++,
+                    VINPlan = fvin,
+                    Vin = isReal ? rvin : null,
+                    FlagRealVin = isReal,
+                    Model = string.IsNullOrWhiteSpace(lineDto.Model) ? "Accent" : lineDto.Model.Trim(),
+                    SpecCode = lineDto.SpecCode?.Trim(),
+                    SpecDescription = lineDto.SpecDescription?.Trim(),
+                    ColorCode = lineDto.ColorCode?.Trim() ?? "NWAC",
+                    ColorName = lineDto.ColorName?.Trim() ?? "Trắng ngọc trai",
+                    StorageCode = string.IsNullOrWhiteSpace(lineDto.StorageCode) ? plan.StorageCode : lineDto.StorageCode.Trim().ToUpperInvariant(),
+                    DealerCode = lineDto.DealerCode.Trim().ToUpperInvariant(),
+                    DealerName = lineDto.DealerName?.Trim(),
+                    FProvinceCode = lineDto.FProvinceCode?.Trim() ?? "NB",
+                    FProvinceName = lineDto.FProvinceName?.Trim() ?? "Ninh Bình",
+                    FDistrictCode = lineDto.FDistrictCode?.Trim() ?? "GV",
+                    FDistrictName = lineDto.FDistrictName?.Trim() ?? "Gia Viễn",
+                    TProvinceCode = lineDto.TProvinceCode?.Trim() ?? "HN",
+                    TProvinceName = lineDto.TProvinceName?.Trim() ?? "Hà Nội",
+                    TDistrictCode = lineDto.TDistrictCode?.Trim() ?? "CG",
+                    TDistrictName = lineDto.TDistrictName?.Trim() ?? "Cầu Giấy",
+                    TransporterCode = lineDto.TransporterCode?.Trim().ToUpperInvariant() ?? "NYK",
+                    TransporterName = lineDto.TransporterName?.Trim() ?? "Công ty TNHH Vận tải Hàng hải NYK Việt Nam",
+                    TruckPlateNo = lineDto.TruckPlateNo?.Trim(),
+                    DriverName = lineDto.DriverName?.Trim(),
+                    DriverPhone = lineDto.DriverPhone?.Trim(),
+                    CQStartDate = lineDto.CQStartDate,
+                    ExpectedDate = lineDto.ExpectedDate ?? DateTime.Now.AddDays(2),
+                    TPStatus = isReal ? "ApprovedByPlan" : "Pending",
+                    TransporterStatus = "Pending",
+                    Status = "Pending",
+                    Remark = lineDto.Remark?.Trim()
+                };
+
+                db.TransportPlanLines.Add(line);
+
+                if (isReal && rvin != null)
+                {
+                    Log(rvin, "TransportPlanLineCreated", $"Đợt {plan.PlanNo} - FVIN: {fvin} -> ĐL: {line.DealerCode}");
+                }
+            }
+
+            plan.TotalVehicleCount = dto.Lines.Count;
+            plan.TotalRealVinCount = realVinCount;
+            await db.SaveChangesAsync();
+        }
+
+        return new
+        {
+            plan.PlanNo,
+            plan.PlanNoUser,
+            plan.PlanMonth,
+            plan.PlanDate,
+            plan.StorageCode,
+            plan.StorageName,
+            plan.TPType,
+            plan.TotalVehicleCount,
+            plan.TotalRealVinCount,
+            plan.Status,
+            plan.Remark,
+            plan.CreatedBy,
+            plan.CreatedAt
+        };
+    }
+
+    public async Task<object> ListTransportPlansAsync(string? status, string? month, string? storageCode, string? tpType, string? planNo, string? vin, string? dealerCode, string? transporterCode)
+    {
+        var q = db.TransportPlans.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(p => p.Status == status);
+        if (!string.IsNullOrWhiteSpace(month)) q = q.Where(p => p.PlanMonth == month);
+        if (!string.IsNullOrWhiteSpace(storageCode)) { var s = storageCode.Trim().ToUpperInvariant(); q = q.Where(p => p.StorageCode == s); }
+        if (!string.IsNullOrWhiteSpace(tpType)) q = q.Where(p => p.TPType == tpType);
+        if (!string.IsNullOrWhiteSpace(planNo)) { var pn = planNo.Trim().ToUpperInvariant(); q = q.Where(p => p.PlanNo.Contains(pn) || (p.PlanNoUser != null && p.PlanNoUser.Contains(pn))); }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var planNos = await db.TransportPlanLines.Where(l => l.OrgId == Org && (l.Vin == vv || l.VINPlan == vv)).Select(l => l.PlanNo).Distinct().ToListAsync();
+            q = q.Where(p => planNos.Contains(p.PlanNo));
+        }
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+        {
+            var d = dealerCode.Trim().ToUpperInvariant();
+            var planNos = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.DealerCode == d).Select(l => l.PlanNo).Distinct().ToListAsync();
+            q = q.Where(p => planNos.Contains(p.PlanNo));
+        }
+        if (!string.IsNullOrWhiteSpace(transporterCode))
+        {
+            var tr = transporterCode.Trim().ToUpperInvariant();
+            var planNos = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.TransporterCode == tr).Select(l => l.PlanNo).Distinct().ToListAsync();
+            q = q.Where(p => planNos.Contains(p.PlanNo));
+        }
+
+        var items = await q.OrderByDescending(p => p.Id).ToListAsync();
+        return items.Select(p => new
+        {
+            p.Id,
+            p.PlanNo,
+            p.PlanNoUser,
+            p.PlanMonth,
+            p.PlanDate,
+            p.StorageCode,
+            p.StorageName,
+            p.TPType,
+            p.TotalVehicleCount,
+            p.TotalRealVinCount,
+            p.Status,
+            p.Remark,
+            p.CreatedBy,
+            p.CreatedAt,
+            p.ApprovedBy,
+            p.ApprovedAt,
+            p.ExecutedBy,
+            p.ExecutedAt,
+            p.CompletedBy,
+            p.CompletedAt
+        });
+    }
+
+    public async Task<object?> GetTransportPlanAsync(string planNo)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null) return null;
+
+        var lines = await db.TransportPlanLines
+            .Where(l => l.OrgId == Org && l.TransportPlanId == plan.Id)
+            .OrderBy(l => l.LineIndex)
+            .ToListAsync();
+
+        return new
+        {
+            plan.Id,
+            plan.PlanNo,
+            plan.PlanNoUser,
+            plan.PlanMonth,
+            plan.PlanDate,
+            plan.StorageCode,
+            plan.StorageName,
+            plan.TPType,
+            plan.TotalVehicleCount,
+            plan.TotalRealVinCount,
+            plan.Status,
+            plan.Remark,
+            plan.CreatedBy,
+            plan.CreatedAt,
+            plan.ApprovedBy,
+            plan.ApprovedAt,
+            plan.ExecutedBy,
+            plan.ExecutedAt,
+            plan.CompletedBy,
+            plan.CompletedAt,
+            plan.RejectedBy,
+            plan.RejectedAt,
+            plan.RejectReason,
+            plan.CancelledBy,
+            plan.CancelledAt,
+            plan.CancelReason,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.LineIndex,
+                l.VINPlan,
+                l.Vin,
+                l.FlagRealVin,
+                l.Model,
+                l.SpecCode,
+                l.SpecDescription,
+                l.ColorCode,
+                l.ColorName,
+                l.StorageCode,
+                l.DealerCode,
+                l.DealerName,
+                l.FProvinceCode,
+                l.FProvinceName,
+                l.FDistrictCode,
+                l.FDistrictName,
+                l.TProvinceCode,
+                l.TProvinceName,
+                l.TDistrictCode,
+                l.TDistrictName,
+                l.TransporterCode,
+                l.TransporterName,
+                l.TruckPlateNo,
+                l.DriverName,
+                l.DriverPhone,
+                l.CQStartDate,
+                l.ExpectedDate,
+                l.ActualDepartureDate,
+                l.ActualArrivalDate,
+                l.TPStatus,
+                l.TransporterStatus,
+                l.TransporterAppDate,
+                l.TransporterAppBy,
+                l.TransporterRejectReason,
+                l.Status,
+                l.Remark
+            })
+        };
+    }
+
+    public async Task<object?> UpdateTransportPlanHeaderAsync(string planNo, UpdateTransportPlanDto dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null || plan.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.PlanNoUser)) plan.PlanNoUser = dto.PlanNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PlanMonth)) plan.PlanMonth = dto.PlanMonth.Trim();
+        if (dto.PlanDate.HasValue) plan.PlanDate = dto.PlanDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.StorageCode)) plan.StorageCode = dto.StorageCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.StorageName)) plan.StorageName = dto.StorageName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TPType)) plan.TPType = dto.TPType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) plan.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return plan;
+    }
+
+    public async Task<object?> AddTransportPlanLineAsync(string planNo, AddTransportPlanLineDto dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null || plan.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var maxIdx = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.TransportPlanId == plan.Id).Select(l => (int?)l.LineIndex).MaxAsync() ?? 0;
+        int nextIdx = maxIdx + 1;
+
+        var fvin = string.IsNullOrWhiteSpace(dto.VINPlan) ? $"PLN-{plan.PlanNo}-{nextIdx:D3}" : dto.VINPlan.Trim().ToUpperInvariant();
+        string? rvin = string.IsNullOrWhiteSpace(dto.Vin) ? null : dto.Vin.Trim().ToUpperInvariant();
+        bool isReal = false;
+        if (!string.IsNullOrWhiteSpace(rvin))
+        {
+            var exists = await db.Vehicles.AnyAsync(v => v.OrgId == Org && v.Vin == rvin);
+            if (exists) isReal = true;
+        }
+
+        var line = new TransportPlanLine
+        {
+            OrgId = Org,
+            TransportPlanId = plan.Id,
+            PlanNo = plan.PlanNo,
+            LineIndex = nextIdx,
+            VINPlan = fvin,
+            Vin = isReal ? rvin : null,
+            FlagRealVin = isReal,
+            Model = string.IsNullOrWhiteSpace(dto.Model) ? "Accent" : dto.Model.Trim(),
+            SpecCode = dto.SpecCode?.Trim(),
+            SpecDescription = dto.SpecDescription?.Trim(),
+            ColorCode = dto.ColorCode?.Trim() ?? "NWAC",
+            ColorName = dto.ColorName?.Trim() ?? "Trắng ngọc trai",
+            StorageCode = string.IsNullOrWhiteSpace(dto.StorageCode) ? plan.StorageCode : dto.StorageCode.Trim().ToUpperInvariant(),
+            DealerCode = dto.DealerCode.Trim().ToUpperInvariant(),
+            DealerName = dto.DealerName?.Trim(),
+            FProvinceCode = dto.FProvinceCode?.Trim() ?? "NB",
+            FProvinceName = dto.FProvinceName?.Trim() ?? "Ninh Bình",
+            FDistrictCode = dto.FDistrictCode?.Trim() ?? "GV",
+            FDistrictName = dto.FDistrictName?.Trim() ?? "Gia Viễn",
+            TProvinceCode = dto.TProvinceCode?.Trim() ?? "HN",
+            TProvinceName = dto.TProvinceName?.Trim() ?? "Hà Nội",
+            TDistrictCode = dto.TDistrictCode?.Trim() ?? "CG",
+            TDistrictName = dto.TDistrictName?.Trim() ?? "Cầu Giấy",
+            TransporterCode = dto.TransporterCode?.Trim().ToUpperInvariant() ?? "NYK",
+            TransporterName = dto.TransporterName?.Trim() ?? "Công ty TNHH Vận tải Hàng hải NYK Việt Nam",
+            TruckPlateNo = dto.TruckPlateNo?.Trim(),
+            DriverName = dto.DriverName?.Trim(),
+            DriverPhone = dto.DriverPhone?.Trim(),
+            CQStartDate = dto.CQStartDate,
+            ExpectedDate = dto.ExpectedDate ?? DateTime.Now.AddDays(2),
+            TPStatus = isReal ? "ApprovedByPlan" : "Pending",
+            TransporterStatus = "Pending",
+            Status = "Pending",
+            Remark = dto.Remark?.Trim()
+        };
+
+        db.TransportPlanLines.Add(line);
+
+        var allLines = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.TransportPlanId == plan.Id).ToListAsync();
+        plan.TotalVehicleCount = allLines.Count + 1;
+        plan.TotalRealVinCount = allLines.Count(l => l.FlagRealVin) + (isReal ? 1 : 0);
+
+        await db.SaveChangesAsync();
+
+        if (isReal && rvin != null)
+        {
+            Log(rvin, "TransportPlanLineAdded", $"Đợt {plan.PlanNo} - FVIN: {fvin} -> ĐL: {line.DealerCode}");
+            await db.SaveChangesAsync();
+        }
+
+        return line;
+    }
+
+    public async Task<object?> UpdateTransportPlanLineByKeHoachAsync(string planNo, long lineId, UpdateTransportPlanLineByKeHoachDto dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null || plan.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.TransportPlanLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TransportPlanId == plan.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (dto.CQStartDate.HasValue) line.CQStartDate = dto.CQStartDate.Value;
+        if (dto.ExpectedDate.HasValue) line.ExpectedDate = dto.ExpectedDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.StorageCode)) line.StorageCode = dto.StorageCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.Model)) line.Model = dto.Model.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SpecCode)) line.SpecCode = dto.SpecCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.ColorCode)) line.ColorCode = dto.ColorCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.ColorName)) line.ColorName = dto.ColorName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        line.TPStatus = "ApprovedByPlan";
+        await db.SaveChangesAsync();
+
+        if (line.FlagRealVin && !string.IsNullOrWhiteSpace(line.Vin))
+        {
+            Log(line.Vin, "TransportPlanUpdatedByPlan", $"Khối Kế hoạch cập nhật ngày QC: {line.CQStartDate:dd/MM/yyyy}, Ngày dự kiến: {line.ExpectedDate:dd/MM/yyyy}");
+            await db.SaveChangesAsync();
+        }
+
+        return line;
+    }
+
+    public async Task<object?> UpdateTransportPlanLineByBanHangAsync(string planNo, long lineId, UpdateTransportPlanLineByBanHangDto dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null || plan.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.TransportPlanLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TransportPlanId == plan.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) line.DealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.DealerName)) line.DealerName = dto.DealerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TPStatus)) line.TPStatus = dto.TPStatus.Trim();
+        else line.TPStatus = "ApprovedBySales";
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+
+        if (line.FlagRealVin && !string.IsNullOrWhiteSpace(line.Vin))
+        {
+            Log(line.Vin, "TransportPlanUpdatedBySales", $"Khối Bán hàng phân bổ đại lý: {line.DealerCode} ({line.DealerName})");
+            await db.SaveChangesAsync();
+        }
+
+        return line;
+    }
+
+    public async Task<object?> UpdateTransportPlanLineByLogisticAsync(string planNo, long lineId, UpdateTransportPlanLineByLogisticDto dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null || plan.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.TransportPlanLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TransportPlanId == plan.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.TransporterCode)) line.TransporterCode = dto.TransporterCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.TransporterName)) line.TransporterName = dto.TransporterName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.FProvinceCode)) line.FProvinceCode = dto.FProvinceCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.FProvinceName)) line.FProvinceName = dto.FProvinceName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.FDistrictCode)) line.FDistrictCode = dto.FDistrictCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.FDistrictName)) line.FDistrictName = dto.FDistrictName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TProvinceCode)) line.TProvinceCode = dto.TProvinceCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.TProvinceName)) line.TProvinceName = dto.TProvinceName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TDistrictCode)) line.TDistrictCode = dto.TDistrictCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.TDistrictName)) line.TDistrictName = dto.TDistrictName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TruckPlateNo)) line.TruckPlateNo = dto.TruckPlateNo.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DriverName)) line.DriverName = dto.DriverName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DriverPhone)) line.DriverPhone = dto.DriverPhone.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TransporterStatus)) line.TransporterStatus = dto.TransporterStatus.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        line.TPStatus = "DispatchedByLogistics";
+        await db.SaveChangesAsync();
+
+        if (line.FlagRealVin && !string.IsNullOrWhiteSpace(line.Vin))
+        {
+            Log(line.Vin, "TransportPlanUpdatedByLogistics", $"Khối Logistics chỉ định nhà xe: {line.TransporterCode}, Tuyến: {line.FProvinceName} -> {line.TProvinceName}");
+            await db.SaveChangesAsync();
+        }
+
+        return line;
+    }
+
+    public async Task<object?> MapVinRealAsync(string planNo, long lineId, MapVinRealDto dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null || plan.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.TransportPlanLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TransportPlanId == plan.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null)
+            throw new InvalidOperationException($"Số khung VIN {vin} không tồn tại trong hệ thống.");
+
+        if (veh.Status == VehicleStatus.Delivered)
+            throw new InvalidOperationException($"Xe số khung {vin} đã được giao cho khách hàng (Delivered), không thể gán vào kế hoạch vận chuyển.");
+
+        var alreadyMapped = await db.TransportPlanLines.AnyAsync(l => l.OrgId == Org && l.TransportPlanId == plan.Id && l.Id != lineId && l.Vin == vin && l.FlagRealVin);
+        if (alreadyMapped)
+            throw new InvalidOperationException($"Số khung VIN {vin} đã được gán cho một dòng khác trong cùng đợt kế hoạch.");
+
+        line.Vin = vin;
+        line.FlagRealVin = true;
+        if (!string.IsNullOrWhiteSpace(veh.Model) && (string.IsNullOrWhiteSpace(line.Model) || line.Model == "Accent"))
+            line.Model = veh.Model;
+        if (!string.IsNullOrWhiteSpace(veh.Color) && string.IsNullOrWhiteSpace(line.ColorName))
+            line.ColorName = veh.Color;
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        var lines = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.TransportPlanId == plan.Id).ToListAsync();
+        plan.TotalRealVinCount = lines.Count(l => l.FlagRealVin);
+
+        await db.SaveChangesAsync();
+
+        Log(vin, "TransportPlanVinMapped", $"Gán số khung thật RVIN: {vin} cho FVIN: {line.VINPlan} (Đợt: {plan.PlanNo}) bởi {dto.Actor ?? "System"}");
+        await db.SaveChangesAsync();
+
+        return line;
+    }
+
+    public async Task<object> MapVinRealBatchAsync(string planNo, MapVinRealBatchDto dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null)
+            throw new InvalidOperationException($"Không tìm thấy kế hoạch điều độ vận tải {planNo}.");
+
+        var lines = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.TransportPlanId == plan.Id).ToListAsync();
+        int mappedCount = 0;
+        var successes = new List<object>();
+        var errors = new List<string>();
+
+        foreach (var item in dto.Mappings)
+        {
+            var fvin = item.VINPlan.Trim().ToUpperInvariant();
+            var rvin = item.Vin.Trim().ToUpperInvariant();
+
+            var line = lines.FirstOrDefault(l => l.VINPlan == fvin);
+            if (line is null)
+            {
+                errors.Add($"Không tìm thấy dòng FVIN: {fvin}");
+                continue;
+            }
+
+            var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == rvin);
+            if (veh is null)
+            {
+                errors.Add($"VIN {rvin} không tồn tại");
+                continue;
+            }
+
+            line.Vin = rvin;
+            line.FlagRealVin = true;
+            if (!string.IsNullOrWhiteSpace(veh.Model)) line.Model = veh.Model;
+            if (!string.IsNullOrWhiteSpace(veh.Color)) line.ColorName = veh.Color;
+
+            Log(rvin, "TransportPlanVinMapped", $"Batch Map FVIN {fvin} -> RVIN {rvin} (Đợt {plan.PlanNo})");
+            mappedCount++;
+            successes.Add(new { fvin, rvin });
+        }
+
+        plan.TotalRealVinCount = lines.Count(l => l.FlagRealVin);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            plan.PlanNo,
+            totalMapped = mappedCount,
+            totalRealVinCount = plan.TotalRealVinCount,
+            successes,
+            errors
+        };
+    }
+
+    public async Task<object?> UnmapVinRealAsync(string planNo, long lineId, UnmapVinRealDto dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null || plan.Status is "Completed" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.TransportPlanLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TransportPlanId == plan.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        var oldVin = line.Vin;
+        line.Vin = null;
+        line.FlagRealVin = false;
+
+        var lines = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.TransportPlanId == plan.Id).ToListAsync();
+        plan.TotalRealVinCount = lines.Count(l => l.FlagRealVin);
+
+        await db.SaveChangesAsync();
+
+        if (!string.IsNullOrWhiteSpace(oldVin))
+        {
+            Log(oldVin, "TransportPlanVinUnmapped", $"Hủy gán số khung thật RVIN: {oldVin} khỏi FVIN: {line.VINPlan} (Đợt {plan.PlanNo}) - Lý do: {dto.Reason ?? "Không có"}");
+            await db.SaveChangesAsync();
+        }
+
+        return line;
+    }
+
+    public async Task<object?> TransporterApproveLineAsync(string planNo, long lineId, TransporterApproveLineDto dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null) return null;
+
+        var line = await db.TransportPlanLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TransportPlanId == plan.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (dto.IsAccepted)
+        {
+            line.TransporterStatus = "Confirmed";
+            line.TransporterAppDate = DateTime.Now;
+            line.TransporterAppBy = dto.Actor ?? "TransporterDispatcher";
+            if (!string.IsNullOrWhiteSpace(dto.TruckPlateNo)) line.TruckPlateNo = dto.TruckPlateNo.Trim();
+            if (!string.IsNullOrWhiteSpace(dto.DriverName)) line.DriverName = dto.DriverName.Trim();
+            if (!string.IsNullOrWhiteSpace(dto.DriverPhone)) line.DriverPhone = dto.DriverPhone.Trim();
+            if (dto.EstimatedArrivalDate.HasValue) line.ActualArrivalDate = dto.EstimatedArrivalDate.Value;
+            if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+        }
+        else
+        {
+            line.TransporterStatus = "Rejected";
+            line.TransporterRejectReason = dto.RejectReason?.Trim() ?? "Nhà xe quá tải / Không đủ xe lồng chuyên dụng";
+            if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+        }
+
+        await db.SaveChangesAsync();
+
+        if (line.FlagRealVin && !string.IsNullOrWhiteSpace(line.Vin))
+        {
+            Log(line.Vin, dto.IsAccepted ? "TransportPlanConfirmedByTransporter" : "TransportPlanRejectedByTransporter",
+                $"Nhà xe {line.TransporterCode} {(dto.IsAccepted ? "xác nhận điều vận" : "từ chối tiếp nhận")}: {line.TruckPlateNo} - Lái xe: {line.DriverName}");
+            await db.SaveChangesAsync();
+        }
+
+        return line;
+    }
+
+    public async Task<object?> TransportPlanTransitionAsync(string planNo, string action, TransportPlanTransitionDto? dto)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        action = action.Trim().ToLowerInvariant();
+
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null) return null;
+
+        var lines = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.TransportPlanId == plan.Id).ToListAsync();
+        var actor = dto?.Actor ?? "System";
+
+        switch (action)
+        {
+            case "submit":
+                if (plan.Status != "Draft")
+                    throw new InvalidOperationException($"Chỉ có thể gửi duyệt kế hoạch đang ở trạng thái Draft (Hiện tại: {plan.Status}).");
+                plan.Status = "Submitted";
+                break;
+
+            case "approve":
+                if (plan.Status is not "Draft" and not "Submitted")
+                    throw new InvalidOperationException($"Chỉ có thể phê duyệt kế hoạch ở trạng thái Draft hoặc Submitted (Hiện tại: {plan.Status}).");
+
+                plan.Status = "Approved";
+                plan.ApprovedBy = actor;
+                plan.ApprovedAt = dto?.TransitionDate ?? DateTime.Now;
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Approved";
+                    if (line.TPStatus == "Pending") line.TPStatus = "Finished";
+
+                    if (line.FlagRealVin && !string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == line.Vin);
+                        if (veh != null)
+                        {
+                            veh.LastTranspPlanNo = plan.PlanNo;
+                            veh.LastTranspPlanDate = plan.PlanDate;
+                            veh.TranspPlanCount += 1;
+                            if (string.IsNullOrWhiteSpace(veh.DealerCode) && !string.IsNullOrWhiteSpace(line.DealerCode))
+                                veh.DealerCode = line.DealerCode;
+                        }
+
+                        Log(line.Vin, "TransportPlanApproved",
+                            $"Phê duyệt KHVT {plan.PlanNo}: {line.StorageCode} -> {line.DealerCode} ({line.TProvinceName}) qua nhà xe {line.TransporterCode}");
+                    }
+                }
+                break;
+
+            case "execute":
+                if (plan.Status is not "Approved")
+                    throw new InvalidOperationException($"Chỉ có thể xuất lệnh vận chuyển cho kế hoạch đã được Approved (Hiện tại: {plan.Status}).");
+
+                plan.Status = "InExecution";
+                plan.ExecutedBy = actor;
+                plan.ExecutedAt = dto?.TransitionDate ?? DateTime.Now;
+
+                foreach (var line in lines)
+                {
+                    line.Status = "InTransit";
+                    line.ActualDepartureDate = DateTime.Now;
+                    line.TransporterStatus = "InTransit";
+
+                    if (line.FlagRealVin && !string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        Log(line.Vin, "TransportPlanInTransit",
+                            $"Xuất bến xe lồng vận chuyển {plan.PlanNo}: Xe lồng {line.TruckPlateNo} - Lái xe {line.DriverName} ({line.DriverPhone})");
+                    }
+                }
+                break;
+
+            case "complete":
+                if (plan.Status is not "InExecution" and not "Approved")
+                    throw new InvalidOperationException($"Chỉ có thể hoàn tất kế hoạch đang InExecution hoặc Approved (Hiện tại: {plan.Status}).");
+
+                plan.Status = "Completed";
+                plan.CompletedBy = actor;
+                plan.CompletedAt = dto?.TransitionDate ?? DateTime.Now;
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Completed";
+                    line.TPStatus = "Finished";
+                    line.TransporterStatus = "Delivered";
+                    if (!line.ActualArrivalDate.HasValue) line.ActualArrivalDate = DateTime.Now;
+
+                    if (line.FlagRealVin && !string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        Log(line.Vin, "TransportPlanCompleted",
+                            $"Hoàn tất hạ tải bàn giao xe tại đại lý {line.DealerCode} ({line.TProvinceName}) theo KHVT {plan.PlanNo}");
+                    }
+                }
+                break;
+
+            case "reject":
+                if (plan.Status is not "Draft" and not "Submitted")
+                    throw new InvalidOperationException($"Chỉ có thể từ chối kế hoạch ở trạng thái Draft hoặc Submitted (Hiện tại: {plan.Status}).");
+
+                plan.Status = "Rejected";
+                plan.RejectedBy = actor;
+                plan.RejectedAt = dto?.TransitionDate ?? DateTime.Now;
+                plan.RejectReason = dto?.Reason ?? "Lãnh đạo từ chối duyệt kế hoạch";
+                break;
+
+            case "cancel":
+                if (plan.Status is "Completed")
+                    throw new InvalidOperationException("Không thể hủy kế hoạch đã hoàn tất.");
+
+                plan.Status = "Cancelled";
+                plan.CancelledBy = actor;
+                plan.CancelledAt = dto?.TransitionDate ?? DateTime.Now;
+                plan.CancelReason = dto?.Reason ?? "Hủy kế hoạch điều độ vận tải";
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Cancelled";
+                    if (line.FlagRealVin && !string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        Log(line.Vin, "TransportPlanCancelled", $"Hủy điều phối dòng xe theo KHVT {plan.PlanNo}: {dto?.Reason}");
+                    }
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động chuyển trạng thái '{action}' không được hỗ trợ.");
+        }
+
+        await db.SaveChangesAsync();
+        return plan;
+    }
+
+    public async Task<bool> RemoveTransportPlanLineAsync(string planNo, long lineId)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null || plan.Status is "Completed" or "Cancelled" or "Approved" or "InExecution") return false;
+
+        var line = await db.TransportPlanLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.TransportPlanId == plan.Id && l.Id == lineId);
+        if (line is null) return false;
+
+        db.TransportPlanLines.Remove(line);
+
+        var remainingLines = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.TransportPlanId == plan.Id && l.Id != lineId).ToListAsync();
+        plan.TotalVehicleCount = remainingLines.Count;
+        plan.TotalRealVinCount = remainingLines.Count(l => l.FlagRealVin);
+
+        await db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> RemoveTransportPlanAsync(string planNo)
+    {
+        planNo = planNo.Trim().ToUpperInvariant();
+        var plan = await db.TransportPlans.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PlanNo == planNo || p.PlanNoUser == planNo));
+        if (plan is null || plan.Status is "Completed" or "Approved" or "InExecution") return false;
+
+        var lines = await db.TransportPlanLines.Where(l => l.OrgId == Org && l.TransportPlanId == plan.Id).ToListAsync();
+        db.TransportPlanLines.RemoveRange(lines);
+        db.TransportPlans.Remove(plan);
+
+        await db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<TransportPlanSummaryDto> GetTransportPlanSummaryAsync(string? planMonth, string? storageCode)
+    {
+        var q = db.TransportPlans.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(planMonth)) q = q.Where(p => p.PlanMonth == planMonth);
+        if (!string.IsNullOrWhiteSpace(storageCode)) { var s = storageCode.Trim().ToUpperInvariant(); q = q.Where(p => p.StorageCode == s); }
+
+        var plans = await q.ToListAsync();
+        var planIds = plans.Select(p => p.Id).ToList();
+
+        var lines = await db.TransportPlanLines
+            .Where(l => l.OrgId == Org && planIds.Contains(l.TransportPlanId))
+            .ToListAsync();
+
+        int totalPlans = plans.Count;
+        int totalDraft = plans.Count(p => p.Status == "Draft");
+        int totalSubmitted = plans.Count(p => p.Status == "Submitted");
+        int totalApproved = plans.Count(p => p.Status == "Approved");
+        int totalInExecution = plans.Count(p => p.Status == "InExecution");
+        int totalCompleted = plans.Count(p => p.Status == "Completed");
+        int totalCancelled = plans.Count(p => p.Status == "Cancelled");
+
+        int totalVehicles = lines.Count;
+        int totalMapped = lines.Count(l => l.FlagRealVin);
+        decimal mappingRate = totalVehicles > 0 ? Math.Round((decimal)totalMapped * 100m / totalVehicles, 1) : 0;
+
+        var byMonth = plans
+            .GroupBy(p => p.PlanMonth)
+            .Select(g =>
+            {
+                var gIds = g.Select(x => x.Id).ToList();
+                var gLines = lines.Where(l => gIds.Contains(l.TransportPlanId)).ToList();
+                return new TransportPlanMonthStatsDto(
+                    g.Key,
+                    g.Count(),
+                    gLines.Count,
+                    gLines.Count(l => l.FlagRealVin)
+                );
+            })
+            .OrderByDescending(x => x.PlanMonth)
+            .ToList();
+
+        var byTransporter = lines
+            .GroupBy(l => l.TransporterCode)
+            .Select(g => new TransportPlanTransporterStatsDto(
+                g.Key,
+                g.FirstOrDefault()?.TransporterName ?? g.Key,
+                g.Count(),
+                g.Count(l => l.Status == "Completed" || l.TransporterStatus == "Delivered")
+            ))
+            .OrderByDescending(x => x.VehicleCount)
+            .ToList();
+
+        var byDealer = lines
+            .GroupBy(l => l.DealerCode)
+            .Select(g => new TransportPlanDealerStatsDto(
+                g.Key,
+                g.FirstOrDefault()?.DealerName ?? g.Key,
+                g.Count(),
+                g.Count(l => l.Status == "Completed" || l.TPStatus == "Finished")
+            ))
+            .OrderByDescending(x => x.VehicleCount)
+            .ToList();
+
+        var byModel = lines
+            .GroupBy(l => l.Model)
+            .Select(g => new TransportPlanModelStatsDto(
+                g.Key,
+                g.Count(),
+                g.Count(l => l.FlagRealVin)
+            ))
+            .OrderByDescending(x => x.VehicleCount)
+            .ToList();
+
+        return new TransportPlanSummaryDto(
+            totalPlans,
+            totalDraft,
+            totalSubmitted,
+            totalApproved,
+            totalInExecution,
+            totalCompleted,
+            totalCancelled,
+            totalVehicles,
+            totalMapped,
+            mappingRate,
+            byMonth,
+            byTransporter,
+            byDealer,
+            byModel
+        );
+    }
+
+    public async Task<object?> GetVehicleTransportPlanInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.TransportPlanLines
+            .Where(l => l.OrgId == Org && (l.Vin == vin || l.VINPlan == vin))
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new VehicleTransportPlanInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.DealerCode,
+            veh.LastTranspPlanNo,
+            veh.LastTranspPlanDate,
+            veh.TranspPlanCount,
+            lines
+        );
+    }
+
+    public async Task<object?> GetVehicleTransportPlanHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.TransportPlanLines
+            .Where(l => l.OrgId == Org && (l.Vin == vin || l.VINPlan == vin))
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var planNos = lines.Select(l => l.PlanNo).Distinct().ToList();
+        var plans = await db.TransportPlans
+            .Where(p => p.OrgId == Org && planNos.Contains(p.PlanNo))
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("TransportPlan") || e.Kind.StartsWith("TransportReq") || e.Kind.StartsWith("DeliveryOrder")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.EngineNo,
+                veh.Color,
+                veh.StorageCode,
+                veh.DealerCode,
+                veh.LastTranspPlanNo,
+                veh.LastTranspPlanDate,
+                veh.TranspPlanCount
+            },
+            plans,
+            lines,
             events
         };
     }

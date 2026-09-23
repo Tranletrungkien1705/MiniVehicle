@@ -122,6 +122,9 @@ public sealed class Vehicle
     public string? LastTestDriveNo { get; set; }      // Mã phiếu khách hàng lái thử xe gần nhất (CustomerTestDrive / DLR_DriveTest)
     public DateTime? LastTestDriveDate { get; set; }  // Ngày lái thử xe gần nhất
     public int TestDriveCount { get; set; } = 0;      // Tổng số lượt khách hàng đã lái thử trên xe này
+    public string? LastTranspPlanNo { get; set; }     // Mã kế hoạch điều độ vận tải gần nhất (Sto_TranspPlan / TransportPlan)
+    public DateTime? LastTranspPlanDate { get; set; } // Ngày lập kế hoạch điều độ vận tải gần nhất
+    public int TranspPlanCount { get; set; } = 0;     // Tổng số lần xe phát sinh trong kế hoạch điều độ vận tải
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -4086,6 +4089,278 @@ public sealed record VehicleTestDriveInfoDto(
     DateTime? LastTestDriveDate,
     int TestDriveCount,
     List<CustomerTestDrive> RecentTestDrives
+);
+
+// ===== Kế hoạch Điều độ Vận tải & Phân bổ Xe ô tô OEM (BizHTC.Storage / Sto_TranspPlan, Sto_TranspPlanDetail / FrmSto_TranspPlan, FrmLenKeHoach_BanHang, FrmUpdateFVINToRVIN) =====
+
+/// <summary>Bảng kê / Đợt Kế hoạch Điều độ Vận tải Phân bổ Xe ô tô OEM (BizHTC.Storage / Sto_TranspPlan / TransportPlan): quản lý kế hoạch điều phối xe từ Nhà máy HTMV Ninh Bình đến các tỉnh/thành phố và đại lý toàn quốc, phối hợp 3 phòng ban Kế hoạch - Bán hàng - Logistics, quản lý gán số khung thực tế (Map VIN Real) và phê duyệt xuất bến.</summary>
+public sealed class TransportPlan
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PlanNo { get; set; } = "";             // Mã đợt kế hoạch điều độ vận tải (TP202603-0001, TP...)
+    public string? PlanNoUser { get; set; }            // Số hiệu tham chiếu kế hoạch nội bộ OEM (KHVT-2026/03-01)
+    public string PlanMonth { get; set; } = "";        // Tháng kế hoạch (yyyy-MM)
+    public DateTime PlanDate { get; set; } = DateTime.Now; // Ngày lập kế hoạch
+    public string StorageCode { get; set; } = "PLANT-HTMV1"; // Kho / Bãi xuất phát nhà máy (PLANT-HTMV1, PLANT-HTMV2, TCV_YARD)
+    public string? StorageName { get; set; } = "Kho Tổng Nhà máy HTMV Ninh Bình 1";
+    public string TPType { get; set; } = "Road";       // Hình thức vận tải: Road (Đường bộ xe lồng), Sea (Đường biển), Rail (Đường sắt), Internal (Nội bộ trung chuyển)
+    public int TotalVehicleCount { get; set; } = 0;    // Tổng số lượng xe kế hoạch điều độ trong đợt
+    public int TotalRealVinCount { get; set; } = 0;    // Tổng số lượng xe đã gán số khung thật RVIN
+    public string Status { get; set; } = "Draft";      // Draft → Submitted → Approved → InExecution → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                // Ghi chú điều hành kế hoạch điều độ
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }            // Trưởng phòng Kế hoạch / Giám đốc Logistics duyệt
+    public DateTime? ApprovedAt { get; set; }
+    public string? ExecutedBy { get; set; }            // Điều phối viên vận tải xuất lệnh
+    public DateTime? ExecutedAt { get; set; }
+    public string? CompletedBy { get; set; }           // Nghiệm thu hoàn tất toàn bộ kế hoạch
+    public DateTime? CompletedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe trong Kế hoạch Điều độ Vận tải (BizHTC.Storage / Sto_TranspPlan / TransportPlanLine): thông tin số khung kế hoạch FVIN, số khung thực tế RVIN, dòng xe, phiên bản, màu sắc, kho xuất, đại lý đích, địa bàn (Tỉnh/Huyện đi - Tỉnh/Huyện đến), đơn vị vận tải, ngày QC và ngày dự kiến xuất phát.</summary>
+public sealed class TransportPlanLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long TransportPlanId { get; set; }
+    public string PlanNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public string VINPlan { get; set; } = "";          // Mã số khung kế hoạch dự kiến (FVIN, VD: PLN-ACC-001, PLN-TUC-002)
+    public string? Vin { get; set; }                   // Mã số khung thực tế (RVIN, được gán từ kho xe InStock)
+    public bool FlagRealVin { get; set; } = false;     // Đã gán số khung thực tế hay chưa
+    public string Model { get; set; } = "";            // Dòng xe (SantaFe, Tucson, Accent, Creta, Custin, Palisade, Ioniq 5...)
+    public string? SpecCode { get; set; }              // Phiên bản xe (1.6T HTRAC, 2.0 AT Tiêu chuẩn, 2.0 AT Đặc biệt...)
+    public string? SpecDescription { get; set; }       // Tên diễn giải phiên bản
+    public string? ColorCode { get; set; } = "NWAC";   // Mã màu xe (NWAC, T2X, R4R...)
+    public string? ColorName { get; set; } = "Trắng ngọc trai";
+    public string StorageCode { get; set; } = "PLANT-HTMV1"; // Kho bãi OEM xuất phát
+    public string DealerCode { get; set; } = "";       // Đại lý nhận phân bổ (DLR-HN01, DLR-HCM01...)
+    public string? DealerName { get; set; }            // Tên đại lý
+    public string FProvinceCode { get; set; } = "NB";  // Mã tỉnh xuất phát (NB: Ninh Bình, HP: Hải Phòng...)
+    public string? FProvinceName { get; set; } = "Ninh Bình";
+    public string FDistrictCode { get; set; } = "GV";  // Mã huyện xuất phát (GV: Gia Viễn...)
+    public string? FDistrictName { get; set; } = "Gia Viễn";
+    public string TProvinceCode { get; set; } = "HN";  // Mã tỉnh đích đến / Đại lý (HN: Hà Nội, HCM: Hồ Chí Minh...)
+    public string? TProvinceName { get; set; } = "Hà Nội";
+    public string TDistrictCode { get; set; } = "CG";  // Mã huyện đích đến (CG: Cầu Giấy, TX: Thanh Xuân...)
+    public string? TDistrictName { get; set; } = "Cầu Giấy";
+    public string TransporterCode { get; set; } = "NYK"; // Mã đơn vị vận tải / Nhà xe (NYK, TRACO, VINAFCO, TT_LOGISTICS...)
+    public string? TransporterName { get; set; } = "Công ty TNHH Vận tải Hàng hải NYK Việt Nam";
+    public string? TruckPlateNo { get; set; }          // Biển số xe lồng chở ô tô (29C-888.99)
+    public string? DriverName { get; set; }            // Họ tên lái xe chuyên dụng
+    public string? DriverPhone { get; set; }           // SĐT lái xe
+    public DateTime? CQStartDate { get; set; }         // Ngày kiểm tra chất lượng KCS/QC xuất xưởng tại nhà máy
+    public DateTime ExpectedDate { get; set; } = DateTime.Now.AddDays(2); // Ngày dự kiến vận chuyển xuất bến
+    public DateTime? ActualDepartureDate { get; set; } // Ngày thực tế xe lồng xuất bến
+    public DateTime? ActualArrivalDate { get; set; }   // Ngày thực tế xe hạ tải tại đại lý
+    public string TPStatus { get; set; } = "Pending";  // Trạng thái điều độ: Pending → ApprovedByPlan → ApprovedBySales → DispatchedByLogistics → Finished (hoặc Cancelled)
+    public string TransporterStatus { get; set; } = "Pending"; // Trạng thái xác nhận phía nhà xe: Pending → Confirmed → InTransit → Delivered (hoặc Rejected)
+    public DateTime? TransporterAppDate { get; set; }  // Ngày đơn vị vận tải xác nhận tiếp nhận
+    public string? TransporterAppBy { get; set; }      // Người đại diện nhà xe xác nhận
+    public string? TransporterRejectReason { get; set; }
+    public string Status { get; set; } = "Pending";    // Trạng thái tổng thể: Pending → Approved → InTransit → Delivered / Completed (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+// ===== DTOs cho Kế hoạch Điều độ Vận tải (BizHTC.Storage / Sto_TranspPlan / TransportPlan) =====
+
+public sealed record CreateTransportPlanDto(
+    string? PlanNo,
+    string? PlanNoUser,
+    string PlanMonth,
+    DateTime? PlanDate,
+    string? StorageCode,
+    string? StorageName,
+    string? TPType,
+    string? Remark,
+    string? CreatedBy,
+    List<CreateTransportPlanLineDto>? Lines
+);
+
+public sealed record CreateTransportPlanLineDto(
+    string VINPlan,
+    string? Vin,
+    string Model,
+    string? SpecCode,
+    string? SpecDescription,
+    string? ColorCode,
+    string? ColorName,
+    string? StorageCode,
+    string DealerCode,
+    string? DealerName,
+    string? FProvinceCode,
+    string? FProvinceName,
+    string? FDistrictCode,
+    string? FDistrictName,
+    string? TProvinceCode,
+    string? TProvinceName,
+    string? TDistrictCode,
+    string? TDistrictName,
+    string? TransporterCode,
+    string? TransporterName,
+    string? TruckPlateNo,
+    string? DriverName,
+    string? DriverPhone,
+    DateTime? CQStartDate,
+    DateTime? ExpectedDate,
+    string? Remark
+);
+
+public sealed record UpdateTransportPlanDto(
+    string? PlanNoUser,
+    string? PlanMonth,
+    DateTime? PlanDate,
+    string? StorageCode,
+    string? StorageName,
+    string? TPType,
+    string? Remark
+);
+
+public sealed record AddTransportPlanLineDto(
+    string VINPlan,
+    string? Vin,
+    string Model,
+    string? SpecCode,
+    string? SpecDescription,
+    string? ColorCode,
+    string? ColorName,
+    string? StorageCode,
+    string DealerCode,
+    string? DealerName,
+    string? FProvinceCode,
+    string? FProvinceName,
+    string? FDistrictCode,
+    string? FDistrictName,
+    string? TProvinceCode,
+    string? TProvinceName,
+    string? TDistrictCode,
+    string? TDistrictName,
+    string? TransporterCode,
+    string? TransporterName,
+    string? TruckPlateNo,
+    string? DriverName,
+    string? DriverPhone,
+    DateTime? CQStartDate,
+    DateTime? ExpectedDate,
+    string? Remark
+);
+
+public sealed record UpdateTransportPlanLineByKeHoachDto(
+    DateTime? CQStartDate,
+    DateTime? ExpectedDate,
+    string? StorageCode,
+    string? Model,
+    string? SpecCode,
+    string? ColorCode,
+    string? ColorName,
+    string? Remark
+);
+
+public sealed record UpdateTransportPlanLineByBanHangDto(
+    string DealerCode,
+    string? DealerName,
+    string? TPStatus,
+    string? Remark
+);
+
+public sealed record UpdateTransportPlanLineByLogisticDto(
+    string TransporterCode,
+    string? TransporterName,
+    string? FProvinceCode,
+    string? FProvinceName,
+    string? FDistrictCode,
+    string? FDistrictName,
+    string? TProvinceCode,
+    string? TProvinceName,
+    string? TDistrictCode,
+    string? TDistrictName,
+    string? TruckPlateNo,
+    string? DriverName,
+    string? DriverPhone,
+    string? TransporterStatus,
+    string? Remark
+);
+
+public sealed record MapVinRealDto(
+    string Vin,
+    string? Actor,
+    string? Remark
+);
+
+public sealed record MapVinRealItemDto(
+    string VINPlan,
+    string Vin
+);
+
+public sealed record MapVinRealBatchDto(
+    List<MapVinRealItemDto> Mappings,
+    string? Actor
+);
+
+public sealed record UnmapVinRealDto(
+    string? Actor,
+    string? Reason
+);
+
+public sealed record TransporterApproveLineDto(
+    bool IsAccepted,
+    string? Actor,
+    string? TruckPlateNo,
+    string? DriverName,
+    string? DriverPhone,
+    DateTime? EstimatedArrivalDate,
+    string? RejectReason,
+    string? Remark
+);
+
+public sealed record TransportPlanTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record TransportPlanSummaryDto(
+    int TotalPlans,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalApproved,
+    int TotalInExecution,
+    int TotalCompleted,
+    int TotalCancelled,
+    int TotalVehicles,
+    int TotalMappedVehicles,
+    decimal VinMappingRatePercent,
+    List<TransportPlanMonthStatsDto> ByMonth,
+    List<TransportPlanTransporterStatsDto> ByTransporter,
+    List<TransportPlanDealerStatsDto> ByDealer,
+    List<TransportPlanModelStatsDto> ByModel
+);
+
+public sealed record TransportPlanMonthStatsDto(string PlanMonth, int PlanCount, int VehicleCount, int MappedCount);
+public sealed record TransportPlanTransporterStatsDto(string TransporterCode, string TransporterName, int VehicleCount, int CompletedCount);
+public sealed record TransportPlanDealerStatsDto(string DealerCode, string DealerName, int VehicleCount, int CompletedCount);
+public sealed record TransportPlanModelStatsDto(string Model, int VehicleCount, int MappedCount);
+
+public sealed record VehicleTransportPlanInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    string? LastTranspPlanNo,
+    DateTime? LastTranspPlanDate,
+    int TranspPlanCount,
+    List<TransportPlanLine> PlanLines
 );
 
 

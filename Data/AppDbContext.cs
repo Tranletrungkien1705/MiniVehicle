@@ -112,6 +112,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<AvnPayment> AvnPayments => Set<AvnPayment>();
     public DbSet<AvnPaymentLine> AvnPaymentLines => Set<AvnPaymentLine>();
     public DbSet<CustomerTestDrive> CustomerTestDrives => Set<CustomerTestDrive>();
+    public DbSet<TransportPlan> TransportPlans => Set<TransportPlan>();
+    public DbSet<TransportPlanLine> TransportPlanLines => Set<TransportPlanLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -171,5 +173,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<AvnPaymentLine>().HasIndex(x => new { x.OrgId, x.PaymentAVNNo, x.Vin });
         b.Entity<CustomerTestDrive>().HasIndex(x => new { x.OrgId, x.DriveTestCode }).IsUnique();
         b.Entity<CustomerTestDrive>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<TransportPlan>().HasIndex(x => new { x.OrgId, x.PlanNo }).IsUnique();
+        b.Entity<TransportPlanLine>().HasIndex(x => new { x.OrgId, x.PlanNo, x.VINPlan });
+        b.Entity<TransportPlanLine>().HasIndex(x => new { x.OrgId, x.Vin });
     }
 }

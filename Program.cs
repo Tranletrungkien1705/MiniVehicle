@@ -3963,6 +3963,155 @@ app.MapGet("/api/vehicles/{vin}/test-drive-history", async (string vin, IVehicle
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Kế hoạch Điều độ Vận tải & Phân bổ Xe ô tô OEM (BizHTC.Storage / Sto_TranspPlan / TransportPlan) ----
+app.MapPost("/api/transport-plans", async (CreateTransportPlanDto dto, IVehicleService svc) =>
+{
+    try { return Results.Ok(await svc.CreateTransportPlanAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/transport-plans", async (IVehicleService svc, string? status, string? month, string? storageCode, string? tpType, string? planNo, string? vin, string? dealerCode, string? transporterCode) =>
+    Results.Ok(await svc.ListTransportPlansAsync(status, month, storageCode, tpType, planNo, vin, dealerCode, transporterCode))).RequireAuthorization();
+
+app.MapGet("/api/transport-plans/summary", async (IVehicleService svc, string? planMonth, string? storageCode) =>
+    Results.Ok(await svc.GetTransportPlanSummaryAsync(planMonth, storageCode))).RequireAuthorization();
+
+app.MapGet("/api/transport-plans/{planNo}", async (string planNo, IVehicleService svc) =>
+{
+    var r = await svc.GetTransportPlanAsync(planNo);
+    return r is null ? Results.NotFound(new { planNo, error = "Không tìm thấy kế hoạch điều độ vận tải." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/transport-plans/{planNo}", async (string planNo, UpdateTransportPlanDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateTransportPlanHeaderAsync(planNo, dto);
+        return r is null ? Results.NotFound(new { planNo, error = "Không tìm thấy kế hoạch điều độ hoặc kế hoạch đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-plans/{planNo}/lines", async (string planNo, AddTransportPlanLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.AddTransportPlanLineAsync(planNo, dto);
+        return r is null ? Results.NotFound(new { planNo, error = "Không tìm thấy kế hoạch điều độ hoặc kế hoạch đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/transport-plans/{planNo}/lines/{lineId:long}/kehoach", async (string planNo, long lineId, UpdateTransportPlanLineByKeHoachDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateTransportPlanLineByKeHoachAsync(planNo, lineId, dto);
+        return r is null ? Results.NotFound(new { planNo, lineId, error = "Không tìm thấy dòng xe trong kế hoạch hoặc kế hoạch đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/transport-plans/{planNo}/lines/{lineId:long}/banhang", async (string planNo, long lineId, UpdateTransportPlanLineByBanHangDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateTransportPlanLineByBanHangAsync(planNo, lineId, dto);
+        return r is null ? Results.NotFound(new { planNo, lineId, error = "Không tìm thấy dòng xe trong kế hoạch hoặc kế hoạch đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/transport-plans/{planNo}/lines/{lineId:long}/logistic", async (string planNo, long lineId, UpdateTransportPlanLineByLogisticDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateTransportPlanLineByLogisticAsync(planNo, lineId, dto);
+        return r is null ? Results.NotFound(new { planNo, lineId, error = "Không tìm thấy dòng xe trong kế hoạch hoặc kế hoạch đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-plans/{planNo}/lines/{lineId:long}/map-vin", async (string planNo, long lineId, MapVinRealDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.MapVinRealAsync(planNo, lineId, dto);
+        return r is null ? Results.NotFound(new { planNo, lineId, error = "Không tìm thấy dòng xe trong kế hoạch hoặc kế hoạch đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-plans/{planNo}/map-vins", async (string planNo, MapVinRealBatchDto dto, IVehicleService svc) =>
+{
+    try { return Results.Ok(await svc.MapVinRealBatchAsync(planNo, dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-plans/{planNo}/lines/{lineId:long}/unmap-vin", async (string planNo, long lineId, UnmapVinRealDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UnmapVinRealAsync(planNo, lineId, dto);
+        return r is null ? Results.NotFound(new { planNo, lineId, error = "Không tìm thấy dòng xe trong kế hoạch hoặc kế hoạch đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-plans/{planNo}/lines/{lineId:long}/transporter-approve", async (string planNo, long lineId, TransporterApproveLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.TransporterApproveLineAsync(planNo, lineId, dto);
+        return r is null ? Results.NotFound(new { planNo, lineId, error = "Không tìm thấy dòng xe trong kế hoạch." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/transport-plans/{planNo}/{action}", async (string planNo, string action, TransportPlanTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "execute" or "complete" or "finish" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|execute|complete|reject|cancel" });
+    try
+    {
+        var r = await svc.TransportPlanTransitionAsync(planNo, action, dto);
+        return r is null ? Results.NotFound(new { planNo, error = "Không tìm thấy kế hoạch điều độ hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/transport-plans/{planNo}/lines/{lineId:long}", async (string planNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var ok = await svc.RemoveTransportPlanLineAsync(planNo, lineId);
+        return ok ? Results.Ok(new { success = true, planNo, lineId }) : Results.NotFound(new { planNo, lineId, error = "Không tìm thấy dòng hoặc kế hoạch không ở trạng thái cho phép xóa." });
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/transport-plans/{planNo}", async (string planNo, IVehicleService svc) =>
+{
+    try
+    {
+        var ok = await svc.RemoveTransportPlanAsync(planNo);
+        return ok ? Results.Ok(new { success = true, planNo }) : Results.NotFound(new { planNo, error = "Không tìm thấy kế hoạch hoặc kế hoạch không ở trạng thái cho phép xóa." });
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/transport-plan-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleTransportPlanInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/transport-plan-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleTransportPlanHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

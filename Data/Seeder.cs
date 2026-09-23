@@ -4094,6 +4094,232 @@ public static class Seeder
                 v2Td.TestDriveCount = 1;
             }
         }
+
+        if (!await db.TransportPlans.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var tp1 = new TransportPlan
+            {
+                OrgId = org,
+                PlanNo = "TP202603-0001",
+                PlanNoUser = "KHVT-2026/03-01",
+                PlanMonth = "2026-03",
+                PlanDate = DateTime.Now.AddDays(-3),
+                StorageCode = "PLANT-HTMV1",
+                StorageName = "Kho Tổng Nhà máy HTMV Ninh Bình 1",
+                TPType = "Road",
+                TotalVehicleCount = 2,
+                TotalRealVinCount = 2,
+                Status = "Approved",
+                Remark = "Kế hoạch điều độ vận tải phân bổ xe đợt 1 tháng 03/2026 từ Nhà máy HTMV Ninh Bình về Hà Nội",
+                CreatedBy = "plan.manager",
+                CreatedAt = DateTime.Now.AddDays(-3),
+                ApprovedBy = "LogisticsDirector.TranVanHai",
+                ApprovedAt = DateTime.Now.AddDays(-2),
+                ExecutedBy = "dispatcher.quang",
+                ExecutedAt = DateTime.Now.AddDays(-2)
+            };
+            db.TransportPlans.Add(tp1);
+            await db.SaveChangesAsync();
+
+            db.TransportPlanLines.AddRange(
+                new TransportPlanLine
+                {
+                    OrgId = org,
+                    TransportPlanId = tp1.Id,
+                    PlanNo = tp1.PlanNo,
+                    LineIndex = 1,
+                    VINPlan = "PLN-ACC-202603-001",
+                    Vin = "DEMOVIN00000001",
+                    FlagRealVin = true,
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    SpecDescription = "Accent 1.4L Số tự động bản Đặc biệt",
+                    ColorCode = "NWAC",
+                    ColorName = "Trắng ngọc trai",
+                    StorageCode = "PLANT-HTMV1",
+                    DealerCode = "DLR-HN01",
+                    DealerName = "Hyundai Hà Nội 01",
+                    FProvinceCode = "NB",
+                    FProvinceName = "Ninh Bình",
+                    FDistrictCode = "GV",
+                    FDistrictName = "Gia Viễn",
+                    TProvinceCode = "HN",
+                    TProvinceName = "Hà Nội",
+                    TDistrictCode = "CG",
+                    TDistrictName = "Cầu Giấy",
+                    TransporterCode = "NYK",
+                    TransporterName = "Công ty TNHH Vận tải Hàng hải NYK Việt Nam",
+                    TruckPlateNo = "29C-888.99",
+                    DriverName = "Lê Hồng Sơn",
+                    DriverPhone = "0912345678",
+                    CQStartDate = DateTime.Now.AddDays(-4),
+                    ExpectedDate = DateTime.Now.AddDays(1),
+                    ActualDepartureDate = DateTime.Now.AddDays(-1),
+                    TPStatus = "Finished",
+                    TransporterStatus = "Confirmed",
+                    TransporterAppDate = DateTime.Now.AddDays(-2),
+                    TransporterAppBy = "NYK.Dispatcher.NguyenVanManh",
+                    Status = "Approved",
+                    Remark = "Đã gán VIN thật RVIN và nhà xe NYK đã điều phối xe lồng"
+                },
+                new TransportPlanLine
+                {
+                    OrgId = org,
+                    TransportPlanId = tp1.Id,
+                    PlanNo = tp1.PlanNo,
+                    LineIndex = 2,
+                    VINPlan = "PLN-CRE-202603-002",
+                    Vin = "DEMOVIN00000002",
+                    FlagRealVin = true,
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    SpecDescription = "Creta 1.5L Cao cấp phối 2 màu thể thao",
+                    ColorCode = "SAW",
+                    ColorName = "Đen ánh kim",
+                    StorageCode = "PLANT-HTMV1",
+                    DealerCode = "DLR-HN01",
+                    DealerName = "Hyundai Hà Nội 01",
+                    FProvinceCode = "NB",
+                    FProvinceName = "Ninh Bình",
+                    FDistrictCode = "GV",
+                    FDistrictName = "Gia Viễn",
+                    TProvinceCode = "HN",
+                    TProvinceName = "Hà Nội",
+                    TDistrictCode = "CG",
+                    TDistrictName = "Cầu Giấy",
+                    TransporterCode = "NYK",
+                    TransporterName = "Công ty TNHH Vận tải Hàng hải NYK Việt Nam",
+                    TruckPlateNo = "29C-888.99",
+                    DriverName = "Lê Hồng Sơn",
+                    DriverPhone = "0912345678",
+                    CQStartDate = DateTime.Now.AddDays(-4),
+                    ExpectedDate = DateTime.Now.AddDays(1),
+                    ActualDepartureDate = DateTime.Now.AddDays(-1),
+                    TPStatus = "Finished",
+                    TransporterStatus = "Confirmed",
+                    TransporterAppDate = DateTime.Now.AddDays(-2),
+                    TransporterAppBy = "NYK.Dispatcher.NguyenVanManh",
+                    Status = "Approved",
+                    Remark = "Đã gán VIN thật RVIN và nhà xe NYK đã điều phối xe lồng"
+                }
+            );
+
+            var tp2 = new TransportPlan
+            {
+                OrgId = org,
+                PlanNo = "TP202603-0002",
+                PlanNoUser = "KHVT-2026/03-02",
+                PlanMonth = "2026-03",
+                PlanDate = DateTime.Now.AddDays(-1),
+                StorageCode = "PLANT-HTMV2",
+                StorageName = "Kho Tổng Nhà máy HTMV Ninh Bình 2",
+                TPType = "Road",
+                TotalVehicleCount = 2,
+                TotalRealVinCount = 1,
+                Status = "Draft",
+                Remark = "Kế hoạch điều độ vận tải phân bổ xe đợt 2 tháng 03/2026 khu vực miền Trung & Nam",
+                CreatedBy = "plan.specialist",
+                CreatedAt = DateTime.Now.AddDays(-1)
+            };
+            db.TransportPlans.Add(tp2);
+            await db.SaveChangesAsync();
+
+            db.TransportPlanLines.AddRange(
+                new TransportPlanLine
+                {
+                    OrgId = org,
+                    TransportPlanId = tp2.Id,
+                    PlanNo = tp2.PlanNo,
+                    LineIndex = 1,
+                    VINPlan = "PLN-POR-202603-003",
+                    Vin = "DEMOVIN00000003",
+                    FlagRealVin = true,
+                    Model = "Hyundai New Porter H150",
+                    SpecCode = "H150 Thùng Bạt",
+                    SpecDescription = "Xe tải nhẹ H150 1.5 tấn thùng mui bạt",
+                    ColorCode = "NWAC",
+                    ColorName = "Trắng",
+                    StorageCode = "BODY-SHOP-01",
+                    DealerCode = "DLR-DN01",
+                    DealerName = "Hyundai Đà Nẵng",
+                    FProvinceCode = "NB",
+                    FProvinceName = "Ninh Bình",
+                    FDistrictCode = "GV",
+                    FDistrictName = "Gia Viễn",
+                    TProvinceCode = "DN",
+                    TProvinceName = "Đà Nẵng",
+                    TDistrictCode = "HC",
+                    TDistrictName = "Hải Châu",
+                    TransporterCode = "TRACO",
+                    TransporterName = "Công ty CP Vận tải Traco Logistics",
+                    CQStartDate = DateTime.Now.AddDays(-2),
+                    ExpectedDate = DateTime.Now.AddDays(3),
+                    TPStatus = "ApprovedByPlan",
+                    TransporterStatus = "Pending",
+                    Status = "Pending",
+                    Remark = "Đã map VIN xe thương mại chassis đóng thùng"
+                },
+                new TransportPlanLine
+                {
+                    OrgId = org,
+                    TransportPlanId = tp2.Id,
+                    PlanNo = tp2.PlanNo,
+                    LineIndex = 2,
+                    VINPlan = "PLN-EX8-202603-004",
+                    Vin = null,
+                    FlagRealVin = false,
+                    Model = "Hyundai Mighty EX8 GTL",
+                    SpecCode = "EX8 GTL Thùng Lạnh",
+                    SpecDescription = "Xe tải trung Mighty EX8 GTL thùng đông lạnh",
+                    ColorCode = "BU01",
+                    ColorName = "Xanh",
+                    StorageCode = "BODY-SHOP-01",
+                    DealerCode = "DLR-SG01",
+                    DealerName = "Hyundai Sài Gòn 01",
+                    FProvinceCode = "NB",
+                    FProvinceName = "Ninh Bình",
+                    FDistrictCode = "GV",
+                    FDistrictName = "Gia Viễn",
+                    TProvinceCode = "HCM",
+                    TProvinceName = "Hồ Chí Minh",
+                    TDistrictCode = "TB",
+                    TDistrictName = "Tân Bình",
+                    TransporterCode = "VINAFCO",
+                    TransporterName = "Công ty CP Vinafco Logistics",
+                    CQStartDate = DateTime.Now.AddDays(-1),
+                    ExpectedDate = DateTime.Now.AddDays(4),
+                    TPStatus = "Pending",
+                    TransporterStatus = "Pending",
+                    Status = "Pending",
+                    Remark = "Đang chờ xưởng KCS hoàn tất nghiệm thu thùng đông lạnh để map VIN thật"
+                }
+            );
+
+            var v1Tp = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Tp != null)
+            {
+                v1Tp.LastTranspPlanNo = tp1.PlanNo;
+                v1Tp.LastTranspPlanDate = tp1.PlanDate;
+                v1Tp.TranspPlanCount = 1;
+            }
+
+            var v2Tp = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Tp != null)
+            {
+                v2Tp.LastTranspPlanNo = tp1.PlanNo;
+                v2Tp.LastTranspPlanDate = tp1.PlanDate;
+                v2Tp.TranspPlanCount = 1;
+            }
+
+            var v3Tp = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000003");
+            if (v3Tp != null)
+            {
+                v3Tp.LastTranspPlanNo = tp2.PlanNo;
+                v3Tp.LastTranspPlanDate = tp2.PlanDate;
+                v3Tp.TranspPlanCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -4304,7 +4530,12 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"TestDriveCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"AvnPayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PaymentAVNNo\" text NOT NULL DEFAULT '', \"PaymentAVNNoUser\" text NULL, \"PmtMonth\" text NOT NULL DEFAULT '', \"SupplierCode\" text NOT NULL DEFAULT 'MOBIS', \"SupplierName\" text NULL DEFAULT 'Mobis Auto Parts Vietnam', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalBeforeVAT\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"SupplierSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"SupplierSignDate\" timestamp NULL, \"SupplierSignBy\" text NULL, \"HTVSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"HTVSignDate\" timestamp NULL, \"HTVSignBy\" text NULL, \"BankRefNo\" text NULL, \"PaymentDate\" timestamp NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"AvnPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AvnPaymentId\" bigint NOT NULL, \"PaymentAVNNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"AvnDeviceCode\" text NOT NULL DEFAULT 'AVN-GEN5W-10INCH', \"AvnSerialNo\" text NOT NULL DEFAULT '', \"MapCardSerialNo\" text NULL, \"MapVersion\" text NULL DEFAULT 'VN-MAP-2026.Q1', \"DevicePrice\" numeric NOT NULL DEFAULT 7500000, \"MapPrice\" numeric NOT NULL DEFAULT 1200000, \"InstallationFee\" numeric NOT NULL DEFAULT 300000, \"AccessoryCost\" numeric NOT NULL DEFAULT 200000, \"TotalAmount\" numeric NOT NULL DEFAULT 9200000, \"InStorageDate\" timestamp NULL, \"AvnInstallDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"CustomerTestDrives\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"DriveTestCode\" text NOT NULL DEFAULT '', \"DriveTestCodeUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"DrvTestPlateNo\" text NULL, \"FullName\" text NOT NULL DEFAULT '', \"PhoneNo\" text NOT NULL DEFAULT '', \"Email\" text NULL, \"CusAddress\" text NULL, \"Gender\" text NOT NULL DEFAULT 'Nam', \"BirthYear\" integer NULL, \"RangeAgeCode\" text NULL DEFAULT '26-35', \"DriverLicenseNo\" text NOT NULL DEFAULT '', \"LicenseClass\" text NULL DEFAULT 'B2', \"DriveTestType\" text NOT NULL DEFAULT 'Showroom', \"EventName\" text NULL, \"RoutePath\" text NULL, \"DriveDTime\" timestamp NOT NULL DEFAULT now(), \"DurationMinutes\" integer NOT NULL DEFAULT 30, \"OdoStart\" integer NOT NULL DEFAULT 0, \"OdoEnd\" integer NULL, \"DistanceKm\" integer NOT NULL DEFAULT 0, \"SalesManCode\" text NULL, \"SalesManName\" text NULL, \"Instructor\" text NULL, \"ScoreEngine\" numeric NULL DEFAULT 5.0, \"ScoreHandling\" numeric NULL DEFAULT 5.0, \"ScoreNVH\" numeric NULL DEFAULT 5.0, \"ScoreDesign\" numeric NULL DEFAULT 5.0, \"ScoreFeatures\" numeric NULL DEFAULT 5.0, \"ScoreOverall\" numeric NULL DEFAULT 5.0, \"CustomerFeedback\" text NULL, \"PurchaseIntent\" text NOT NULL DEFAULT 'High', \"CompetitorModel\" text NULL, \"ExpectedDealDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"StartedBy\" text NULL, \"StartedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"CustomerTestDrives\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"DriveTestCode\" text NOT NULL DEFAULT '', \"DriveTestCodeUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"DrvTestPlateNo\" text NULL, \"FullName\" text NOT NULL DEFAULT '', \"PhoneNo\" text NOT NULL DEFAULT '', \"Email\" text NULL, \"CusAddress\" text NULL, \"Gender\" text NOT NULL DEFAULT 'Nam', \"BirthYear\" integer NULL, \"RangeAgeCode\" text NULL DEFAULT '26-35', \"DriverLicenseNo\" text NOT NULL DEFAULT '', \"LicenseClass\" text NULL DEFAULT 'B2', \"DriveTestType\" text NOT NULL DEFAULT 'Showroom', \"EventName\" text NULL, \"RoutePath\" text NULL, \"DriveDTime\" timestamp NOT NULL DEFAULT now(), \"DurationMinutes\" integer NOT NULL DEFAULT 30, \"OdoStart\" integer NOT NULL DEFAULT 0, \"OdoEnd\" integer NULL, \"DistanceKm\" integer NOT NULL DEFAULT 0, \"SalesManCode\" text NULL, \"SalesManName\" text NULL, \"Instructor\" text NULL, \"ScoreEngine\" numeric NULL DEFAULT 5.0, \"ScoreHandling\" numeric NULL DEFAULT 5.0, \"ScoreNVH\" numeric NULL DEFAULT 5.0, \"ScoreDesign\" numeric NULL DEFAULT 5.0, \"ScoreFeatures\" numeric NULL DEFAULT 5.0, \"ScoreOverall\" numeric NULL DEFAULT 5.0, \"CustomerFeedback\" text NULL, \"PurchaseIntent\" text NOT NULL DEFAULT 'High', \"CompetitorModel\" text NULL, \"ExpectedDealDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"StartedBy\" text NULL, \"StartedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastTranspPlanNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastTranspPlanDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"TranspPlanCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"TransportPlans\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PlanNo\" text NOT NULL DEFAULT '', \"PlanNoUser\" text NULL, \"PlanMonth\" text NOT NULL DEFAULT '', \"PlanDate\" timestamp NOT NULL DEFAULT now(), \"StorageCode\" text NOT NULL DEFAULT 'PLANT-HTMV1', \"StorageName\" text NULL DEFAULT 'Kho Tổng Nhà máy HTMV Ninh Bình 1', \"TPType\" text NOT NULL DEFAULT 'Road', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalRealVinCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"ExecutedBy\" text NULL, \"ExecutedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"TransportPlanLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TransportPlanId\" bigint NOT NULL, \"PlanNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"VINPlan\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"FlagRealVin\" boolean NOT NULL DEFAULT false, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT 'NWAC', \"ColorName\" text NULL DEFAULT 'Trắng ngọc trai', \"StorageCode\" text NOT NULL DEFAULT 'PLANT-HTMV1', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"FProvinceCode\" text NOT NULL DEFAULT 'NB', \"FProvinceName\" text NULL DEFAULT 'Ninh Bình', \"FDistrictCode\" text NOT NULL DEFAULT 'GV', \"FDistrictName\" text NULL DEFAULT 'Gia Viễn', \"TProvinceCode\" text NOT NULL DEFAULT 'HN', \"TProvinceName\" text NULL DEFAULT 'Hà Nội', \"TDistrictCode\" text NOT NULL DEFAULT 'CG', \"TDistrictName\" text NULL DEFAULT 'Cầu Giấy', \"TransporterCode\" text NOT NULL DEFAULT 'NYK', \"TransporterName\" text NULL DEFAULT 'Công ty TNHH Vận tải Hàng hải NYK Việt Nam', \"TruckPlateNo\" text NULL, \"DriverName\" text NULL, \"DriverPhone\" text NULL, \"CQStartDate\" timestamp NULL, \"ExpectedDate\" timestamp NOT NULL DEFAULT now(), \"ActualDepartureDate\" timestamp NULL, \"ActualArrivalDate\" timestamp NULL, \"TPStatus\" text NOT NULL DEFAULT 'Pending', \"TransporterStatus\" text NOT NULL DEFAULT 'Pending', \"TransporterAppDate\" timestamp NULL, \"TransporterAppBy\" text NULL, \"TransporterRejectReason\" text NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }
