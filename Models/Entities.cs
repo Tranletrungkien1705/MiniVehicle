@@ -7786,3 +7786,90 @@ public sealed class VehicleDevice
     public DateTime? LogLUDateTime { get; set; }       // Thời điểm cập nhật gần nhất
     public string? LogLUBy { get; set; }               // Người cập nhật gần nhất
 }
+
+/// <summary>Kế hoạch kinh doanh năm của Đại lý (BizHTC.DMS40.BPL_BusinessPlan): đại lý lập kế hoạch
+/// sản lượng bán lẻ / đặt hàng / back-order theo từng dòng xe cho cả năm (12 tháng), trình Hãng OEM
+/// phê duyệt 2 cấp. Trạng thái: P (Pending) → A1 (Approve1) → A2 (Approve2). Version: INIT (bản nháp) → ACTUAL (bản chốt).</summary>
+public sealed class BusinessPlan
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string BusinessPlanCode { get; set; } = "";   // Mã kế hoạch (yyMMdd-xxx/BPL/DLR-...)
+    public string DealerCode { get; set; } = "";         // Đại lý lập kế hoạch
+    public string YearPlan { get; set; } = "";           // Năm kế hoạch (yyyy)
+    public string? MonthPlan { get; set; }               // Tháng kế hoạch (nếu lập theo tháng)
+    public string PlanType { get; set; } = "Year";       // Loại kế hoạch: Year (cả năm), Month (theo tháng)
+    public string BusinessPlanStatus { get; set; } = "P"; // P (Pending) → A1 (Approve1) → A2 (Approve2)
+    public string Version { get; set; } = "INIT";        // INIT (bản nháp) → ACTUAL (bản chốt thực tế)
+    public int TimesPlan { get; set; } = 0;              // Số lần trình duyệt (TimesPlan)
+    public string? AreaCodeDealer { get; set; }          // Mã vùng/khu vực đại lý
+    public string? AreaNameDealer { get; set; }          // Tên vùng/khu vực đại lý
+    public string? HTCStaffInCharge { get; set; }        // Nhân viên Hãng OEM phụ trách theo dõi
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? Appr1DTime { get; set; }            // Thời điểm duyệt cấp 1
+    public string? Appr1By { get; set; }
+    public DateTime? Appr2DTime { get; set; }            // Thời điểm duyệt cấp 2 (chốt kế hoạch)
+    public string? Appr2By { get; set; }
+    public string? Remark { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe trong kế hoạch kinh doanh (BizHTC.DMS40.BPL_BusinessPlanDtl): sản lượng
+/// bán lẻ (Rtl), đặt hàng (Ord) và back-order (BO) theo từng tháng M1..M12 cho một dòng xe.</summary>
+public sealed class BusinessPlanLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long BusinessPlanId { get; set; }
+    public string BusinessPlanCode { get; set; } = "";
+    public string YearPlan { get; set; } = "";
+    public string ModelCode { get; set; } = "";          // Dòng xe
+    public string BusinessPlanDtlStatus { get; set; } = "P"; // Trạng thái dòng: P → A1 → A2
+    public string VersionDtl { get; set; } = "INIT";     // Phiên bản dòng: INIT → ACTUAL
+
+    // Bán lẻ (Retail)
+    public int Rtl_TotalQtyDeal { get; set; } = 0;       // Tổng sản lượng bán lẻ cả năm
+    public int Rtl_QtyM1 { get; set; } = 0;
+    public int Rtl_QtyM2 { get; set; } = 0;
+    public int Rtl_QtyM3 { get; set; } = 0;
+    public int Rtl_QtyM4 { get; set; } = 0;
+    public int Rtl_QtyM5 { get; set; } = 0;
+    public int Rtl_QtyM6 { get; set; } = 0;
+    public int Rtl_QtyM7 { get; set; } = 0;
+    public int Rtl_QtyM8 { get; set; } = 0;
+    public int Rtl_QtyM9 { get; set; } = 0;
+    public int Rtl_QtyM10 { get; set; } = 0;
+    public int Rtl_QtyM11 { get; set; } = 0;
+    public int Rtl_QtyM12 { get; set; } = 0;
+
+    // Đặt hàng (Order)
+    public int Ord_QtyM1 { get; set; } = 0;
+    public int Ord_QtyM2 { get; set; } = 0;
+    public int Ord_QtyM3 { get; set; } = 0;
+    public int Ord_QtyM4 { get; set; } = 0;
+    public int Ord_QtyM5 { get; set; } = 0;
+    public int Ord_QtyM6 { get; set; } = 0;
+    public int Ord_QtyM7 { get; set; } = 0;
+    public int Ord_QtyM8 { get; set; } = 0;
+    public int Ord_QtyM9 { get; set; } = 0;
+    public int Ord_QtyM10 { get; set; } = 0;
+    public int Ord_QtyM11 { get; set; } = 0;
+    public int Ord_QtyM12 { get; set; } = 0;
+
+    // Back-order (BO)
+    public int BO_TotalQtyBO { get; set; } = 0;          // Tổng back-order cả năm
+    public int BO_QtyM1 { get; set; } = 0;
+    public int BO_QtyM2 { get; set; } = 0;
+    public int BO_QtyM3 { get; set; } = 0;
+    public int BO_QtyM4 { get; set; } = 0;
+    public int BO_QtyM5 { get; set; } = 0;
+    public int BO_QtyM6 { get; set; } = 0;
+    public int BO_QtyM7 { get; set; } = 0;
+    public int BO_QtyM8 { get; set; } = 0;
+    public int BO_QtyM9 { get; set; } = 0;
+    public int BO_QtyM10 { get; set; } = 0;
+    public int BO_QtyM11 { get; set; } = 0;
+    public int BO_QtyM12 { get; set; } = 0;
+
+    public string? Remark { get; set; }
+}

@@ -168,6 +168,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<StorageGlobal> StorageGlobals => Set<StorageGlobal>();
     public DbSet<StorageLocal> StorageLocals => Set<StorageLocal>();
     public DbSet<VehicleDevice> VehicleDevices => Set<VehicleDevice>();
+    public DbSet<BusinessPlan> BusinessPlans => Set<BusinessPlan>();
+    public DbSet<BusinessPlanLine> BusinessPlanLines => Set<BusinessPlanLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -385,5 +387,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<VehicleDevice>().HasIndex(x => new { x.OrgId, x.Vin, x.DeviceTypeCode, x.SpecCode }).IsUnique();
         b.Entity<VehicleDevice>().HasIndex(x => new { x.OrgId, x.Vin });
         b.Entity<VehicleDevice>().HasIndex(x => new { x.OrgId, x.DeviceTypeCode });
+        b.Entity<BusinessPlan>().HasIndex(x => new { x.OrgId, x.BusinessPlanCode }).IsUnique();
+        b.Entity<BusinessPlan>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<BusinessPlan>().HasIndex(x => new { x.OrgId, x.YearPlan });
+        b.Entity<BusinessPlan>().HasIndex(x => new { x.OrgId, x.BusinessPlanStatus });
+        b.Entity<BusinessPlanLine>().HasIndex(x => new { x.OrgId, x.BusinessPlanCode, x.ModelCode });
+        b.Entity<BusinessPlanLine>().HasIndex(x => new { x.OrgId, x.BusinessPlanCode });
     }
 }

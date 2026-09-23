@@ -1705,6 +1705,31 @@ public record VehicleDeviceItemInputDto(string Vin, string DeviceTypeCode, strin
 public record UpdateVehicleDeviceDto(string? InputInvoiceNo = null, DateTime? InputInvoiceDate = null, string? By = null);
 public record UpdateStorageLocalDto(string? StorageCode = null, bool? FlagActive = null, string? By = null);
 
+// ===== Kế hoạch kinh doanh năm của Đại lý (BizHTC.DMS40.BPL_BusinessPlan) =====
+public record BusinessPlanLineInputDto(
+    string ModelCode,
+    int Rtl_TotalQtyDeal = 0,
+    int Rtl_QtyM1 = 0, int Rtl_QtyM2 = 0, int Rtl_QtyM3 = 0, int Rtl_QtyM4 = 0, int Rtl_QtyM5 = 0, int Rtl_QtyM6 = 0,
+    int Rtl_QtyM7 = 0, int Rtl_QtyM8 = 0, int Rtl_QtyM9 = 0, int Rtl_QtyM10 = 0, int Rtl_QtyM11 = 0, int Rtl_QtyM12 = 0,
+    int Ord_QtyM1 = 0, int Ord_QtyM2 = 0, int Ord_QtyM3 = 0, int Ord_QtyM4 = 0, int Ord_QtyM5 = 0, int Ord_QtyM6 = 0,
+    int Ord_QtyM7 = 0, int Ord_QtyM8 = 0, int Ord_QtyM9 = 0, int Ord_QtyM10 = 0, int Ord_QtyM11 = 0, int Ord_QtyM12 = 0,
+    int BO_TotalQtyBO = 0,
+    int BO_QtyM1 = 0, int BO_QtyM2 = 0, int BO_QtyM3 = 0, int BO_QtyM4 = 0, int BO_QtyM5 = 0, int BO_QtyM6 = 0,
+    int BO_QtyM7 = 0, int BO_QtyM8 = 0, int BO_QtyM9 = 0, int BO_QtyM10 = 0, int BO_QtyM11 = 0, int BO_QtyM12 = 0,
+    string? Remark = null);
+public record CreateBusinessPlanDto(string DealerCode, string YearPlan, List<BusinessPlanLineInputDto> Items, string? BusinessPlanCode = null, string? MonthPlan = null, string? PlanType = "Year", string? AreaCodeDealer = null, string? AreaNameDealer = null, string? HTCStaffInCharge = null, string? Remark = null, string? CreatedBy = null);
+public record BusinessPlanTransitionDto(string? Note = null, string? By = null, int? TimesPlan = null);
+public record UpdateBusinessPlanLineDto(
+    int? Rtl_TotalQtyDeal = null,
+    int? Rtl_QtyM1 = null, int? Rtl_QtyM2 = null, int? Rtl_QtyM3 = null, int? Rtl_QtyM4 = null, int? Rtl_QtyM5 = null, int? Rtl_QtyM6 = null,
+    int? Rtl_QtyM7 = null, int? Rtl_QtyM8 = null, int? Rtl_QtyM9 = null, int? Rtl_QtyM10 = null, int? Rtl_QtyM11 = null, int? Rtl_QtyM12 = null,
+    int? Ord_QtyM1 = null, int? Ord_QtyM2 = null, int? Ord_QtyM3 = null, int? Ord_QtyM4 = null, int? Ord_QtyM5 = null, int? Ord_QtyM6 = null,
+    int? Ord_QtyM7 = null, int? Ord_QtyM8 = null, int? Ord_QtyM9 = null, int? Ord_QtyM10 = null, int? Ord_QtyM11 = null, int? Ord_QtyM12 = null,
+    int? BO_TotalQtyBO = null,
+    int? BO_QtyM1 = null, int? BO_QtyM2 = null, int? BO_QtyM3 = null, int? BO_QtyM4 = null, int? BO_QtyM5 = null, int? BO_QtyM6 = null,
+    int? BO_QtyM7 = null, int? BO_QtyM8 = null, int? BO_QtyM9 = null, int? BO_QtyM10 = null, int? BO_QtyM11 = null, int? BO_QtyM12 = null,
+    string? Remark = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
