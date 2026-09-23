@@ -7988,3 +7988,77 @@ public sealed class VehicleDocumentStatusLog
     public string? UpdatedBy { get; set; }               // Người thực hiện cập nhật
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 }
+
+/// <summary>Bảng kê tính Chi phí tài chính (CPTC) &amp; Chiết khấu thanh toán (CKTT) cho xe ô tô theo số ngày đặt cọc / bảo lãnh
+/// (BizHTC.DMS40 / DMS40_FnExp_Calc_FnExp_PmDc): hãng OEM tính chi phí tài chính cho đại lý theo thời gian đại lý giữ
+/// tiền đặt cọc và bảo lãnh ngân hàng, đồng thời tính chiết khấu thanh toán trả sớm. Luồng ký 2 bên:
+/// Đại lý ký cấp 1 (A1) → cấp 2 (A2), Hãng ký cấp 1 (A1) → cấp 2 (A2) chốt FnExpStatus = S (Signed).</summary>
+public sealed class FnExpCalc
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string CaNo { get; set; } = "";                 // Mã bảng kê tính CPTC/CKTT (FNEXPCANO: {0}-{1}/{2}/{3})
+    public string DealerCode { get; set; } = "";           // Đại lý được tính chi phí tài chính
+    public DateTime? TermFrom { get; set; }                // Kỳ tính hiện tại - từ ngày
+    public DateTime? TermTo { get; set; }                  // Kỳ tính hiện tại - đến ngày
+    public DateTime? TermPrevFrom { get; set; }            // Kỳ trước - từ ngày
+    public DateTime? TermPrevTo { get; set; }              // Kỳ trước - đến ngày
+    public decimal FnExpPercent { get; set; } = 0;         // Tỷ lệ % chi phí tài chính (CPTC) áp dụng (0-100)
+    public decimal PmtDsTCGPercent { get; set; } = 0;      // Tỷ lệ % chiết khấu thanh toán (CKTT) áp dụng (0-100)
+    public decimal TotalFnDepositAmount { get; set; } = 0; // Tổng tiền CPTC phần đặt cọc
+    public decimal TotalFnGrtAmount { get; set; } = 0;     // Tổng tiền CPTC phần bảo lãnh
+    public decimal TotalFnAmount { get; set; } = 0;        // Tổng tiền CPTC (cọc + bảo lãnh)
+    public decimal TotalPDAmount { get; set; } = 0;        // Tổng tiền chiết khấu thanh toán (CKTT)
+    public int TotalVinCount { get; set; } = 0;            // Tổng số xe VIN trong bảng kê
+    public string DlrSignStatus { get; set; } = "P";       // Trạng thái ký của Đại lý: P (chưa ký) → A1 → A2
+    public string HTCSignStatus { get; set; } = "P";       // Trạng thái ký của Hãng: P (chưa ký) → A1 → A2
+    public string FnExpStatus { get; set; } = "NS";        // Trạng thái bảng kê: NS (chưa ký) → S (đã ký) / C (hủy)
+    public string? DlrAppr1By { get; set; }
+    public DateTime? DlrAppr1At { get; set; }
+    public string? DlrAppr2By { get; set; }
+    public DateTime? DlrAppr2At { get; set; }
+    public string? HTCAppr1By { get; set; }
+    public DateTime? HTCAppr1At { get; set; }
+    public string? HTCAppr2By { get; set; }
+    public DateTime? HTCAppr2At { get; set; }
+    public string? CancelBy { get; set; }
+    public DateTime? CancelAt { get; set; }
+    public string? CancelReason { get; set; }
+    public string? Remark { get; set; }
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? LogLUDateTime { get; set; }
+    public string? LogLUBy { get; set; }
+}
+
+/// <summary>Chi tiết xe VIN trong bảng kê tính CPTC/CKTT (DMS40_FnExp_Calc_FnExp_PmDcDtl):
+/// số ngày và số tiền chi phí tài chính phần đặt cọc / bảo lãnh, số ngày và số tiền chiết khấu thanh toán.
+/// Công thức nguồn: Amount = Rate * UnitPriceActual * Percent * CountDate / 360, với Rate phụ thuộc AssemblyStatus
+/// (CKD: cọc 0.15 / bảo lãnh 0.85 / CKTT 0.85; CBU: cọc 0.30 / bảo lãnh 0.70 / CKTT 0.70).</summary>
+public sealed class FnExpCalcLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long FnExpCalcId { get; set; }
+    public string CaNo { get; set; } = "";
+    public string Vin { get; set; } = "";                  // Số khung xe
+    public string? CarId { get; set; }                     // Mã xe nội bộ (Car_Car.CarID)
+    public string? ModelCode { get; set; }                 // Dòng xe
+    public string? SpecCode { get; set; }                  // Phiên bản
+    public string AssemblyStatus { get; set; } = "CBU";    // Hình thức lắp ráp: CBU (nguyên chiếc) / CKD (bộ linh kiện)
+    public decimal UnitPriceActual { get; set; } = 0;      // Giá xe thực tế dùng để tính (VNĐ)
+    public string? SOCode { get; set; }                    // Đơn đặt hàng liên quan
+    public string? SPCode { get; set; }                    // Chính sách đơn hàng
+    public int FnDepositCountDate { get; set; } = 0;       // Số ngày tính CPTC phần đặt cọc
+    public decimal FnDepositAmount { get; set; } = 0;      // Số tiền CPTC phần đặt cọc
+    public int FnGrtCountDate { get; set; } = 0;           // Số ngày tính CPTC phần bảo lãnh
+    public decimal FnGrtAmount { get; set; } = 0;          // Số tiền CPTC phần bảo lãnh
+    public decimal FnTotalAmount { get; set; } = 0;        // Tổng CPTC = FnDepositAmount + FnGrtAmount
+    public int PDCountDate { get; set; } = 0;              // Số ngày tính chiết khấu thanh toán (CKTT)
+    public decimal PDAmount { get; set; } = 0;             // Số tiền chiết khấu thanh toán (CKTT)
+    public string Status { get; set; } = "Pending";        // Pending → Signed (theo bảng kê) / Cancelled
+    public string? Remark { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? LogLUDateTime { get; set; }
+    public string? LogLUBy { get; set; }
+}

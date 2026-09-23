@@ -175,6 +175,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<WorkOrderLine> WorkOrderLines => Set<WorkOrderLine>();
     public DbSet<ConvertRule> ConvertRules => Set<ConvertRule>();
     public DbSet<ConvertRuleLine> ConvertRuleLines => Set<ConvertRuleLine>();
+    public DbSet<FnExpCalc> FnExpCalcs => Set<FnExpCalc>();
+    public DbSet<FnExpCalcLine> FnExpCalcLines => Set<FnExpCalcLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -410,5 +412,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<VehicleDocumentStatusLog>().HasIndex(x => new { x.OrgId, x.DocStatusNo }).IsUnique();
         b.Entity<VehicleDocumentStatusLog>().HasIndex(x => new { x.OrgId, x.Vin });
         b.Entity<VehicleDocumentStatusLog>().HasIndex(x => new { x.OrgId, x.DocumentStatus });
+        b.Entity<FnExpCalc>().HasIndex(x => new { x.OrgId, x.CaNo }).IsUnique();
+        b.Entity<FnExpCalc>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<FnExpCalc>().HasIndex(x => new { x.OrgId, x.FnExpStatus });
+        b.Entity<FnExpCalcLine>().HasIndex(x => new { x.OrgId, x.CaNo, x.Vin });
+        b.Entity<FnExpCalcLine>().HasIndex(x => new { x.OrgId, x.Vin });
     }
 }

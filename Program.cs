@@ -6323,6 +6323,49 @@ app.MapGet("/api/convert-rules/{convertRuleCode}", async (string convertRuleCode
     return r is null ? Results.NotFound(new { convertRuleCode, error = "Không tìm thấy quy tắc chuyển đổi." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Bảng kê tính Chi phí tài chính (CPTC) & Chiết khấu thanh toán (CKTT) (BizHTC.DMS40 / DMS40_FnExp_Calc_FnExp_PmDc) ----
+app.MapPost("/api/fnexp-calcs", async (CreateFnExpCalcDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode." });
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách xe VIN trong bảng kê tính CPTC/CKTT." });
+    try { return Results.Ok(await svc.CreateFnExpCalcAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/fnexp-calcs", async (IVehicleService svc, string? status, string? dealer, string? caNo, string? vin) =>
+    Results.Ok(await svc.ListFnExpCalcsAsync(status, dealer, caNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/fnexp-calcs/{caNo}", async (string caNo, IVehicleService svc) =>
+{
+    var r = await svc.GetFnExpCalcAsync(caNo);
+    return r is null ? Results.NotFound(new { caNo, error = "Không tìm thấy bảng kê tính CPTC/CKTT." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/fnexp-calcs/{caNo}/{action}", async (string caNo, string action, FnExpCalcTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("dlr-sign1" or "dlrsign1" or "dlr-sign2" or "dlrsign2" or "htc-sign1" or "htcsign1" or "htc-sign2" or "htcsign2" or "cancel"))
+        return Results.BadRequest(new { error = "action = dlr-sign1|dlr-sign2|htc-sign1|htc-sign2|cancel" });
+    var r = await svc.FnExpCalcTransitionAsync(caNo, action, dto);
+    return r is null ? Results.NotFound(new { caNo, error = "Không thấy bảng kê hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/fnexp-calcs/{caNo}/lines/{vin}/update", async (string caNo, string vin, UpdateFnExpCalcLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateFnExpCalcLineAsync(caNo, vin, dto);
+    return r is null ? Results.NotFound(new { caNo, vin, error = "Không tìm thấy dòng xe hoặc bảng kê đã ký/hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/fnexp-calcs/summary", async (IVehicleService svc, string? dealer) =>
+    Results.Ok(await svc.GetFnExpCalcSummaryAsync(dealer))).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/fnexp", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleFnExpInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không có bảng kê CPTC/CKTT cho xe này." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

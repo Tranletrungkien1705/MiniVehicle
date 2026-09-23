@@ -1741,6 +1741,42 @@ public record CreateConvertRuleDto(string ConvertRuleCode, List<ConvertRuleLineI
 // ===== Trạng thái hồ sơ xe (BizHTC.Car.Car_VIN.DOCUMENTSTATUS / FULLDOCDATE / REMARKDETAIL) =====
 public record UpdateVehicleDocStatusDto(string? DocumentStatus = null, DateTime? FullDocDate = null, string? RemarkDetail = null, string? UpdatedBy = null);
 
+// ===== Bảng kê tính Chi phí tài chính (CPTC) & Chiết khấu thanh toán (CKTT) (BizHTC.DMS40 / DMS40_FnExp_Calc_FnExp_PmDc) =====
+public record FnExpCalcVinInputDto(
+    string Vin,
+    string? CarId = null,
+    string? ModelCode = null,
+    string? SpecCode = null,
+    string AssemblyStatus = "CBU",
+    decimal UnitPriceActual = 0,
+    string? SOCode = null,
+    string? SPCode = null,
+    int FnDepositCountDate = 0,
+    int FnGrtCountDate = 0,
+    int PDCountDate = 0,
+    string? Remark = null);
+public record CreateFnExpCalcDto(
+    string DealerCode,
+    List<FnExpCalcVinInputDto> Items,
+    string? CaNo = null,
+    DateTime? TermFrom = null,
+    DateTime? TermTo = null,
+    DateTime? TermPrevFrom = null,
+    DateTime? TermPrevTo = null,
+    decimal FnExpPercent = 0,
+    decimal PmtDsTCGPercent = 0,
+    string? Remark = null,
+    string? CreatedBy = null);
+public record FnExpCalcTransitionDto(string? Note = null, string? By = null);
+public record UpdateFnExpCalcLineDto(
+    string? AssemblyStatus = null,
+    decimal? UnitPriceActual = null,
+    int? FnDepositCountDate = null,
+    int? FnGrtCountDate = null,
+    int? PDCountDate = null,
+    string? Remark = null,
+    string? By = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2539,6 +2575,15 @@ public interface IVehicleService
     Task<object?> GetVehicleDocStatusInfoAsync(string vin);
     Task<object?> GetVehicleDocStatusHistoryAsync(string vin);
     Task<object> GetVehicleDocStatusSummaryAsync(string? dealerCode);
+
+    // ===== Bảng kê tính Chi phí tài chính (CPTC) & Chiết khấu thanh toán (CKTT) (DMS40_FnExp_Calc_FnExp_PmDc) =====
+    Task<object> CreateFnExpCalcAsync(CreateFnExpCalcDto dto);
+    Task<object> ListFnExpCalcsAsync(string? status, string? dealer, string? caNo, string? vin);
+    Task<object?> GetFnExpCalcAsync(string caNo);
+    Task<object?> FnExpCalcTransitionAsync(string caNo, string action, FnExpCalcTransitionDto? dto);
+    Task<object?> UpdateFnExpCalcLineAsync(string caNo, string vin, UpdateFnExpCalcLineDto dto);
+    Task<object?> GetVehicleFnExpInfoAsync(string vin);
+    Task<object> GetFnExpCalcSummaryAsync(string? dealerCode);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -44106,6 +44151,442 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             withFullDoc,
             pendingDoc,
             byDocumentStatus = byStatus
+        };
+    }
+
+    // ===== Bảng kê tính Chi phí tài chính (CPTC) & Chiết khấu thanh toán (CKTT) (DMS40_FnExp_Calc_FnExp_PmDc) =====
+
+    // Tỷ lệ áp dụng theo hình thức lắp ráp (nguồn: DMS40_FnExp_Calc_FnExp_PmDc_SaveX_New20210809).
+    private static (decimal deposit, decimal grt, decimal pd) FnExpRates(string assemblyStatus)
+        => assemblyStatus.Trim().ToUpperInvariant() == "CKD"
+            ? (0.15m, 0.85m, 0.85m)
+            : (0.30m, 0.70m, 0.70m);
+
+    // Amount = Rate * UnitPriceActual * Percent * CountDate / 360 (Percent đã ở dạng thập phân 0..1).
+    private static decimal FnExpAmount(decimal rate, decimal unitPrice, decimal percent, int countDate)
+        => Math.Round(rate * unitPrice * percent * countDate / 360m, 0, MidpointRounding.AwayFromZero);
+
+    private static void RecalcFnExpLine(FnExpCalcLine l, decimal fnExpPercent, decimal pmtDsTCGPercent)
+    {
+        var (depositRate, grtRate, pdRate) = FnExpRates(l.AssemblyStatus);
+        var fnPct = fnExpPercent / 100m;
+        var pdPct = pmtDsTCGPercent / 100m;
+        l.FnDepositAmount = FnExpAmount(depositRate, l.UnitPriceActual, fnPct, l.FnDepositCountDate);
+        l.FnGrtAmount = FnExpAmount(grtRate, l.UnitPriceActual, fnPct, l.FnGrtCountDate);
+        l.FnTotalAmount = l.FnDepositAmount + l.FnGrtAmount;
+        l.PDAmount = FnExpAmount(pdRate, l.UnitPriceActual, pdPct, l.PDCountDate);
+    }
+
+    private static void RecalcFnExpTotals(FnExpCalc h, List<FnExpCalcLine> lines)
+    {
+        h.TotalVinCount = lines.Count;
+        h.TotalFnDepositAmount = lines.Sum(l => l.FnDepositAmount);
+        h.TotalFnGrtAmount = lines.Sum(l => l.FnGrtAmount);
+        h.TotalFnAmount = lines.Sum(l => l.FnTotalAmount);
+        h.TotalPDAmount = lines.Sum(l => l.PDAmount);
+    }
+
+    public async Task<object> CreateFnExpCalcAsync(CreateFnExpCalcDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode.");
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần danh sách xe VIN trong bảng kê tính CPTC/CKTT.");
+        if (dto.FnExpPercent < 0 || dto.FnExpPercent > 100)
+            throw new InvalidOperationException("Tỷ lệ chi phí tài chính FnExpPercent phải trong khoảng 0-100.");
+        if (dto.PmtDsTCGPercent < 0 || dto.PmtDsTCGPercent > 100)
+            throw new InvalidOperationException("Tỷ lệ chiết khấu thanh toán PmtDsTCGPercent phải trong khoảng 0-100.");
+
+        // Ràng buộc kỳ tính (nguồn: DMS40_FnExp_Calc_FnExp_PmDc_Save_New20210809).
+        if (dto.TermPrevFrom is not null && dto.TermPrevTo is not null && dto.TermFrom is not null && dto.TermTo is not null)
+        {
+            if (!(dto.TermPrevFrom < dto.TermPrevTo && dto.TermPrevTo < dto.TermFrom && dto.TermFrom < dto.TermTo))
+                throw new InvalidOperationException("Kỳ tính không hợp lệ: cần TermPrevFrom < TermPrevTo < TermFrom < TermTo.");
+        }
+
+        var caNo = string.IsNullOrWhiteSpace(dto.CaNo)
+            ? $"FNEXP-{DateTime.Now:yyyyMMddHHmmss}"
+            : dto.CaNo.Trim().ToUpperInvariant();
+        if (await db.FnExpCalcs.AnyAsync(h => h.OrgId == Org && h.CaNo == caNo))
+            throw new InvalidOperationException($"Mã bảng kê {caNo} đã tồn tại.");
+
+        var distinct = dto.Items.Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+            .GroupBy(i => i.Vin.Trim().ToUpperInvariant())
+            .Select(g => g.First())
+            .ToList();
+        if (distinct.Count == 0)
+            throw new InvalidOperationException("Danh sách VIN không hợp lệ.");
+
+        var h = new FnExpCalc
+        {
+            OrgId = Org,
+            CaNo = caNo,
+            DealerCode = dto.DealerCode.Trim().ToUpperInvariant(),
+            TermFrom = dto.TermFrom,
+            TermTo = dto.TermTo,
+            TermPrevFrom = dto.TermPrevFrom,
+            TermPrevTo = dto.TermPrevTo,
+            FnExpPercent = dto.FnExpPercent,
+            PmtDsTCGPercent = dto.PmtDsTCGPercent,
+            DlrSignStatus = "P",
+            HTCSignStatus = "P",
+            FnExpStatus = "NS",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.FnExpCalcs.Add(h);
+        await db.SaveChangesAsync();
+
+        var lines = new List<FnExpCalcLine>();
+        foreach (var it in distinct)
+        {
+            var l = new FnExpCalcLine
+            {
+                OrgId = Org,
+                FnExpCalcId = h.Id,
+                CaNo = caNo,
+                Vin = it.Vin.Trim().ToUpperInvariant(),
+                CarId = it.CarId?.Trim(),
+                ModelCode = it.ModelCode?.Trim(),
+                SpecCode = it.SpecCode?.Trim(),
+                AssemblyStatus = string.IsNullOrWhiteSpace(it.AssemblyStatus) ? "CBU" : it.AssemblyStatus.Trim().ToUpperInvariant(),
+                UnitPriceActual = it.UnitPriceActual,
+                SOCode = it.SOCode?.Trim(),
+                SPCode = it.SPCode?.Trim(),
+                FnDepositCountDate = it.FnDepositCountDate,
+                FnGrtCountDate = it.FnGrtCountDate,
+                PDCountDate = it.PDCountDate,
+                Status = "Pending",
+                Remark = it.Remark?.Trim(),
+                CreatedAt = DateTime.Now
+            };
+            RecalcFnExpLine(l, h.FnExpPercent, h.PmtDsTCGPercent);
+            lines.Add(l);
+        }
+        db.FnExpCalcLines.AddRange(lines);
+        RecalcFnExpTotals(h, lines);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            h.CaNo,
+            h.DealerCode,
+            h.FnExpPercent,
+            h.PmtDsTCGPercent,
+            h.FnExpStatus,
+            h.DlrSignStatus,
+            h.HTCSignStatus,
+            h.TotalVinCount,
+            h.TotalFnAmount,
+            h.TotalPDAmount,
+            items = lines.Select(l => new { l.Vin, l.AssemblyStatus, l.UnitPriceActual, l.FnTotalAmount, l.PDAmount })
+        };
+    }
+
+    public async Task<object> ListFnExpCalcsAsync(string? status, string? dealer, string? caNo, string? vin)
+    {
+        var q = db.FnExpCalcs.Where(h => h.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(h => h.FnExpStatus == status);
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(h => h.DealerCode == d);
+        }
+        if (!string.IsNullOrWhiteSpace(caNo))
+        {
+            var k = caNo.Trim().ToUpperInvariant();
+            q = q.Where(h => h.CaNo.Contains(k));
+        }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matched = await db.FnExpCalcLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.CaNo).Distinct().ToListAsync();
+            q = q.Where(h => matched.Contains(h.CaNo));
+        }
+
+        var items = await q.OrderByDescending(h => h.Id).Take(500).Select(h => new
+        {
+            h.CaNo,
+            h.DealerCode,
+            h.TermFrom,
+            h.TermTo,
+            h.FnExpPercent,
+            h.PmtDsTCGPercent,
+            h.TotalVinCount,
+            h.TotalFnAmount,
+            h.TotalPDAmount,
+            h.DlrSignStatus,
+            h.HTCSignStatus,
+            h.FnExpStatus,
+            h.CreatedBy,
+            h.CreatedAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetFnExpCalcAsync(string caNo)
+    {
+        caNo = caNo.Trim().ToUpperInvariant();
+        var h = await db.FnExpCalcs.FirstOrDefaultAsync(x => x.OrgId == Org && x.CaNo == caNo);
+        if (h is null) return null;
+
+        var lines = await db.FnExpCalcLines.Where(l => l.OrgId == Org && l.FnExpCalcId == h.Id).ToListAsync();
+        var details = lines.Select(l => new
+        {
+            l.Vin,
+            l.CarId,
+            l.ModelCode,
+            l.SpecCode,
+            l.AssemblyStatus,
+            l.UnitPriceActual,
+            l.SOCode,
+            l.SPCode,
+            l.FnDepositCountDate,
+            l.FnDepositAmount,
+            l.FnGrtCountDate,
+            l.FnGrtAmount,
+            l.FnTotalAmount,
+            l.PDCountDate,
+            l.PDAmount,
+            l.Status,
+            l.Remark
+        }).ToList();
+
+        return new
+        {
+            h.CaNo,
+            h.DealerCode,
+            h.TermFrom,
+            h.TermTo,
+            h.TermPrevFrom,
+            h.TermPrevTo,
+            h.FnExpPercent,
+            h.PmtDsTCGPercent,
+            h.TotalVinCount,
+            h.TotalFnDepositAmount,
+            h.TotalFnGrtAmount,
+            h.TotalFnAmount,
+            h.TotalPDAmount,
+            h.DlrSignStatus,
+            h.HTCSignStatus,
+            h.FnExpStatus,
+            h.DlrAppr1By,
+            h.DlrAppr1At,
+            h.DlrAppr2By,
+            h.DlrAppr2At,
+            h.HTCAppr1By,
+            h.HTCAppr1At,
+            h.HTCAppr2By,
+            h.HTCAppr2At,
+            h.CancelBy,
+            h.CancelAt,
+            h.CancelReason,
+            h.Remark,
+            h.CreatedBy,
+            h.CreatedAt,
+            vins = details
+        };
+    }
+
+    public async Task<object?> FnExpCalcTransitionAsync(string caNo, string action, FnExpCalcTransitionDto? dto)
+    {
+        caNo = caNo.Trim().ToUpperInvariant();
+        var h = await db.FnExpCalcs.FirstOrDefaultAsync(x => x.OrgId == Org && x.CaNo == caNo);
+        if (h is null) return null;
+
+        var now = DateTime.Now;
+        var by = dto?.By?.Trim();
+        var lines = await db.FnExpCalcLines.Where(l => l.OrgId == Org && l.FnExpCalcId == h.Id).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            // Đại lý ký cấp 1: P → A1
+            case "dlr-sign1":
+            case "dlrsign1":
+                if (h.DlrSignStatus != "P" || h.FnExpStatus == "C") return null;
+                h.DlrSignStatus = "A1";
+                h.DlrAppr1By = by;
+                h.DlrAppr1At = now;
+                break;
+
+            // Đại lý ký cấp 2: A1 → A2
+            case "dlr-sign2":
+            case "dlrsign2":
+                if (h.DlrSignStatus != "A1" || h.FnExpStatus == "C") return null;
+                h.DlrSignStatus = "A2";
+                h.DlrAppr2By = by;
+                h.DlrAppr2At = now;
+                break;
+
+            // Hãng ký cấp 1: P → A1 (yêu cầu Đại lý đã ký A1)
+            case "htc-sign1":
+            case "htcsign1":
+                if (h.HTCSignStatus != "P" || h.DlrSignStatus != "A1" || h.FnExpStatus == "C") return null;
+                h.HTCSignStatus = "A1";
+                h.HTCAppr1By = by;
+                h.HTCAppr1At = now;
+                break;
+
+            // Hãng ký cấp 2 (chốt): A1 → A2, FnExpStatus NS → S (yêu cầu Đại lý đã ký A1)
+            case "htc-sign2":
+            case "htcsign2":
+                if (h.HTCSignStatus != "A1" || h.DlrSignStatus != "A1" || h.FnExpStatus != "NS") return null;
+                h.HTCSignStatus = "A2";
+                h.HTCAppr2By = by;
+                h.HTCAppr2At = now;
+                h.FnExpStatus = "S";
+                foreach (var l in lines) if (l.Status == "Pending") l.Status = "Signed";
+                break;
+
+            // Hủy bảng kê (chưa chốt ký)
+            case "cancel":
+                if (h.FnExpStatus == "S") return null;
+                h.FnExpStatus = "C";
+                h.CancelBy = by;
+                h.CancelAt = now;
+                h.CancelReason = dto?.Note?.Trim();
+                foreach (var l in lines) if (l.Status != "Signed") l.Status = "Cancelled";
+                break;
+
+            default:
+                return null;
+        }
+
+        h.LogLUDateTime = now;
+        h.LogLUBy = by;
+        await db.SaveChangesAsync();
+        return new
+        {
+            h.CaNo,
+            h.DlrSignStatus,
+            h.HTCSignStatus,
+            h.FnExpStatus,
+            h.TotalFnAmount,
+            h.TotalPDAmount
+        };
+    }
+
+    public async Task<object?> UpdateFnExpCalcLineAsync(string caNo, string vin, UpdateFnExpCalcLineDto dto)
+    {
+        caNo = caNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+        var h = await db.FnExpCalcs.FirstOrDefaultAsync(x => x.OrgId == Org && x.CaNo == caNo);
+        if (h is null || h.FnExpStatus is "S" or "C") return null;
+
+        var l = await db.FnExpCalcLines.FirstOrDefaultAsync(x => x.OrgId == Org && x.FnExpCalcId == h.Id && x.Vin == vin);
+        if (l is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.AssemblyStatus)) l.AssemblyStatus = dto.AssemblyStatus.Trim().ToUpperInvariant();
+        if (dto.UnitPriceActual is not null) l.UnitPriceActual = dto.UnitPriceActual.Value;
+        if (dto.FnDepositCountDate is not null) l.FnDepositCountDate = dto.FnDepositCountDate.Value;
+        if (dto.FnGrtCountDate is not null) l.FnGrtCountDate = dto.FnGrtCountDate.Value;
+        if (dto.PDCountDate is not null) l.PDCountDate = dto.PDCountDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) l.Remark = dto.Remark.Trim();
+        l.LogLUDateTime = DateTime.Now;
+        l.LogLUBy = dto.By?.Trim();
+
+        RecalcFnExpLine(l, h.FnExpPercent, h.PmtDsTCGPercent);
+
+        var lines = await db.FnExpCalcLines.Where(x => x.OrgId == Org && x.FnExpCalcId == h.Id).ToListAsync();
+        RecalcFnExpTotals(h, lines);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            h.CaNo,
+            l.Vin,
+            l.AssemblyStatus,
+            l.UnitPriceActual,
+            l.FnDepositCountDate,
+            l.FnDepositAmount,
+            l.FnGrtCountDate,
+            l.FnGrtAmount,
+            l.FnTotalAmount,
+            l.PDCountDate,
+            l.PDAmount,
+            h.TotalFnAmount,
+            h.TotalPDAmount
+        };
+    }
+
+    public async Task<object?> GetVehicleFnExpInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var lines = await db.FnExpCalcLines.Where(l => l.OrgId == Org && l.Vin == vin).OrderByDescending(l => l.Id).ToListAsync();
+        if (lines.Count == 0) return null;
+
+        var caNos = lines.Select(l => l.CaNo).Distinct().ToList();
+        var headers = await db.FnExpCalcs.Where(h => h.OrgId == Org && caNos.Contains(h.CaNo)).ToListAsync();
+        var hMap = headers.ToDictionary(h => h.CaNo);
+
+        var history = lines.Select(l =>
+        {
+            hMap.TryGetValue(l.CaNo, out var h);
+            return new
+            {
+                l.CaNo,
+                dealerCode = h?.DealerCode,
+                fnExpStatus = h?.FnExpStatus,
+                l.AssemblyStatus,
+                l.UnitPriceActual,
+                l.FnDepositCountDate,
+                l.FnDepositAmount,
+                l.FnGrtCountDate,
+                l.FnGrtAmount,
+                l.FnTotalAmount,
+                l.PDCountDate,
+                l.PDAmount,
+                l.Status,
+                createdAt = h?.CreatedAt
+            };
+        }).ToList();
+
+        return new
+        {
+            vin,
+            count = history.Count,
+            totalFnAmount = lines.Sum(l => l.FnTotalAmount),
+            totalPDAmount = lines.Sum(l => l.PDAmount),
+            history
+        };
+    }
+
+    public async Task<object> GetFnExpCalcSummaryAsync(string? dealerCode)
+    {
+        var q = db.FnExpCalcs.Where(h => h.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+        {
+            var d = dealerCode.Trim().ToUpperInvariant();
+            q = q.Where(h => h.DealerCode == d);
+        }
+
+        var total = await q.CountAsync();
+        var signed = await q.CountAsync(h => h.FnExpStatus == "S");
+        var notSigned = await q.CountAsync(h => h.FnExpStatus == "NS");
+        var cancelled = await q.CountAsync(h => h.FnExpStatus == "C");
+        var totalFnAmount = await q.Where(h => h.FnExpStatus == "S").SumAsync(h => (decimal?)h.TotalFnAmount) ?? 0;
+        var totalPDAmount = await q.Where(h => h.FnExpStatus == "S").SumAsync(h => (decimal?)h.TotalPDAmount) ?? 0;
+        var byDealer = await q.GroupBy(h => h.DealerCode)
+            .Select(g => new
+            {
+                dealerCode = g.Key,
+                count = g.Count(),
+                fnAmount = g.Sum(x => x.TotalFnAmount),
+                pdAmount = g.Sum(x => x.TotalPDAmount)
+            }).ToListAsync();
+
+        return new
+        {
+            dealerCode,
+            total,
+            signed,
+            notSigned,
+            cancelled,
+            totalFnAmount,
+            totalPDAmount,
+            byDealer
         };
     }
 }
