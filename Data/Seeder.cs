@@ -6626,6 +6626,437 @@ public static class Seeder
             }
         }
 
+        // ===== Quản lý Đề nghị & Quyết toán Chi phí Hỗ trợ Marketing Đại lý Phân phối OEM (BizHTC.Marketing / MKT_MarketingFee) =====
+        if (!await db.MarketingActivityTypes.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            db.MarketingActivityTypes.AddRange(
+                new MarketingActivityType { OrgId = org, MKTActivityTypeCode = "OOH", MKTActivityTypeName = "Biển bảng Quảng cáo Ngoài trời (OOH & Billboard)", FlagActive = true, Remark = "Pano, billboard tấm lớn, màn hình LED quảng cáo ngoài trời" },
+                new MarketingActivityType { OrgId = org, MKTActivityTypeCode = "DIGITAL", MKTActivityTypeName = "Quảng cáo Trực tuyến (Digital & Social Marketing)", FlagActive = true, Remark = "Facebook Ads, Google Search, TikTok Ads, YouTube TrueView" },
+                new MarketingActivityType { OrgId = org, MKTActivityTypeCode = "EVENT", MKTActivityTypeName = "Sự kiện & Trải nghiệm Lái thử (Roadshow & Test Drive)", FlagActive = true, Remark = "Sự kiện lái thử cuối tuần, Roadshow giới thiệu mẫu xe mới" },
+                new MarketingActivityType { OrgId = org, MKTActivityTypeCode = "POSM", MKTActivityTypeName = "Vật phẩm Quảng cáo Showroom (POSM & Decor)", FlagActive = true, Remark = "Standee, backdrop, brochure, tờ rơi, trang trí nhận diện CI/VI" },
+                new MarketingActivityType { OrgId = org, MKTActivityTypeCode = "PR_MEDIA", MKTActivityTypeName = "Báo chí & Truyền thông Chuyên ngành (PR & Media)", FlagActive = true, Remark = "Bài PR báo mạng Dân Trí, VnExpress, AutoPro, Otofun" },
+                new MarketingActivityType { OrgId = org, MKTActivityTypeCode = "RADIO_VOV", MKTActivityTypeName = "Phát thanh Radio & Truyền hình (VOV Traffic)", FlagActive = true, Remark = "Spot quảng cáo kênh VOV Giao thông giờ cao điểm" }
+            );
+        }
+
+        if (!await db.MarketingActivities.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            db.MarketingActivities.AddRange(
+                new MarketingActivity
+                {
+                    OrgId = org,
+                    MKTActivityCode = "OOH_BILLBOARD",
+                    MKTActivityName = "Thuê biển Pano Billboard quảng cáo ngoài trời tấm lớn",
+                    MKTActivityTypeCode = "OOH",
+                    DefaultHTCLimitPrice = 25000000m,
+                    FlagDesignImage = true,
+                    FlagActualImage = true,
+                    FlagContract = true,
+                    FlagInvoice = true,
+                    FlagActive = true,
+                    Remark = "Định mức hỗ trợ tối đa 25 triệu/vị trí/tháng"
+                },
+                new MarketingActivity
+                {
+                    OrgId = org,
+                    MKTActivityCode = "DIGI_FACEBOOK_ADS",
+                    MKTActivityName = "Chạy chiến dịch quảng cáo Lead Generation Facebook Ads",
+                    MKTActivityTypeCode = "DIGITAL",
+                    DefaultHTCLimitPrice = 15000000m,
+                    FlagDesignImage = true,
+                    FlagActualImage = true,
+                    FlagContract = true,
+                    FlagInvoice = true,
+                    FlagActive = true,
+                    Remark = "Hỗ trợ 50% ngân sách chạy ads thu thập khách tiềm năng"
+                },
+                new MarketingActivity
+                {
+                    OrgId = org,
+                    MKTActivityCode = "DIGI_GOOGLE_SEARCH",
+                    MKTActivityName = "Quảng cáo từ khóa tìm kiếm Google Search & GDN",
+                    MKTActivityTypeCode = "DIGITAL",
+                    DefaultHTCLimitPrice = 12000000m,
+                    FlagDesignImage = true,
+                    FlagActualImage = true,
+                    FlagContract = true,
+                    FlagInvoice = true,
+                    FlagActive = true,
+                    Remark = "Tối ưu tìm kiếm từ khóa thương hiệu xe Hyundai"
+                },
+                new MarketingActivity
+                {
+                    OrgId = org,
+                    MKTActivityCode = "EVENT_TEST_DRIVE",
+                    MKTActivityName = "Tổ chức Sự kiện Lái thử & Trải nghiệm xe cuối tuần (Weekend Test Drive)",
+                    MKTActivityTypeCode = "EVENT",
+                    DefaultHTCLimitPrice = 30000000m,
+                    FlagDesignImage = true,
+                    FlagActualImage = true,
+                    FlagContract = true,
+                    FlagInvoice = true,
+                    FlagActive = true,
+                    Remark = "Hỗ trợ chi phí thuê địa điểm, tiệc trà teabreak và quà tặng khách lái thử"
+                },
+                new MarketingActivity
+                {
+                    OrgId = org,
+                    MKTActivityCode = "POSM_SHOWROOM_STANDEE",
+                    MKTActivityName = "In ấn Standee, Banner, Backdrop và Brochure giới thiệu sản phẩm",
+                    MKTActivityTypeCode = "POSM",
+                    DefaultHTCLimitPrice = 8000000m,
+                    FlagDesignImage = true,
+                    FlagActualImage = true,
+                    FlagContract = true,
+                    FlagInvoice = true,
+                    FlagActive = true,
+                    Remark = "Sản xuất POSM theo đúng guideline chuẩn CI nhận diện Hyundai toàn cầu"
+                },
+                new MarketingActivity
+                {
+                    OrgId = org,
+                    MKTActivityCode = "PR_PRESS_ARTICLE",
+                    MKTActivityName = "Đăng bài PR trải nghiệm đánh giá xe trên báo điện tử & Diễn đàn ô tô",
+                    MKTActivityTypeCode = "PR_MEDIA",
+                    DefaultHTCLimitPrice = 10000000m,
+                    FlagDesignImage = true,
+                    FlagActualImage = true,
+                    FlagContract = true,
+                    FlagInvoice = true,
+                    FlagActive = true,
+                    Remark = "Bài viết đánh giá tính năng an toàn Hyundai SmartSense"
+                }
+            );
+        }
+
+        if (!await db.MarketingFeeSettlements.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var fee1 = new MarketingFeeSettlement
+            {
+                OrgId = org,
+                MKTFeeCode = "MKT-202603-HN01-0001",
+                MKTFeeCodeUser = "ĐNQT-MKT/2026/03-HN01",
+                MKTFeeName = "Chiến dịch Truyền thông & Lái thử Ra mắt Hyundai SantaFe & Creta Tháng 03/2026",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01 - Cầu Giấy",
+                CampaignMonth = "2026-03",
+                DateStart = DateTime.Now.AddDays(-20),
+                DateEnd = DateTime.Now.AddDays(-5),
+                TotalActivityCount = 3,
+                TotalAmountDealer = 62000000m,
+                TotalAmountApproved = 58000000m,
+                VatRate = 10m,
+                TotalVatAmount = 5800000m,
+                TotalAmountAfterVAT = 63800000m,
+                Status = "Finished",
+                BankRefNo = "UNC-MKT-20260315-0012",
+                SettledDate = DateTime.Now.AddDays(-3),
+                SettledBy = "Kế toán Chi phí OEM - Lê Thu Hằng",
+                ApprovedBy = "Giám đốc Marketing OEM - Trần Tuấn Anh",
+                ApprovedAt = DateTime.Now.AddDays(-5),
+                Remark = "Hồ sơ quyết toán marketing tháng 03/2026 đầy đủ 4 chứng từ hợp lệ, đã chuyển khoản giải ngân",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-20)
+            };
+
+            var fee2 = new MarketingFeeSettlement
+            {
+                OrgId = org,
+                MKTFeeCode = "MKT-202603-HN02-0001",
+                MKTFeeCodeUser = "ĐNQT-MKT/2026/03-HN02",
+                MKTFeeName = "Chiến dịch Digital Marketing & Trưng bày Showroom Hyundai Tucson & Accent Tháng 03/2026",
+                DealerCode = "DLR-HN02",
+                DealerName = "Hyundai Hà Nội 02 - Long Biên",
+                CampaignMonth = "2026-03",
+                DateStart = DateTime.Now.AddDays(-15),
+                DateEnd = DateTime.Now.AddDays(-2),
+                TotalActivityCount = 2,
+                TotalAmountDealer = 35000000m,
+                TotalAmountApproved = 32000000m,
+                VatRate = 10m,
+                TotalVatAmount = 3200000m,
+                TotalAmountAfterVAT = 35200000m,
+                Status = "Approved",
+                ApprovedBy = "Giám đốc Marketing OEM - Trần Tuấn Anh",
+                ApprovedAt = DateTime.Now.AddDays(-1),
+                Remark = "Đã phê duyệt kinh phí hỗ trợ, chờ kế toán thanh toán giải ngân UNC",
+                CreatedBy = "dealer.hn02",
+                CreatedAt = DateTime.Now.AddDays(-15)
+            };
+
+            var fee3 = new MarketingFeeSettlement
+            {
+                OrgId = org,
+                MKTFeeCode = "MKT-202604-HCM01-0001",
+                MKTFeeCodeUser = "ĐNQT-MKT/2026/04-HCM01",
+                MKTFeeName = "Chương trình Sự kiện Lái thử Trải nghiệm Xe Điện Ioniq 5 & SantaFe All-New",
+                DealerCode = "DLR-HCM01",
+                DealerName = "Hyundai Sài Gòn",
+                CampaignMonth = "2026-04",
+                DateStart = DateTime.Now.AddDays(5),
+                DateEnd = DateTime.Now.AddDays(25),
+                TotalActivityCount = 2,
+                TotalAmountDealer = 45000000m,
+                TotalAmountApproved = 0m,
+                VatRate = 10m,
+                TotalVatAmount = 0m,
+                TotalAmountAfterVAT = 0m,
+                Status = "Submitted",
+                Remark = "Đại lý đã nộp đề xuất kế hoạch marketing tháng 04/2026 kèm báo giá agency, đang chờ duyệt",
+                CreatedBy = "dealer.hcm01",
+                CreatedAt = DateTime.Now.AddDays(-2)
+            };
+
+            db.MarketingFeeSettlements.AddRange(fee1, fee2, fee3);
+            await db.SaveChangesAsync();
+
+            // Details cho fee1
+            var d1 = new MarketingFeeDetail
+            {
+                OrgId = org,
+                MarketingFeeSettlementId = fee1.Id,
+                MKTFeeCode = fee1.MKTFeeCode,
+                LineIndex = 1,
+                MKTActivityCode = "EVENT_TEST_DRIVE",
+                MKTActivityName = "Tổ chức Sự kiện Lái thử & Trải nghiệm xe cuối tuần (Weekend Test Drive)",
+                MKTActivityTypeCode = "EVENT",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                Qty = 1,
+                Price = 28000000m,
+                TotalAmountDealer = 28000000m,
+                HTCLimitPrice = 30000000m,
+                ApprovedQty = 1,
+                ApprovedAmount = 28000000m,
+                FlagDesignImage = true,
+                FlagActualImage = true,
+                FlagContract = true,
+                FlagInvoice = true,
+                HasDesignImage = true,
+                HasActualImage = true,
+                HasContract = true,
+                HasInvoice = true,
+                Status = "Finished",
+                Remark = "Sự kiện thu hút 85 lượt khách lái thử và ký 12 hợp đồng"
+            };
+
+            var d2 = new MarketingFeeDetail
+            {
+                OrgId = org,
+                MarketingFeeSettlementId = fee1.Id,
+                MKTFeeCode = fee1.MKTFeeCode,
+                LineIndex = 2,
+                MKTActivityCode = "OOH_BILLBOARD",
+                MKTActivityName = "Thuê biển Pano Billboard quảng cáo ngoài trời tấm lớn",
+                MKTActivityTypeCode = "OOH",
+                Vin = "DEMOVIN00000002",
+                Model = "Creta 1.5 Cao cấp",
+                Qty = 1,
+                Price = 20000000m,
+                TotalAmountDealer = 20000000m,
+                HTCLimitPrice = 25000000m,
+                ApprovedQty = 1,
+                ApprovedAmount = 20000000m,
+                FlagDesignImage = true,
+                FlagActualImage = true,
+                FlagContract = true,
+                FlagInvoice = true,
+                HasDesignImage = true,
+                HasActualImage = true,
+                HasContract = true,
+                HasInvoice = true,
+                Status = "Finished",
+                Remark = "Vị trí ngã tư Cầu Giấy - Xuân Thủy, lưu lượng 120.000 lượt xe/ngày"
+            };
+
+            var d3 = new MarketingFeeDetail
+            {
+                OrgId = org,
+                MarketingFeeSettlementId = fee1.Id,
+                MKTFeeCode = fee1.MKTFeeCode,
+                LineIndex = 3,
+                MKTActivityCode = "DIGI_FACEBOOK_ADS",
+                MKTActivityName = "Chạy chiến dịch quảng cáo Lead Generation Facebook Ads",
+                MKTActivityTypeCode = "DIGITAL",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                Qty = 1,
+                Price = 14000000m,
+                TotalAmountDealer = 14000000m,
+                HTCLimitPrice = 10000000m,
+                ApprovedQty = 1,
+                ApprovedAmount = 10000000m,
+                FlagDesignImage = true,
+                FlagActualImage = true,
+                FlagContract = true,
+                FlagInvoice = true,
+                HasDesignImage = true,
+                HasActualImage = true,
+                HasContract = true,
+                HasInvoice = true,
+                Status = "Finished",
+                Remark = "OEM duyệt định mức trần 10.000.000đ cho chiến dịch Facebook Ads"
+            };
+
+            // Details cho fee2
+            var d4 = new MarketingFeeDetail
+            {
+                OrgId = org,
+                MarketingFeeSettlementId = fee2.Id,
+                MKTFeeCode = fee2.MKTFeeCode,
+                LineIndex = 1,
+                MKTActivityCode = "DIGI_GOOGLE_SEARCH",
+                MKTActivityName = "Quảng cáo từ khóa tìm kiếm Google Search & GDN",
+                MKTActivityTypeCode = "DIGITAL",
+                Vin = "DEMOVIN00000002",
+                Model = "Creta 1.5 Cao cấp",
+                Qty = 1,
+                Price = 12000000m,
+                TotalAmountDealer = 12000000m,
+                HTCLimitPrice = 12000000m,
+                ApprovedQty = 1,
+                ApprovedAmount = 12000000m,
+                FlagDesignImage = true,
+                FlagActualImage = true,
+                FlagContract = true,
+                FlagInvoice = true,
+                HasDesignImage = true,
+                HasActualImage = true,
+                HasContract = true,
+                HasInvoice = true,
+                Status = "Approved",
+                Remark = "Đã nghiệm thu báo cáo KPI từ Google Ads"
+            };
+
+            var d5 = new MarketingFeeDetail
+            {
+                OrgId = org,
+                MarketingFeeSettlementId = fee2.Id,
+                MKTFeeCode = fee2.MKTFeeCode,
+                LineIndex = 2,
+                MKTActivityCode = "POSM_SHOWROOM_STANDEE",
+                MKTActivityName = "In ấn Standee, Banner, Backdrop và Brochure giới thiệu sản phẩm",
+                MKTActivityTypeCode = "POSM",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                Qty = 1,
+                Price = 23000000m,
+                TotalAmountDealer = 23000000m,
+                HTCLimitPrice = 20000000m,
+                ApprovedQty = 1,
+                ApprovedAmount = 20000000m,
+                FlagDesignImage = true,
+                FlagActualImage = true,
+                FlagContract = true,
+                FlagInvoice = true,
+                HasDesignImage = true,
+                HasActualImage = true,
+                HasContract = true,
+                HasInvoice = true,
+                Status = "Approved",
+                Remark = "Trang trí khu vực trưng bày showroom chuẩn nhận diện mới GDSI"
+            };
+
+            db.MarketingFeeDetails.AddRange(d1, d2, d3, d4, d5);
+            await db.SaveChangesAsync();
+
+            // Attachments cho fee1
+            db.MarketingFeeDetailAttaches.AddRange(
+                new MarketingFeeDetailAttach
+                {
+                    OrgId = org,
+                    MarketingFeeDetailId = d1.Id,
+                    MKTFeeCode = fee1.MKTFeeCode,
+                    LineIndex = 1,
+                    AttachCode = "ATT-MKT-20260301-01-001",
+                    FileType = "DesignImage",
+                    FileName = "Maket_Backdrop_LaiThu_HN01.pdf",
+                    FilePath = "/uploads/mkt/MKT-202603-HN01-0001/Maket_Backdrop_LaiThu_HN01.pdf",
+                    FileSizeKb = 4200,
+                    Status = "Approved",
+                    ApprovedBy = "Chuyên viên Marketing - Phạm Minh Đức",
+                    ApprovedAt = DateTime.Now.AddDays(-18),
+                    Remark = "Maket đúng chuẩn nhận diện Hyundai CI",
+                    UploadedAt = DateTime.Now.AddDays(-19)
+                },
+                new MarketingFeeDetailAttach
+                {
+                    OrgId = org,
+                    MarketingFeeDetailId = d1.Id,
+                    MKTFeeCode = fee1.MKTFeeCode,
+                    LineIndex = 1,
+                    AttachCode = "ATT-MKT-20260301-01-002",
+                    FileType = "ActualImage",
+                    FileName = "AnhNghiemThu_SuKienLaiThu_HN01.jpg",
+                    FilePath = "/uploads/mkt/MKT-202603-HN01-0001/AnhNghiemThu_SuKienLaiThu_HN01.jpg",
+                    FileSizeKb = 8500,
+                    Status = "Approved",
+                    ApprovedBy = "Chuyên viên Marketing - Phạm Minh Đức",
+                    ApprovedAt = DateTime.Now.AddDays(-6),
+                    Remark = "Ảnh hiện trường sự kiện có đông đủ khách hàng tham gia",
+                    UploadedAt = DateTime.Now.AddDays(-7)
+                },
+                new MarketingFeeDetailAttach
+                {
+                    OrgId = org,
+                    MarketingFeeDetailId = d1.Id,
+                    MKTFeeCode = fee1.MKTFeeCode,
+                    LineIndex = 1,
+                    AttachCode = "ATT-MKT-20260301-01-003",
+                    FileType = "Contract",
+                    FileName = "HD_ToChucSuKien_Agency_MediaStar.pdf",
+                    FilePath = "/uploads/mkt/MKT-202603-HN01-0001/HD_ToChucSuKien_Agency_MediaStar.pdf",
+                    FileSizeKb = 2100,
+                    Status = "Approved",
+                    ApprovedBy = "Chuyên viên Marketing - Phạm Minh Đức",
+                    ApprovedAt = DateTime.Now.AddDays(-6),
+                    Remark = "Hợp đồng dịch vụ đầy đủ pháp lý",
+                    UploadedAt = DateTime.Now.AddDays(-7)
+                },
+                new MarketingFeeDetailAttach
+                {
+                    OrgId = org,
+                    MarketingFeeDetailId = d1.Id,
+                    MKTFeeCode = fee1.MKTFeeCode,
+                    LineIndex = 1,
+                    AttachCode = "ATT-MKT-20260301-01-004",
+                    FileType = "Invoice",
+                    FileName = "HoaDonGTGT_MediaStar_HD001928.pdf",
+                    FilePath = "/uploads/mkt/MKT-202603-HN01-0001/HoaDonGTGT_MediaStar_HD001928.pdf",
+                    FileSizeKb = 1500,
+                    Status = "Approved",
+                    ApprovedBy = "Chuyên viên Marketing - Phạm Minh Đức",
+                    ApprovedAt = DateTime.Now.AddDays(-6),
+                    Remark = "Hóa đơn điện tử hợp lệ",
+                    UploadedAt = DateTime.Now.AddDays(-7)
+                }
+            );
+
+            // Cập nhật thông tin hỗ trợ marketing trên xe VIN
+            var v1Mkt = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Mkt != null)
+            {
+                v1Mkt.IsMktFeeSupported = true;
+                v1Mkt.MktFeeSupportedAmount = 38000000m; // 28tr (Line 1) + 10tr (Line 3)
+                v1Mkt.LastMktFeeNo = fee1.MKTFeeCode;
+                v1Mkt.LastMktFeeDate = DateTime.Now.AddDays(-5);
+                v1Mkt.MktFeeCount = 2;
+            }
+
+            var v2Mkt = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Mkt != null)
+            {
+                v2Mkt.IsMktFeeSupported = true;
+                v2Mkt.MktFeeSupportedAmount = 20000000m; // 20tr (Line 2)
+                v2Mkt.LastMktFeeNo = fee1.MKTFeeCode;
+                v2Mkt.LastMktFeeDate = DateTime.Now.AddDays(-5);
+                v2Mkt.MktFeeCount = 1;
+            }
+        }
+
         await db.SaveChangesAsync();
     }
 
@@ -6893,7 +7324,17 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCustomerVisitDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"CustomerVisitCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"CustomerVisits\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"VisitCode\" text NOT NULL DEFAULT '', \"VisitCodeUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"VisitDate\" timestamp NOT NULL DEFAULT now(), \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"CustomerEmail\" text NULL, \"CustomerAddress\" text NULL, \"Gender\" text NOT NULL DEFAULT 'Nam', \"RangeAgeCode\" text NOT NULL DEFAULT '26-35', \"CustomerType\" text NOT NULL DEFAULT 'Individual', \"InterestedModel\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT 'NWAC', \"ColorName\" text NOT NULL DEFAULT 'Trắng ngọc trai', \"Vin\" text NULL, \"VisitPurpose\" text NOT NULL DEFAULT 'XemXeMoi', \"LeadSource\" text NOT NULL DEFAULT 'ShowroomWalkIn', \"SalesConsultantCode\" text NULL, \"SalesConsultantName\" text NULL, \"HasTradeIn\" boolean NOT NULL DEFAULT false, \"TradeInModel\" text NULL, \"TradeInYear\" integer NULL, \"TradeInEstimatedPrice\" numeric NOT NULL DEFAULT 0, \"PaymentMethodExpected\" text NOT NULL DEFAULT 'Cash', \"LoanPercentExpected\" numeric NOT NULL DEFAULT 0, \"EstimatedPurchaseTime\" text NOT NULL DEFAULT 'TrongThang', \"PurchaseProbability\" text NOT NULL DEFAULT 'High', \"BudgetAmount\" numeric NOT NULL DEFAULT 0, \"CompetitorModel\" text NULL, \"IsTestDriveTaken\" boolean NOT NULL DEFAULT false, \"LinkedDriveTestCode\" text NULL, \"LinkedDealNo\" text NULL, \"NextFollowUpDate\" timestamp NULL, \"FollowUpAction\" text NULL DEFAULT 'CallBack', \"CustomerFeedback\" text NULL, \"Status\" text NOT NULL DEFAULT 'CheckedIn', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"CustomerVisitActionLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CustomerVisitId\" bigint NOT NULL, \"VisitCode\" text NOT NULL DEFAULT '', \"ActionNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"ActionType\" text NOT NULL DEFAULT 'ShowroomGreeting', \"ActionDate\" timestamp NOT NULL DEFAULT now(), \"SalesConsultant\" text NULL, \"DiscussionSummary\" text NOT NULL DEFAULT '', \"CustomerResponse\" text NULL, \"NextActionPlan\" text NULL, \"NextActionDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Completed', \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())"
+            "CREATE TABLE IF NOT EXISTS public.\"CustomerVisitActionLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CustomerVisitId\" bigint NOT NULL, \"VisitCode\" text NOT NULL DEFAULT '', \"ActionNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"ActionType\" text NOT NULL DEFAULT 'ShowroomGreeting', \"ActionDate\" timestamp NOT NULL DEFAULT now(), \"SalesConsultant\" text NULL, \"DiscussionSummary\" text NOT NULL DEFAULT '', \"CustomerResponse\" text NULL, \"NextActionPlan\" text NULL, \"NextActionDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Completed', \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsMktFeeSupported\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"MktFeeSupportedAmount\" numeric NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastMktFeeNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastMktFeeDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"MktFeeCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"MarketingActivityTypes\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MKTActivityTypeCode\" text NOT NULL DEFAULT '', \"MKTActivityTypeName\" text NOT NULL DEFAULT '', \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS public.\"MarketingActivities\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MKTActivityCode\" text NOT NULL DEFAULT '', \"MKTActivityName\" text NOT NULL DEFAULT '', \"MKTActivityTypeCode\" text NOT NULL DEFAULT 'DIGITAL', \"DefaultHTCLimitPrice\" numeric NOT NULL DEFAULT 0, \"FlagDesignImage\" boolean NOT NULL DEFAULT true, \"FlagActualImage\" boolean NOT NULL DEFAULT true, \"FlagContract\" boolean NOT NULL DEFAULT true, \"FlagInvoice\" boolean NOT NULL DEFAULT true, \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS public.\"MarketingFeeSettlements\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MKTFeeCode\" text NOT NULL DEFAULT '', \"MKTFeeCodeUser\" text NULL, \"MKTFeeName\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"CampaignMonth\" text NOT NULL DEFAULT '', \"DateStart\" timestamp NOT NULL DEFAULT now(), \"DateEnd\" timestamp NOT NULL DEFAULT now(), \"TotalActivityCount\" integer NOT NULL DEFAULT 0, \"TotalAmountDealer\" numeric NOT NULL DEFAULT 0, \"TotalAmountApproved\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmountAfterVAT\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"BankRefNo\" text NULL, \"SettledDate\" timestamp NULL, \"SettledBy\" text NULL, \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS public.\"MarketingFeeDetails\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MarketingFeeSettlementId\" bigint NOT NULL, \"MKTFeeCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"MKTActivityCode\" text NOT NULL DEFAULT '', \"MKTActivityName\" text NOT NULL DEFAULT '', \"MKTActivityTypeCode\" text NOT NULL DEFAULT 'DIGITAL', \"Vin\" text NULL, \"Model\" text NULL, \"SpecCode\" text NULL, \"Qty\" numeric NOT NULL DEFAULT 1, \"Price\" numeric NOT NULL DEFAULT 0, \"TotalAmountDealer\" numeric NOT NULL DEFAULT 0, \"HTCLimitPrice\" numeric NOT NULL DEFAULT 0, \"ApprovedQty\" numeric NOT NULL DEFAULT 0, \"ApprovedAmount\" numeric NOT NULL DEFAULT 0, \"FlagDesignImage\" boolean NOT NULL DEFAULT true, \"FlagActualImage\" boolean NOT NULL DEFAULT true, \"FlagContract\" boolean NOT NULL DEFAULT true, \"FlagInvoice\" boolean NOT NULL DEFAULT true, \"HasDesignImage\" boolean NOT NULL DEFAULT false, \"HasActualImage\" boolean NOT NULL DEFAULT false, \"HasContract\" boolean NOT NULL DEFAULT false, \"HasInvoice\" boolean NOT NULL DEFAULT false, \"Status\" text NOT NULL DEFAULT 'Pending', \"RejectReason\" text NULL, \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"MarketingFeeDetailAttaches\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MarketingFeeDetailId\" bigint NOT NULL, \"MKTFeeCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"AttachCode\" text NOT NULL DEFAULT '', \"FileType\" text NOT NULL DEFAULT 'ActualImage', \"FileName\" text NOT NULL DEFAULT '', \"FilePath\" text NULL, \"FileSizeKb\" bigint NOT NULL DEFAULT 1024, \"Status\" text NOT NULL DEFAULT 'Approved', \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"Remark\" text NULL, \"UploadedAt\" timestamp NOT NULL DEFAULT now())"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

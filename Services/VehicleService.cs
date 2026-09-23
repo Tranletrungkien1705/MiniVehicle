@@ -2213,6 +2213,29 @@ public interface IVehicleService
     Task<VehicleVisitInfoDto?> GetVehicleVisitInfoAsync(string vin);
     Task<object?> GetVehicleVisitHistoryAsync(string vin);
     Task<CustomerVisitHistoryDto?> GetCustomerVisitByPhoneAsync(string phone);
+
+    // ===== Quản lý Đề nghị & Quyết toán Chi phí Hỗ trợ Marketing Đại lý Phân phối OEM (BizHTC.Marketing / MKT_MarketingFee) =====
+    Task<object> CreateMarketingActivityTypeAsync(CreateMarketingActivityTypeDto dto);
+    Task<object> ListMarketingActivityTypesAsync(bool? activeOnly);
+    Task<object> CreateMarketingActivityAsync(CreateMarketingActivityDto dto);
+    Task<object> ListMarketingActivitiesAsync(string? typeCode, bool? activeOnly, string? q);
+    Task<object?> GetMarketingActivityAsync(string activityCode);
+    Task<object?> UpdateMarketingActivityAsync(string activityCode, UpdateMarketingActivityDto dto);
+    Task<object> CreateMarketingFeeAsync(CreateMarketingFeeDto dto);
+    Task<object> ListMarketingFeesAsync(string? status, string? dealer, string? month, string? feeCode, string? q);
+    Task<object?> GetMarketingFeeAsync(string mktFeeCode);
+    Task<object?> UpdateMarketingFeeHeaderAsync(string mktFeeCode, UpdateMarketingFeeHeaderDto dto);
+    Task<object?> UpdateMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, UpdateMarketingFeeDetailDto dto);
+    Task<object?> UpdateDetailHTCLimitAsync(string mktFeeCode, int lineIndex, UpdateHTCLimitPriceDto dto);
+    Task<object?> ApproveMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, decimal? approvedQty, decimal? approvedAmount, string? actor);
+    Task<object?> RejectMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, string reason, string? actor);
+    Task<object?> AddMarketingFeeAttachAsync(string mktFeeCode, int lineIndex, AddMarketingFeeAttachDto dto);
+    Task<object?> ReviewMarketingFeeAttachAsync(string mktFeeCode, string attachCode, ReviewMarketingFeeAttachDto dto);
+    Task<object?> MarketingFeeTransitionAsync(string mktFeeCode, string action, MarketingFeeTransitionDto? dto);
+    Task<object?> RemoveMarketingFeeAsync(string mktFeeCode);
+    Task<MarketingFeeSummaryDto> GetMarketingFeeSummaryAsync(string? campaignMonth, string? dealerCode);
+    Task<VehicleMarketingFeeInfoDto?> GetVehicleMarketingFeeInfoAsync(string vin);
+    Task<object?> GetVehicleMarketingFeeHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -38525,6 +38548,897 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             visits
         );
     }
+
+    // ===== Quản lý Đề nghị & Quyết toán Chi phí Hỗ trợ Marketing Đại lý Phân phối OEM (BizHTC.Marketing / MKT_MarketingFee) =====
+
+    public async Task<object> CreateMarketingActivityTypeAsync(CreateMarketingActivityTypeDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.MKTActivityTypeCode) || string.IsNullOrWhiteSpace(dto.MKTActivityTypeName))
+            throw new InvalidOperationException("Mã nhóm hoạt động MKTActivityTypeCode và Tên MKTActivityTypeName không được để trống.");
+
+        var code = dto.MKTActivityTypeCode.Trim().ToUpperInvariant();
+        if (await db.MarketingActivityTypes.AnyAsync(t => t.OrgId == Org && t.MKTActivityTypeCode == code))
+            throw new InvalidOperationException($"Nhóm hoạt động marketing '{code}' đã tồn tại.");
+
+        var item = new MarketingActivityType
+        {
+            OrgId = Org,
+            MKTActivityTypeCode = code,
+            MKTActivityTypeName = dto.MKTActivityTypeName.Trim(),
+            FlagActive = dto.FlagActive ?? true,
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.MarketingActivityTypes.Add(item);
+        await db.SaveChangesAsync();
+
+        return item;
+    }
+
+    public async Task<object> ListMarketingActivityTypesAsync(bool? activeOnly)
+    {
+        var q = db.MarketingActivityTypes.Where(t => t.OrgId == Org);
+        if (activeOnly.HasValue && activeOnly.Value) q = q.Where(t => t.FlagActive);
+        return await q.OrderBy(t => t.MKTActivityTypeCode).ToListAsync();
+    }
+
+    public async Task<object> CreateMarketingActivityAsync(CreateMarketingActivityDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.MKTActivityCode) || string.IsNullOrWhiteSpace(dto.MKTActivityName))
+            throw new InvalidOperationException("Mã hoạt động MKTActivityCode và Tên MKTActivityName không được để trống.");
+
+        var code = dto.MKTActivityCode.Trim().ToUpperInvariant();
+        if (await db.MarketingActivities.AnyAsync(a => a.OrgId == Org && a.MKTActivityCode == code))
+            throw new InvalidOperationException($"Hoạt động marketing '{code}' đã tồn tại.");
+
+        var act = new MarketingActivity
+        {
+            OrgId = Org,
+            MKTActivityCode = code,
+            MKTActivityName = dto.MKTActivityName.Trim(),
+            MKTActivityTypeCode = string.IsNullOrWhiteSpace(dto.MKTActivityTypeCode) ? "DIGITAL" : dto.MKTActivityTypeCode.Trim().ToUpperInvariant(),
+            DefaultHTCLimitPrice = dto.DefaultHTCLimitPrice ?? 0,
+            FlagDesignImage = dto.FlagDesignImage ?? true,
+            FlagActualImage = dto.FlagActualImage ?? true,
+            FlagContract = dto.FlagContract ?? true,
+            FlagInvoice = dto.FlagInvoice ?? true,
+            FlagActive = dto.FlagActive ?? true,
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.MarketingActivities.Add(act);
+        await db.SaveChangesAsync();
+
+        return act;
+    }
+
+    public async Task<object> ListMarketingActivitiesAsync(string? typeCode, bool? activeOnly, string? q)
+    {
+        var query = db.MarketingActivities.Where(a => a.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(typeCode))
+        {
+            var tc = typeCode.Trim().ToUpperInvariant();
+            query = query.Where(a => a.MKTActivityTypeCode == tc);
+        }
+        if (activeOnly.HasValue && activeOnly.Value) query = query.Where(a => a.FlagActive);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var search = q.Trim().ToUpperInvariant();
+            query = query.Where(a => a.MKTActivityCode.Contains(search) || a.MKTActivityName.ToUpper().Contains(search));
+        }
+
+        return await query.OrderBy(a => a.MKTActivityTypeCode).ThenBy(a => a.MKTActivityCode).ToListAsync();
+    }
+
+    public async Task<object?> GetMarketingActivityAsync(string activityCode)
+    {
+        activityCode = activityCode.Trim().ToUpperInvariant();
+        return await db.MarketingActivities.FirstOrDefaultAsync(a => a.OrgId == Org && a.MKTActivityCode == activityCode);
+    }
+
+    public async Task<object?> UpdateMarketingActivityAsync(string activityCode, UpdateMarketingActivityDto dto)
+    {
+        activityCode = activityCode.Trim().ToUpperInvariant();
+        var act = await db.MarketingActivities.FirstOrDefaultAsync(a => a.OrgId == Org && a.MKTActivityCode == activityCode);
+        if (act is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.MKTActivityName)) act.MKTActivityName = dto.MKTActivityName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.MKTActivityTypeCode)) act.MKTActivityTypeCode = dto.MKTActivityTypeCode.Trim().ToUpperInvariant();
+        if (dto.DefaultHTCLimitPrice.HasValue && dto.DefaultHTCLimitPrice.Value >= 0) act.DefaultHTCLimitPrice = dto.DefaultHTCLimitPrice.Value;
+        if (dto.FlagDesignImage.HasValue) act.FlagDesignImage = dto.FlagDesignImage.Value;
+        if (dto.FlagActualImage.HasValue) act.FlagActualImage = dto.FlagActualImage.Value;
+        if (dto.FlagContract.HasValue) act.FlagContract = dto.FlagContract.Value;
+        if (dto.FlagInvoice.HasValue) act.FlagInvoice = dto.FlagInvoice.Value;
+        if (dto.FlagActive.HasValue) act.FlagActive = dto.FlagActive.Value;
+        if (dto.Remark != null) act.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return act;
+    }
+
+    public async Task<object> CreateMarketingFeeAsync(CreateMarketingFeeDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Mã đại lý DealerCode không được để trống.");
+        if (string.IsNullOrWhiteSpace(dto.MKTFeeName))
+            throw new InvalidOperationException("Tên chương trình marketing MKTFeeName không được để trống.");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+        var month = !string.IsNullOrWhiteSpace(dto.CampaignMonth) ? dto.CampaignMonth.Trim() : DateTime.Now.ToString("yyyy-MM");
+        var now = DateTime.Now;
+
+        var seq = await db.MarketingFeeSettlements.CountAsync(s => s.OrgId == Org && s.CampaignMonth == month) + 1;
+        var feeCode = !string.IsNullOrWhiteSpace(dto.MKTFeeCode)
+            ? dto.MKTFeeCode.Trim().ToUpperInvariant()
+            : $"MKT-{month.Replace("-", "")}-{dealer}-{seq:D4}";
+
+        if (await db.MarketingFeeSettlements.AnyAsync(s => s.OrgId == Org && s.MKTFeeCode == feeCode))
+            throw new InvalidOperationException($"Mã hồ sơ quyết toán marketing '{feeCode}' đã tồn tại.");
+
+        var vatRate = dto.VatRate ?? 10m;
+
+        var fee = new MarketingFeeSettlement
+        {
+            OrgId = Org,
+            MKTFeeCode = feeCode,
+            MKTFeeCodeUser = dto.MKTFeeCodeUser?.Trim(),
+            MKTFeeName = dto.MKTFeeName.Trim(),
+            DealerCode = dealer,
+            DealerName = dto.DealerName?.Trim() ?? dealer,
+            CampaignMonth = month,
+            DateStart = dto.DateStart ?? now,
+            DateEnd = dto.DateEnd ?? now.AddMonths(1),
+            VatRate = vatRate,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "MarketingStaff",
+            CreatedAt = now
+        };
+
+        db.MarketingFeeSettlements.Add(fee);
+        await db.SaveChangesAsync();
+
+        var masterActivities = await db.MarketingActivities.Where(a => a.OrgId == Org).ToDictionaryAsync(a => a.MKTActivityCode, StringComparer.OrdinalIgnoreCase);
+
+        var details = new List<MarketingFeeDetail>();
+        var attaches = new List<MarketingFeeDetailAttach>();
+        decimal totalDealerAmt = 0;
+        int lineIdx = 0;
+
+        if (dto.Details != null && dto.Details.Count > 0)
+        {
+            foreach (var d in dto.Details)
+            {
+                lineIdx++;
+                var actCode = d.MKTActivityCode.Trim().ToUpperInvariant();
+                masterActivities.TryGetValue(actCode, out var mAct);
+
+                var actName = !string.IsNullOrWhiteSpace(d.MKTActivityName) ? d.MKTActivityName.Trim() : (mAct?.MKTActivityName ?? actCode);
+                var typeCode = !string.IsNullOrWhiteSpace(d.MKTActivityTypeCode) ? d.MKTActivityTypeCode.Trim().ToUpperInvariant() : (mAct?.MKTActivityTypeCode ?? "DIGITAL");
+                var htcLimit = d.HTCLimitPrice.HasValue && d.HTCLimitPrice.Value >= 0 ? d.HTCLimitPrice.Value : (mAct?.DefaultHTCLimitPrice ?? d.Price);
+                var qty = d.Qty > 0 ? d.Qty : 1;
+                var price = d.Price >= 0 ? d.Price : 0;
+                var lineTotalDealer = qty * price;
+                totalDealerAmt += lineTotalDealer;
+
+                var flagDesign = d.FlagDesignImage ?? mAct?.FlagDesignImage ?? true;
+                var flagActual = d.FlagActualImage ?? mAct?.FlagActualImage ?? true;
+                var flagContract = d.FlagContract ?? mAct?.FlagContract ?? true;
+                var flagInvoice = d.FlagInvoice ?? mAct?.FlagInvoice ?? true;
+
+                var detail = new MarketingFeeDetail
+                {
+                    OrgId = Org,
+                    MarketingFeeSettlementId = fee.Id,
+                    MKTFeeCode = feeCode,
+                    LineIndex = lineIdx,
+                    MKTActivityCode = actCode,
+                    MKTActivityName = actName,
+                    MKTActivityTypeCode = typeCode,
+                    Vin = d.Vin?.Trim().ToUpperInvariant(),
+                    Model = d.Model?.Trim(),
+                    SpecCode = d.SpecCode?.Trim(),
+                    Qty = qty,
+                    Price = price,
+                    TotalAmountDealer = lineTotalDealer,
+                    HTCLimitPrice = htcLimit,
+                    ApprovedQty = 0,
+                    ApprovedAmount = 0,
+                    FlagDesignImage = flagDesign,
+                    FlagActualImage = flagActual,
+                    FlagContract = flagContract,
+                    FlagInvoice = flagInvoice,
+                    Status = "Pending",
+                    Remark = d.Remark?.Trim()
+                };
+
+                db.MarketingFeeDetails.Add(detail);
+                await db.SaveChangesAsync();
+                details.Add(detail);
+
+                if (d.Attachments != null && d.Attachments.Count > 0)
+                {
+                    int attSeq = 0;
+                    foreach (var att in d.Attachments)
+                    {
+                        attSeq++;
+                        var attCode = $"ATT-MKT-{now:yyyyMMdd}-{fee.Id:D3}-{lineIdx:D2}-{attSeq:D2}";
+                        var fileType = string.IsNullOrWhiteSpace(att.FileType) ? "ActualImage" : att.FileType.Trim();
+
+                        var attach = new MarketingFeeDetailAttach
+                        {
+                            OrgId = Org,
+                            MarketingFeeDetailId = detail.Id,
+                            MKTFeeCode = feeCode,
+                            LineIndex = lineIdx,
+                            AttachCode = attCode,
+                            FileType = fileType,
+                            FileName = att.FileName.Trim(),
+                            FilePath = att.FilePath?.Trim() ?? $"/uploads/mkt/{feeCode}/{att.FileName.Trim()}",
+                            FileSizeKb = att.FileSizeKb ?? 1024,
+                            Status = "Approved",
+                            ApprovedBy = fee.CreatedBy,
+                            ApprovedAt = now,
+                            Remark = att.Remark?.Trim(),
+                            UploadedAt = now
+                        };
+
+                        if (fileType == "DesignImage") detail.HasDesignImage = true;
+                        else if (fileType == "ActualImage") detail.HasActualImage = true;
+                        else if (fileType == "Contract") detail.HasContract = true;
+                        else if (fileType == "Invoice") detail.HasInvoice = true;
+
+                        db.MarketingFeeDetailAttaches.Add(attach);
+                        attaches.Add(attach);
+                    }
+                }
+            }
+        }
+
+        fee.TotalActivityCount = details.Count;
+        fee.TotalAmountDealer = totalDealerAmt;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            fee.MKTFeeCode,
+            fee.MKTFeeCodeUser,
+            fee.MKTFeeName,
+            fee.DealerCode,
+            fee.DealerName,
+            fee.CampaignMonth,
+            fee.DateStart,
+            fee.DateEnd,
+            fee.TotalActivityCount,
+            fee.TotalAmountDealer,
+            fee.TotalAmountApproved,
+            fee.Status,
+            detailsCount = details.Count,
+            attachmentsCount = attaches.Count
+        };
+    }
+
+    public async Task<object> ListMarketingFeesAsync(string? status, string? dealer, string? month, string? feeCode, string? q)
+    {
+        var query = db.MarketingFeeSettlements.Where(s => s.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var st = status.Trim().ToLowerInvariant();
+            query = query.Where(s => s.Status.ToLower() == st);
+        }
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var dl = dealer.Trim().ToUpperInvariant();
+            query = query.Where(s => s.DealerCode == dl);
+        }
+        if (!string.IsNullOrWhiteSpace(month))
+        {
+            var m = month.Trim();
+            query = query.Where(s => s.CampaignMonth == m);
+        }
+        if (!string.IsNullOrWhiteSpace(feeCode))
+        {
+            var fc = feeCode.Trim().ToUpperInvariant();
+            query = query.Where(s => s.MKTFeeCode.Contains(fc) || (s.MKTFeeCodeUser != null && s.MKTFeeCodeUser.Contains(fc)));
+        }
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var search = q.Trim().ToUpperInvariant();
+            query = query.Where(s => s.MKTFeeCode.Contains(search) || s.MKTFeeName.ToUpper().Contains(search) || s.DealerCode.Contains(search));
+        }
+
+        return await query.OrderByDescending(s => s.DateStart).ThenByDescending(s => s.Id).ToListAsync();
+    }
+
+    public async Task<object?> GetMarketingFeeAsync(string mktFeeCode)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        var fee = await db.MarketingFeeSettlements.FirstOrDefaultAsync(s => s.OrgId == Org && (s.MKTFeeCode == mktFeeCode || s.MKTFeeCodeUser == mktFeeCode));
+        if (fee is null) return null;
+
+        var details = await db.MarketingFeeDetails
+            .Where(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id)
+            .OrderBy(d => d.LineIndex)
+            .ToListAsync();
+
+        var attaches = await db.MarketingFeeDetailAttaches
+            .Where(a => a.OrgId == Org && a.MKTFeeCode == fee.MKTFeeCode)
+            .OrderBy(a => a.LineIndex)
+            .ThenBy(a => a.Id)
+            .ToListAsync();
+
+        var attachesByLine = attaches.GroupBy(a => a.LineIndex).ToDictionary(g => g.Key, g => g.ToList());
+
+        var linesWithAttaches = details.Select(d => new
+        {
+            d.Id,
+            d.LineIndex,
+            d.MKTActivityCode,
+            d.MKTActivityName,
+            d.MKTActivityTypeCode,
+            d.Vin,
+            d.Model,
+            d.SpecCode,
+            d.Qty,
+            d.Price,
+            d.TotalAmountDealer,
+            d.HTCLimitPrice,
+            d.ApprovedQty,
+            d.ApprovedAmount,
+            d.FlagDesignImage,
+            d.FlagActualImage,
+            d.FlagContract,
+            d.FlagInvoice,
+            d.HasDesignImage,
+            d.HasActualImage,
+            d.HasContract,
+            d.HasInvoice,
+            d.Status,
+            d.RejectReason,
+            d.Remark,
+            attachments = attachesByLine.TryGetValue(d.LineIndex, out var atts) ? atts : new List<MarketingFeeDetailAttach>()
+        }).ToList();
+
+        return new
+        {
+            header = fee,
+            activitiesCount = details.Count,
+            totalAttachments = attaches.Count,
+            details = linesWithAttaches
+        };
+    }
+
+    public async Task<object?> UpdateMarketingFeeHeaderAsync(string mktFeeCode, UpdateMarketingFeeHeaderDto dto)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        var fee = await db.MarketingFeeSettlements.FirstOrDefaultAsync(s => s.OrgId == Org && (s.MKTFeeCode == mktFeeCode || s.MKTFeeCodeUser == mktFeeCode));
+        if (fee is null || fee.Status is "Finished" or "Cancelled" or "Rejected") return null;
+
+        if (dto.MKTFeeCodeUser != null) fee.MKTFeeCodeUser = dto.MKTFeeCodeUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.MKTFeeName)) fee.MKTFeeName = dto.MKTFeeName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DealerName)) fee.DealerName = dto.DealerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CampaignMonth)) fee.CampaignMonth = dto.CampaignMonth.Trim();
+        if (dto.DateStart.HasValue) fee.DateStart = dto.DateStart.Value;
+        if (dto.DateEnd.HasValue) fee.DateEnd = dto.DateEnd.Value;
+        if (dto.VatRate.HasValue && dto.VatRate.Value >= 0)
+        {
+            fee.VatRate = dto.VatRate.Value;
+            fee.TotalVatAmount = fee.TotalAmountApproved * fee.VatRate / 100m;
+            fee.TotalAmountAfterVAT = fee.TotalAmountApproved + fee.TotalVatAmount;
+        }
+        if (dto.Remark != null) fee.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return fee;
+    }
+
+    public async Task<object?> UpdateMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, UpdateMarketingFeeDetailDto dto)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        var fee = await db.MarketingFeeSettlements.FirstOrDefaultAsync(s => s.OrgId == Org && (s.MKTFeeCode == mktFeeCode || s.MKTFeeCodeUser == mktFeeCode));
+        if (fee is null || fee.Status is "Finished" or "Cancelled") return null;
+
+        var line = await db.MarketingFeeDetails.FirstOrDefaultAsync(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id && d.LineIndex == lineIndex);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.MKTActivityCode)) line.MKTActivityCode = dto.MKTActivityCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.MKTActivityName)) line.MKTActivityName = dto.MKTActivityName.Trim();
+        if (dto.Vin != null) line.Vin = dto.Vin.Trim().ToUpperInvariant();
+        if (dto.Model != null) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+
+        if (dto.Qty.HasValue && dto.Qty.Value > 0) line.Qty = dto.Qty.Value;
+        if (dto.Price.HasValue && dto.Price.Value >= 0) line.Price = dto.Price.Value;
+        line.TotalAmountDealer = line.Qty * line.Price;
+
+        if (dto.HTCLimitPrice.HasValue && dto.HTCLimitPrice.Value >= 0) line.HTCLimitPrice = dto.HTCLimitPrice.Value;
+
+        if (dto.FlagDesignImage.HasValue) line.FlagDesignImage = dto.FlagDesignImage.Value;
+        if (dto.FlagActualImage.HasValue) line.FlagActualImage = dto.FlagActualImage.Value;
+        if (dto.FlagContract.HasValue) line.FlagContract = dto.FlagContract.Value;
+        if (dto.FlagInvoice.HasValue) line.FlagInvoice = dto.FlagInvoice.Value;
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        var allLines = await db.MarketingFeeDetails.Where(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id).ToListAsync();
+        fee.TotalAmountDealer = allLines.Sum(l => l.TotalAmountDealer);
+        fee.TotalAmountApproved = allLines.Where(l => l.Status == "Approved" || l.Status == "Finished").Sum(l => l.ApprovedAmount);
+        fee.TotalVatAmount = fee.TotalAmountApproved * fee.VatRate / 100m;
+        fee.TotalAmountAfterVAT = fee.TotalAmountApproved + fee.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> UpdateDetailHTCLimitAsync(string mktFeeCode, int lineIndex, UpdateHTCLimitPriceDto dto)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        var fee = await db.MarketingFeeSettlements.FirstOrDefaultAsync(s => s.OrgId == Org && (s.MKTFeeCode == mktFeeCode || s.MKTFeeCodeUser == mktFeeCode));
+        if (fee is null || fee.Status is "Finished" or "Cancelled") return null;
+
+        var line = await db.MarketingFeeDetails.FirstOrDefaultAsync(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id && d.LineIndex == lineIndex);
+        if (line is null) return null;
+
+        line.HTCLimitPrice = Math.Max(0, dto.HTCLimitPrice);
+        if (dto.Note != null) line.Remark = dto.Note.Trim();
+
+        if (line.ApprovedQty > 0)
+        {
+            line.ApprovedAmount = Math.Min(line.TotalAmountDealer, line.ApprovedQty * line.HTCLimitPrice);
+        }
+
+        var allLines = await db.MarketingFeeDetails.Where(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id).ToListAsync();
+        fee.TotalAmountApproved = allLines.Where(l => l.Status == "Approved" || l.Status == "Finished").Sum(l => l.ApprovedAmount);
+        fee.TotalVatAmount = fee.TotalAmountApproved * fee.VatRate / 100m;
+        fee.TotalAmountAfterVAT = fee.TotalAmountApproved + fee.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> ApproveMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, decimal? approvedQty, decimal? approvedAmount, string? actor)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        var fee = await db.MarketingFeeSettlements.FirstOrDefaultAsync(s => s.OrgId == Org && (s.MKTFeeCode == mktFeeCode || s.MKTFeeCodeUser == mktFeeCode));
+        if (fee is null || fee.Status is "Finished" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.MarketingFeeDetails.FirstOrDefaultAsync(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id && d.LineIndex == lineIndex);
+        if (line is null) return null;
+
+        line.ApprovedQty = approvedQty.HasValue && approvedQty.Value >= 0 ? approvedQty.Value : line.Qty;
+        if (approvedAmount.HasValue && approvedAmount.Value >= 0)
+        {
+            line.ApprovedAmount = Math.Min(line.TotalAmountDealer, approvedAmount.Value);
+        }
+        else
+        {
+            var calculated = line.ApprovedQty * (line.HTCLimitPrice > 0 ? line.HTCLimitPrice : line.Price);
+            line.ApprovedAmount = Math.Min(line.TotalAmountDealer, calculated);
+        }
+
+        line.Status = "Approved";
+        line.RejectReason = null;
+
+        var allLines = await db.MarketingFeeDetails.Where(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id).ToListAsync();
+        fee.TotalAmountApproved = allLines.Where(l => l.Status == "Approved" || l.Status == "Finished").Sum(l => l.ApprovedAmount);
+        fee.TotalVatAmount = fee.TotalAmountApproved * fee.VatRate / 100m;
+        fee.TotalAmountAfterVAT = fee.TotalAmountApproved + fee.TotalVatAmount;
+
+        if (fee.Status == "Draft") fee.Status = "Submitted";
+
+        await db.SaveChangesAsync();
+
+        if (!string.IsNullOrWhiteSpace(line.Vin))
+        {
+            Log(line.Vin, "MarketingFeeDetailApproved", $"{fee.MKTFeeCode} Dòng {line.LineIndex} '{line.MKTActivityName}' duyệt {line.ApprovedAmount:N0}đ bởi {actor ?? "MarketingReviewer"}");
+        }
+
+        return line;
+    }
+
+    public async Task<object?> RejectMarketingFeeDetailAsync(string mktFeeCode, int lineIndex, string reason, string? actor)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        var fee = await db.MarketingFeeSettlements.FirstOrDefaultAsync(s => s.OrgId == Org && (s.MKTFeeCode == mktFeeCode || s.MKTFeeCodeUser == mktFeeCode));
+        if (fee is null || fee.Status is "Finished" or "Cancelled") return null;
+
+        var line = await db.MarketingFeeDetails.FirstOrDefaultAsync(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id && d.LineIndex == lineIndex);
+        if (line is null) return null;
+
+        line.Status = "Rejected";
+        line.ApprovedQty = 0;
+        line.ApprovedAmount = 0;
+        line.RejectReason = !string.IsNullOrWhiteSpace(reason) ? reason.Trim() : "Không đạt chuẩn định mức hoặc thiếu hồ sơ chứng từ";
+
+        var allLines = await db.MarketingFeeDetails.Where(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id).ToListAsync();
+        fee.TotalAmountApproved = allLines.Where(l => l.Status == "Approved" || l.Status == "Finished").Sum(l => l.ApprovedAmount);
+        fee.TotalVatAmount = fee.TotalAmountApproved * fee.VatRate / 100m;
+        fee.TotalAmountAfterVAT = fee.TotalAmountApproved + fee.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+
+        if (!string.IsNullOrWhiteSpace(line.Vin))
+        {
+            Log(line.Vin, "MarketingFeeDetailRejected", $"{fee.MKTFeeCode} Dòng {line.LineIndex} '{line.MKTActivityName}' bị từ chối: {line.RejectReason}");
+        }
+
+        return line;
+    }
+
+    public async Task<object?> AddMarketingFeeAttachAsync(string mktFeeCode, int lineIndex, AddMarketingFeeAttachDto dto)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        var fee = await db.MarketingFeeSettlements.FirstOrDefaultAsync(s => s.OrgId == Org && (s.MKTFeeCode == mktFeeCode || s.MKTFeeCodeUser == mktFeeCode));
+        if (fee is null || fee.Status is "Finished" or "Cancelled") return null;
+
+        var line = await db.MarketingFeeDetails.FirstOrDefaultAsync(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id && d.LineIndex == lineIndex);
+        if (line is null) return null;
+
+        var now = DateTime.Now;
+        var attSeq = await db.MarketingFeeDetailAttaches.CountAsync(a => a.OrgId == Org && a.MKTFeeCode == fee.MKTFeeCode) + 1;
+        var attCode = $"ATT-MKT-{now:yyyyMMdd}-{line.LineIndex:D2}-{attSeq:D3}";
+        var fileType = string.IsNullOrWhiteSpace(dto.FileType) ? "ActualImage" : dto.FileType.Trim();
+
+        var attach = new MarketingFeeDetailAttach
+        {
+            OrgId = Org,
+            MarketingFeeDetailId = line.Id,
+            MKTFeeCode = fee.MKTFeeCode,
+            LineIndex = line.LineIndex,
+            AttachCode = attCode,
+            FileType = fileType,
+            FileName = dto.FileName.Trim(),
+            FilePath = dto.FilePath?.Trim() ?? $"/uploads/mkt/{fee.MKTFeeCode}/{dto.FileName.Trim()}",
+            FileSizeKb = dto.FileSizeKb ?? 1024,
+            Status = "Approved",
+            ApprovedBy = dto.Actor?.Trim() ?? "MarketingOfficer",
+            ApprovedAt = now,
+            Remark = dto.Remark?.Trim(),
+            UploadedAt = now
+        };
+
+        if (fileType == "DesignImage") line.HasDesignImage = true;
+        else if (fileType == "ActualImage") line.HasActualImage = true;
+        else if (fileType == "Contract") line.HasContract = true;
+        else if (fileType == "Invoice") line.HasInvoice = true;
+
+        db.MarketingFeeDetailAttaches.Add(attach);
+        await db.SaveChangesAsync();
+
+        return attach;
+    }
+
+    public async Task<object?> ReviewMarketingFeeAttachAsync(string mktFeeCode, string attachCode, ReviewMarketingFeeAttachDto dto)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        attachCode = attachCode.Trim().ToUpperInvariant();
+
+        var attach = await db.MarketingFeeDetailAttaches.FirstOrDefaultAsync(a => a.OrgId == Org && a.MKTFeeCode == mktFeeCode && a.AttachCode == attachCode);
+        if (attach is null) return null;
+
+        attach.Status = dto.Approved ? "Approved" : "Rejected";
+        attach.ApprovedBy = dto.Actor?.Trim() ?? "MarketingReviewer";
+        attach.ApprovedAt = DateTime.Now;
+        if (dto.Remark != null) attach.Remark = dto.Remark.Trim();
+
+        var line = await db.MarketingFeeDetails.FirstOrDefaultAsync(d => d.OrgId == Org && d.Id == attach.MarketingFeeDetailId);
+        if (line != null)
+        {
+            var validAttaches = await db.MarketingFeeDetailAttaches
+                .Where(a => a.OrgId == Org && a.MarketingFeeDetailId == line.Id && a.Status == "Approved")
+                .ToListAsync();
+
+            line.HasDesignImage = validAttaches.Any(a => a.FileType == "DesignImage");
+            line.HasActualImage = validAttaches.Any(a => a.FileType == "ActualImage");
+            line.HasContract = validAttaches.Any(a => a.FileType == "Contract");
+            line.HasInvoice = validAttaches.Any(a => a.FileType == "Invoice");
+        }
+
+        await db.SaveChangesAsync();
+        return attach;
+    }
+
+    public async Task<object?> MarketingFeeTransitionAsync(string mktFeeCode, string action, MarketingFeeTransitionDto? dto)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        action = action.Trim().ToLowerInvariant();
+
+        var fee = await db.MarketingFeeSettlements.FirstOrDefaultAsync(s => s.OrgId == Org && (s.MKTFeeCode == mktFeeCode || s.MKTFeeCodeUser == mktFeeCode));
+        if (fee is null) return null;
+
+        var now = DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "MarketingManager";
+        var lines = await db.MarketingFeeDetails.Where(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id).ToListAsync();
+
+        switch (action)
+        {
+            case "submit":
+            case "pending":
+                if (fee.Status is not "Draft") return null;
+                if (lines.Count == 0)
+                    throw new InvalidOperationException("Hồ sơ quyết toán marketing cần có ít nhất 1 dòng hoạt động.");
+
+                fee.Status = "Submitted";
+                break;
+
+            case "approve":
+                if (fee.Status is not ("Draft" or "Submitted")) return null;
+
+                // Tự động duyệt các dòng đang Pending nếu chưa có dòng nào được duyệt
+                if (!lines.Any(l => l.Status == "Approved"))
+                {
+                    foreach (var l in lines.Where(l => l.Status == "Pending"))
+                    {
+                        l.ApprovedQty = l.Qty;
+                        l.ApprovedAmount = Math.Min(l.TotalAmountDealer, l.Qty * (l.HTCLimitPrice > 0 ? l.HTCLimitPrice : l.Price));
+                        l.Status = "Approved";
+                    }
+                }
+
+                var approvedLines = lines.Where(l => l.Status == "Approved").ToList();
+                if (approvedLines.Count == 0)
+                    throw new InvalidOperationException("Cần có ít nhất 1 dòng hoạt động được phê duyệt.");
+
+                fee.TotalAmountApproved = approvedLines.Sum(l => l.ApprovedAmount);
+                fee.TotalVatAmount = fee.TotalAmountApproved * fee.VatRate / 100m;
+                fee.TotalAmountAfterVAT = fee.TotalAmountApproved + fee.TotalVatAmount;
+                fee.Status = "Approved";
+                fee.ApprovedBy = actor;
+                fee.ApprovedAt = now;
+
+                // Cập nhật hồ sơ xe VIN
+                foreach (var line in approvedLines.Where(l => !string.IsNullOrWhiteSpace(l.Vin)))
+                {
+                    var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == line.Vin);
+                    if (veh != null)
+                    {
+                        veh.IsMktFeeSupported = true;
+                        veh.MktFeeSupportedAmount += line.ApprovedAmount;
+                        veh.LastMktFeeNo = fee.MKTFeeCode;
+                        veh.LastMktFeeDate = now;
+                        veh.MktFeeCount++;
+                    }
+
+                    Log(line.Vin!, "MarketingFeeApproved", $"{fee.MKTFeeCode} Phê duyệt hỗ trợ marketing '{line.MKTActivityName}': {line.ApprovedAmount:N0}đ");
+                }
+                break;
+
+            case "finish":
+            case "settle":
+                if (fee.Status is not "Approved") return null;
+
+                var finalLines = lines.Where(l => l.Status == "Approved").ToList();
+                foreach (var l in finalLines)
+                {
+                    l.Status = "Finished";
+                }
+
+                fee.Status = "Finished";
+                fee.SettledDate = dto?.SettledDate ?? now;
+                fee.SettledBy = actor;
+                fee.BankRefNo = !string.IsNullOrWhiteSpace(dto?.BankRefNo)
+                    ? dto.BankRefNo.Trim()
+                    : $"UNC-MKT-{now:yyyyMMdd}-{fee.Id:D4}";
+
+                foreach (var line in finalLines.Where(l => !string.IsNullOrWhiteSpace(l.Vin)))
+                {
+                    Log(line.Vin!, "MarketingFeeSettled", $"{fee.MKTFeeCode} Giải ngân quyết toán hỗ trợ Marketing thành công {line.ApprovedAmount:N0}đ qua UNC {fee.BankRefNo}");
+                }
+                break;
+
+            case "reject":
+                if (fee.Status is "Finished" or "Cancelled") return null;
+                fee.Status = "Rejected";
+                fee.RejectedBy = actor;
+                fee.RejectedAt = now;
+                fee.RejectReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hồ sơ quyết toán marketing không đạt yêu cầu";
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Rejected";
+                    l.RejectReason = fee.RejectReason;
+                }
+                break;
+
+            case "cancel":
+                if (fee.Status is "Finished") return null;
+                fee.Status = "Cancelled";
+                fee.CancelledBy = actor;
+                fee.CancelledAt = now;
+                fee.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hủy hồ sơ quyết toán marketing";
+
+                foreach (var l in lines)
+                {
+                    l.Status = "Cancelled";
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ. Hỗ trợ: submit, approve, finish/settle, reject, cancel.");
+        }
+
+        await db.SaveChangesAsync();
+        return await GetMarketingFeeAsync(fee.MKTFeeCode);
+    }
+
+    public async Task<object?> RemoveMarketingFeeAsync(string mktFeeCode)
+    {
+        mktFeeCode = mktFeeCode.Trim().ToUpperInvariant();
+        var fee = await db.MarketingFeeSettlements.FirstOrDefaultAsync(s => s.OrgId == Org && (s.MKTFeeCode == mktFeeCode || s.MKTFeeCodeUser == mktFeeCode));
+        if (fee is null) return null;
+
+        if (fee.Status == "Finished")
+            throw new InvalidOperationException("Không thể xóa hồ sơ quyết toán marketing đã hoàn tất giải ngân.");
+
+        var details = await db.MarketingFeeDetails.Where(d => d.OrgId == Org && d.MarketingFeeSettlementId == fee.Id).ToListAsync();
+        var attaches = await db.MarketingFeeDetailAttaches.Where(a => a.OrgId == Org && a.MKTFeeCode == fee.MKTFeeCode).ToListAsync();
+
+        db.MarketingFeeDetailAttaches.RemoveRange(attaches);
+        db.MarketingFeeDetails.RemoveRange(details);
+        db.MarketingFeeSettlements.Remove(fee);
+
+        await db.SaveChangesAsync();
+        return new { success = true, mktFeeCode = fee.MKTFeeCode, message = "Đã xóa hồ sơ quyết toán marketing thành công." };
+    }
+
+    public async Task<MarketingFeeSummaryDto> GetMarketingFeeSummaryAsync(string? campaignMonth, string? dealerCode)
+    {
+        var query = db.MarketingFeeSettlements.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(campaignMonth)) query = query.Where(s => s.CampaignMonth == campaignMonth.Trim());
+        if (!string.IsNullOrWhiteSpace(dealerCode)) query = query.Where(s => s.DealerCode == dealerCode.Trim().ToUpperInvariant());
+
+        var settlements = await query.ToListAsync();
+        var setCodes = settlements.Select(s => s.MKTFeeCode).ToList();
+        var allLines = await db.MarketingFeeDetails.Where(d => d.OrgId == Org && setCodes.Contains(d.MKTFeeCode)).ToListAsync();
+
+        var totalSettlements = settlements.Count;
+        var totalDraft = settlements.Count(s => s.Status == "Draft");
+        var totalSubmitted = settlements.Count(s => s.Status == "Submitted");
+        var totalApproved = settlements.Count(s => s.Status == "Approved");
+        var totalFinished = settlements.Count(s => s.Status == "Finished");
+        var totalCancelled = settlements.Count(s => s.Status is "Cancelled" or "Rejected");
+
+        var totalActivities = allLines.Count;
+        var totalAmountDealer = settlements.Sum(s => s.TotalAmountDealer);
+        var totalAmountApproved = settlements.Sum(s => s.TotalAmountApproved);
+        var totalVatAmount = settlements.Sum(s => s.TotalVatAmount);
+        var totalAmountAfterVAT = settlements.Sum(s => s.TotalAmountAfterVAT);
+        var totalSettledAmount = settlements.Where(s => s.Status == "Finished").Sum(s => s.TotalAmountAfterVAT);
+
+        var approvalRate = totalAmountDealer > 0 ? Math.Round(totalAmountApproved / totalAmountDealer * 100m, 1) : 0m;
+
+        var byDealer = settlements.GroupBy(s => s.DealerCode).Select(g =>
+        {
+            var dLines = allLines.Where(l => g.Select(s => s.MKTFeeCode).Contains(l.MKTFeeCode)).ToList();
+            var dName = g.First().DealerName ?? g.Key;
+            var dealerAmt = g.Sum(s => s.TotalAmountDealer);
+            var apprAmt = g.Sum(s => s.TotalAmountApproved);
+            var setAmt = g.Where(s => s.Status == "Finished").Sum(s => s.TotalAmountAfterVAT);
+            return new MarketingFeeDealerStatsDto(g.Key, dName, g.Count(), dLines.Count, dealerAmt, apprAmt, setAmt);
+        }).OrderByDescending(d => d.TotalApprovedAmount).ToList();
+
+        var byActivityType = allLines.GroupBy(l => l.MKTActivityTypeCode).Select(g =>
+        {
+            var typeName = g.Key switch
+            {
+                "OOH" => "Biển bảng Quảng cáo Ngoài trời (OOH)",
+                "DIGITAL" => "Quảng cáo Trực tuyến (Digital Marketing)",
+                "EVENT" => "Sự kiện / Lái thử xe (Roadshow & Event)",
+                "POSM" => "Vật phẩm Quảng cáo Showroom (POSM)",
+                "PR_MEDIA" => "Báo chí & Truyền thông (PR & Media)",
+                "RADIO_VOV" => "Phát thanh VOV Giao thông",
+                _ => g.Key
+            };
+            return new MarketingFeeActivityStatsDto(g.Key, typeName, g.Count(), g.Sum(l => l.TotalAmountDealer), g.Sum(l => l.ApprovedAmount));
+        }).OrderByDescending(a => a.TotalApprovedAmount).ToList();
+
+        var byModel = allLines.Where(l => !string.IsNullOrWhiteSpace(l.Model)).GroupBy(l => l.Model!).Select(g =>
+            new MarketingFeeModelStatsDto(g.Key, g.Count(), g.Sum(l => l.ApprovedAmount))
+        ).OrderByDescending(m => m.TotalApprovedAmount).ToList();
+
+        var byMonth = settlements.GroupBy(s => s.CampaignMonth).Select(g =>
+        {
+            var mLines = allLines.Where(l => g.Select(s => s.MKTFeeCode).Contains(l.MKTFeeCode)).ToList();
+            var dealerAmt = g.Sum(s => s.TotalAmountDealer);
+            var apprAmt = g.Sum(s => s.TotalAmountApproved);
+            var setAmt = g.Where(s => s.Status == "Finished").Sum(s => s.TotalAmountAfterVAT);
+            return new MarketingFeeMonthStatsDto(g.Key, g.Count(), mLines.Count, dealerAmt, apprAmt, setAmt);
+        }).OrderByDescending(m => m.CampaignMonth).ToList();
+
+        return new MarketingFeeSummaryDto(
+            totalSettlements,
+            totalDraft,
+            totalSubmitted,
+            totalApproved,
+            totalFinished,
+            totalCancelled,
+            totalActivities,
+            totalAmountDealer,
+            totalAmountApproved,
+            totalVatAmount,
+            totalAmountAfterVAT,
+            totalSettledAmount,
+            approvalRate,
+            byDealer,
+            byActivityType,
+            byModel,
+            byMonth
+        );
+    }
+
+    public async Task<VehicleMarketingFeeInfoDto?> GetVehicleMarketingFeeInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.MarketingFeeDetails
+            .Where(d => d.OrgId == Org && (d.Vin == vin || d.Model == veh.Model))
+            .OrderByDescending(d => d.Id)
+            .Take(50)
+            .ToListAsync();
+
+        return new VehicleMarketingFeeInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.DealerCode,
+            veh.IsMktFeeSupported,
+            veh.MktFeeSupportedAmount,
+            veh.LastMktFeeNo,
+            veh.LastMktFeeDate,
+            veh.MktFeeCount,
+            lines
+        );
+    }
+
+    public async Task<object?> GetVehicleMarketingFeeHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var history = await db.MarketingFeeDetails
+            .Where(d => d.OrgId == Org && (d.Vin == vin || d.Model == veh.Model))
+            .OrderByDescending(d => d.Id)
+            .Select(d => new
+            {
+                d.MKTFeeCode,
+                d.LineIndex,
+                d.MKTActivityCode,
+                d.MKTActivityName,
+                d.MKTActivityTypeCode,
+                d.Vin,
+                d.Model,
+                d.Qty,
+                d.Price,
+                d.TotalAmountDealer,
+                d.HTCLimitPrice,
+                d.ApprovedQty,
+                d.ApprovedAmount,
+                d.HasDesignImage,
+                d.HasActualImage,
+                d.HasContract,
+                d.HasInvoice,
+                d.Status,
+                d.Remark
+            }).ToListAsync();
+
+        return new
+        {
+            vin,
+            model = veh.Model,
+            isMktFeeSupported = veh.IsMktFeeSupported,
+            totalSupportedAmount = veh.MktFeeSupportedAmount,
+            historyCount = history.Count,
+            history
+        };
+    }
 }
+
 
 

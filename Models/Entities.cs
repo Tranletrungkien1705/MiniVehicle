@@ -154,6 +154,11 @@ public sealed class Vehicle
     public string? LastCustomerVisitNo { get; set; }    // Mã phiếu khách tham quan showroom quan tâm xe gần nhất (BizHTC.RetailContract.CtmVisit / CustomerVisit)
     public DateTime? LastCustomerVisitDate { get; set; } // Ngày lượt khách gần nhất đến xem xe
     public int CustomerVisitCount { get; set; } = 0;    // Tổng số lượt khách đã đến xem / quan tâm dòng xe này
+    public bool IsMktFeeSupported { get; set; } = false; // Đã được duyệt quyết toán hỗ trợ kinh phí Marketing (BizHTC.Marketing.MKT_MarketingFee)
+    public decimal MktFeeSupportedAmount { get; set; } = 0; // Tổng tiền Marketing đã duyệt chi cho xe / dòng xe (VNĐ)
+    public string? LastMktFeeNo { get; set; }           // Mã hồ sơ quyết toán Marketing gần nhất (MKT-...)
+    public DateTime? LastMktFeeDate { get; set; }       // Ngày quyết toán Marketing gần nhất
+    public int MktFeeCount { get; set; } = 0;           // Tổng số lần xe phát sinh trong hồ sơ quyết toán Marketing
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -6728,6 +6733,301 @@ public sealed record CustomerVisitHistoryDto(
     int ConvertedDealsCount,
     List<CustomerVisit> Visits
 );
+
+// ===== Quản lý Đề nghị & Quyết toán Chi phí Hỗ trợ Hoạt động Marketing Đại lý Phân phối OEM (BizHTC.Marketing / MKT_MarketingFee, MKT_MarketingFeeDetail, MKT_MarketingFeeDetailAttach, Mst_MarketingActivity, Mst_MarketingActivityType) =====
+
+/// <summary>Danh mục Nhóm / Loại hình hoạt động Marketing (BizHTC.Marketing / Mst_MarketingActivityType): phân loại các nhóm quảng bá (OOH, Digital, Event/Roadshow, POSM Showroom, PR Báo chí, Radio VOV...).</summary>
+public sealed class MarketingActivityType
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string MKTActivityTypeCode { get; set; } = ""; // Mã nhóm hoạt động (OOH, DIGITAL, EVENT, POSM, PR_MEDIA, RADIO_VOV, SPONSOR, ROADSHOW)
+    public string MKTActivityTypeName { get; set; } = ""; // Tên nhóm hoạt động
+    public bool FlagActive { get; set; } = true;          // Đang hoạt động
+    public string? Remark { get; set; }                   // Ghi chú
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Danh mục Hoạt động Marketing chuẩn Hãng OEM (BizHTC.Marketing / Mst_MarketingActivity): định nghĩa từng hoạt động cụ thể, đơn giá định mức tài trợ tối đa OEM (HTCLimitPrice) và yêu cầu 4 loại chứng từ bắt buộc (Maket thiết kế, Ảnh nghiệm thu, Hợp đồng bên thứ 3, Hóa đơn GTGT).</summary>
+public sealed class MarketingActivity
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string MKTActivityCode { get; set; } = "";     // Mã hoạt động chuẩn (OOH_BILLBOARD, DIGI_FACEBOOK_ADS, DIGI_GOOGLE_SEARCH, EVENT_TEST_DRIVE, POSM_SHOWROOM_STANDEE, PR_PRESS_ARTICLE, VOV_TRAFFIC_RADIO, TIKTOK_KOL_REVIEW...)
+    public string MKTActivityName { get; set; } = "";     // Tên hoạt động marketing
+    public string MKTActivityTypeCode { get; set; } = "DIGITAL"; // Mã nhóm hoạt động
+    public decimal DefaultHTCLimitPrice { get; set; } = 0;// Định mức trần kinh phí OEM chấp thuận tài trợ cho 1 đơn vị (VNĐ)
+    public bool FlagDesignImage { get; set; } = true;     // Bắt buộc nộp File/Maket thiết kế duyệt chuẩn nhận diện CI/VI
+    public bool FlagActualImage { get; set; } = true;     // Bắt buộc nộp Ảnh/Video chụp nghiệm thu hiện trường
+    public bool FlagContract { get; set; } = true;        // Bắt buộc nộp Hợp đồng thuê đơn vị thực hiện / Agency
+    public bool FlagInvoice { get; set; } = true;         // Bắt buộc nộp Hóa đơn GTGT đầu vào hợp lệ
+    public bool FlagActive { get; set; } = true;          // Đang áp dụng
+    public string? Remark { get; set; }                   // Ghi chú quy chuẩn
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Hồ sơ Đề nghị & Quyết toán Chi phí Hỗ trợ Marketing Đại lý Phân phối OEM (BizHTC.Marketing.MKT_MarketingFee / MarketingFeeSettlement): quản lý hồ sơ xin phê duyệt và quyết toán kinh phí tài trợ hoạt động tiếp thị từ hãng xe OEM cho Đại lý phân phối ủy quyền.</summary>
+public sealed class MarketingFeeSettlement
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string MKTFeeCode { get; set; } = "";          // Mã phiếu quyết toán Marketing (MKT-2026-HN01-0001, MKT...)
+    public string? MKTFeeCodeUser { get; set; }         // Số hiệu hồ sơ nội bộ tham chiếu của Đại lý
+    public string MKTFeeName { get; set; } = "";          // Tên chương trình / chiến dịch Marketing (Chiến dịch Quảng bá Ra mắt SantaFe All-New, Lái thử Creta & Custin...)
+    public string DealerCode { get; set; } = "";          // Mã đại lý đề xuất kinh phí hỗ trợ (DLR-HN01, DLR-HCM01...)
+    public string? DealerName { get; set; }               // Tên đại lý
+    public string CampaignMonth { get; set; } = "";       // Kỳ / Tháng ngân sách Marketing (YYYY-MM, ví dụ: 2026-03)
+    public DateTime DateStart { get; set; } = DateTime.Now; // Ngày bắt đầu diễn ra hoạt động
+    public DateTime DateEnd { get; set; } = DateTime.Now;   // Ngày kết thúc hoạt động
+    public int TotalActivityCount { get; set; } = 0;      // Tổng số hạng mục hoạt động trong hồ sơ
+    public decimal TotalAmountDealer { get; set; } = 0;   // Tổng kinh phí Đại lý đề nghị tài trợ trước thuế (VNĐ)
+    public decimal TotalAmountApproved { get; set; } = 0; // Tổng kinh phí Hãng xe OEM phê duyệt tài trợ trước thuế (VNĐ)
+    public decimal VatRate { get; set; } = 10m;           // Thuế suất GTGT VAT (%) (mặc định 10%)
+    public decimal TotalVatAmount { get; set; } = 0;      // Tiền thuế VAT = TotalAmountApproved * VatRate / 100 (VNĐ)
+    public decimal TotalAmountAfterVAT { get; set; } = 0; // Tổng tiền thanh toán sau thuế = TotalAmountApproved + TotalVatAmount (VNĐ)
+    public string Status { get; set; } = "Draft";         // Draft → Submitted (Pending) → Approved → Finished (Settled) (hoặc Rejected / Cancelled)
+    public string? BankRefNo { get; set; }                // Số ủy nhiệm chi UNC / Mã giao dịch ngân hàng giải ngân
+    public DateTime? SettledDate { get; set; }            // Ngày thực tế chuyển khoản giải ngân chi phí marketing
+    public string? SettledBy { get; set; }                // Kế toán thanh toán xác nhận giải ngân
+    public string? ApprovedBy { get; set; }               // Lãnh đạo Marketing OEM duyệt quyết toán
+    public DateTime? ApprovedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+    public string? Remark { get; set; }                   // Ghi chú hồ sơ
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Chi tiết dòng hoạt động Marketing trong hồ sơ quyết toán (BizHTC.Marketing.MKT_MarketingFeeDetail / MarketingFeeDetail): ghi nhận từng hạng mục, số lượng, đơn giá đề nghị, định mức trần OEM, số lượng & số tiền được duyệt, liên kết số khung xe VIN / Model tiêu điểm và trạng thái kiểm tra 4 loại chứng từ bắt buộc.</summary>
+public sealed class MarketingFeeDetail
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long MarketingFeeSettlementId { get; set; }
+    public string MKTFeeCode { get; set; } = "";
+    public int LineIndex { get; set; } = 1;               // Thứ tự dòng (1, 2, 3...)
+    public string MKTActivityCode { get; set; } = "";     // Mã hoạt động marketing (OOH_BILLBOARD, DIGI_FACEBOOK_ADS...)
+    public string MKTActivityName { get; set; } = "";     // Tên hoạt động marketing
+    public string MKTActivityTypeCode { get; set; } = "DIGITAL"; // Phân loại nhóm hoạt động (OOH, DIGITAL, EVENT...)
+    public string? Vin { get; set; }                      // Số khung xe VIN tiêu điểm quảng bá (nếu có)
+    public string? Model { get; set; }                    // Dòng xe tiêu điểm (SantaFe, Tucson, Accent, Creta, Custin, Ioniq 5...)
+    public string? SpecCode { get; set; }                 // Phiên bản xe
+    public decimal Qty { get; set; } = 1;                 // Số lượng thực hiện đề nghị (biển, bài, tháng, sự kiện...)
+    public decimal Price { get; set; } = 0;               // Đơn giá thực hiện thực tế của Đại lý (VNĐ)
+    public decimal TotalAmountDealer { get; set; } = 0;   // Thành tiền Đại lý đề nghị = Qty * Price (VNĐ)
+    public decimal HTCLimitPrice { get; set; } = 0;       // Định mức trần kinh phí OEM chấp thuận hỗ trợ cho 1 đơn vị (VNĐ)
+    public decimal ApprovedQty { get; set; } = 0;         // Số lượng OEM nghiệm thu duyệt
+    public decimal ApprovedAmount { get; set; } = 0;      // Số tiền OEM phê duyệt tài trợ = min(TotalAmountDealer, ApprovedQty * HTCLimitPrice) (VNĐ)
+
+    // Cờ quy chuẩn kiểm tra 4 loại chứng từ
+    public bool FlagDesignImage { get; set; } = true;     // Yêu cầu nộp Maket thiết kế duyệt chuẩn CI/VI
+    public bool FlagActualImage { get; set; } = true;     // Yêu cầu nộp Ảnh/Video chụp nghiệm thu hiện trường
+    public bool FlagContract { get; set; } = true;        // Yêu cầu nộp Hợp đồng bên thứ 3
+    public bool FlagInvoice { get; set; } = true;         // Yêu cầu nộp Hóa đơn GTGT đầu vào
+    public bool HasDesignImage { get; set; } = false;     // Đã có chứng từ Maket thiết kế hợp lệ
+    public bool HasActualImage { get; set; } = false;     // Đã có chứng từ Ảnh/Video nghiệm thu hiện trường hợp lệ
+    public bool HasContract { get; set; } = false;        // Đã có Hợp đồng bên thứ 3 hợp lệ
+    public bool HasInvoice { get; set; } = false;         // Đã có Hóa đơn GTGT đầu vào hợp lệ
+
+    public string Status { get; set; } = "Pending";       // Pending → Approved → Finished (hoặc Rejected)
+    public string? RejectReason { get; set; }
+    public string? Remark { get; set; }
+}
+
+/// <summary>Tài liệu & Chứng từ nghiệm thu Marketing đính kèm (BizHTC.Marketing.MKT_MarketingFeeDetailAttach / MarketingFeeDetailAttach): lưu trữ tệp đính kèm maket thiết kế, ảnh chụp thực tế, hợp đồng, hóa đơn VAT và báo cáo KPI nghiệm thu.</summary>
+public sealed class MarketingFeeDetailAttach
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long MarketingFeeDetailId { get; set; }
+    public string MKTFeeCode { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public string AttachCode { get; set; } = "";          // Mã chứng từ (ATT-MKT-2026-0001...)
+    public string FileType { get; set; } = "ActualImage"; // DesignImage, ActualImage, Contract, Invoice, ReportAnalytics, AcceptanceMinutes
+    public string FileName { get; set; } = "";            // Tên tệp tin (Maket_Billboard_SantaFe_2026.png, HĐ_Agency_VN01.pdf...)
+    public string? FilePath { get; set; }                 // Đường dẫn lưu trữ / URL tệp
+    public long FileSizeKb { get; set; } = 1024;          // Dung lượng tệp (KB)
+    public string Status { get; set; } = "Approved";      // Pending → Approved / Rejected
+    public string? ApprovedBy { get; set; }               // Chuyên viên Marketing thẩm định duyệt tệp
+    public DateTime? ApprovedAt { get; set; }
+    public string? Remark { get; set; }                   // Nhận xét kiểm tra chứng từ
+    public DateTime UploadedAt { get; set; } = DateTime.Now;
+}
+
+// ===== DTOs cho Quản lý Đề nghị & Quyết toán Chi phí Hỗ trợ Marketing (BizHTC.Marketing / MKT_MarketingFee) =====
+
+public sealed record CreateMarketingActivityTypeDto(
+    string MKTActivityTypeCode,
+    string MKTActivityTypeName,
+    bool? FlagActive,
+    string? Remark
+);
+
+public sealed record CreateMarketingActivityDto(
+    string MKTActivityCode,
+    string MKTActivityName,
+    string MKTActivityTypeCode,
+    decimal? DefaultHTCLimitPrice,
+    bool? FlagDesignImage,
+    bool? FlagActualImage,
+    bool? FlagContract,
+    bool? FlagInvoice,
+    bool? FlagActive,
+    string? Remark
+);
+
+public sealed record UpdateMarketingActivityDto(
+    string? MKTActivityName,
+    string? MKTActivityTypeCode,
+    decimal? DefaultHTCLimitPrice,
+    bool? FlagDesignImage,
+    bool? FlagActualImage,
+    bool? FlagContract,
+    bool? FlagInvoice,
+    bool? FlagActive,
+    string? Remark
+);
+
+public sealed record CreateMarketingFeeDto(
+    string? MKTFeeCode,
+    string? MKTFeeCodeUser,
+    string MKTFeeName,
+    string DealerCode,
+    string? DealerName,
+    string CampaignMonth,
+    DateTime? DateStart,
+    DateTime? DateEnd,
+    decimal? VatRate,
+    string? Remark,
+    string? CreatedBy,
+    List<MarketingFeeDetailInputDto>? Details
+);
+
+public sealed record MarketingFeeDetailInputDto(
+    string MKTActivityCode,
+    string? MKTActivityName,
+    string? MKTActivityTypeCode,
+    string? Vin,
+    string? Model,
+    string? SpecCode,
+    decimal Qty,
+    decimal Price,
+    decimal? HTCLimitPrice,
+    bool? FlagDesignImage,
+    bool? FlagActualImage,
+    bool? FlagContract,
+    bool? FlagInvoice,
+    string? Remark,
+    List<MarketingFeeAttachInputDto>? Attachments
+);
+
+public sealed record MarketingFeeAttachInputDto(
+    string FileType,
+    string FileName,
+    string? FilePath,
+    long? FileSizeKb,
+    string? Remark
+);
+
+public sealed record UpdateMarketingFeeHeaderDto(
+    string? MKTFeeCodeUser,
+    string? MKTFeeName,
+    string? DealerName,
+    string? CampaignMonth,
+    DateTime? DateStart,
+    DateTime? DateEnd,
+    decimal? VatRate,
+    string? Remark
+);
+
+public sealed record UpdateMarketingFeeDetailDto(
+    string? MKTActivityCode,
+    string? MKTActivityName,
+    string? Vin,
+    string? Model,
+    string? SpecCode,
+    decimal? Qty,
+    decimal? Price,
+    decimal? HTCLimitPrice,
+    bool? FlagDesignImage,
+    bool? FlagActualImage,
+    bool? FlagContract,
+    bool? FlagInvoice,
+    string? Remark
+);
+
+public sealed record UpdateHTCLimitPriceDto(
+    decimal HTCLimitPrice,
+    string? Note
+);
+
+public sealed record MarketingFeeTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    string? BankRefNo,
+    DateTime? SettledDate
+);
+
+public sealed record AddMarketingFeeAttachDto(
+    string FileType,
+    string FileName,
+    string? FilePath,
+    long? FileSizeKb,
+    string? Remark,
+    string? Actor
+);
+
+public sealed record ReviewMarketingFeeAttachDto(
+    bool Approved,
+    string? Actor,
+    string? Remark
+);
+
+public sealed record MarketingFeeSummaryDto(
+    int TotalSettlements,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalApproved,
+    int TotalFinished,
+    int TotalCancelled,
+    int TotalActivities,
+    decimal TotalAmountDealer,
+    decimal TotalAmountApproved,
+    decimal TotalVatAmount,
+    decimal TotalAmountAfterVAT,
+    decimal TotalSettledAmount,
+    decimal ApprovalRatePercent,
+    List<MarketingFeeDealerStatsDto> ByDealer,
+    List<MarketingFeeActivityStatsDto> ByActivityType,
+    List<MarketingFeeModelStatsDto> ByModel,
+    List<MarketingFeeMonthStatsDto> ByMonth
+);
+
+public sealed record MarketingFeeDealerStatsDto(string DealerCode, string DealerName, int SettlementCount, int ActivityCount, decimal TotalDealerAmount, decimal TotalApprovedAmount, decimal TotalSettledAmount);
+public sealed record MarketingFeeActivityStatsDto(string ActivityTypeCode, string ActivityTypeName, int ActivityCount, decimal TotalDealerAmount, decimal TotalApprovedAmount);
+public sealed record MarketingFeeModelStatsDto(string Model, int ActivityCount, decimal TotalApprovedAmount);
+public sealed record MarketingFeeMonthStatsDto(string CampaignMonth, int SettlementCount, int ActivityCount, decimal TotalDealerAmount, decimal TotalApprovedAmount, decimal TotalSettledAmount);
+
+public sealed record VehicleMarketingFeeInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    bool IsMktFeeSupported,
+    decimal MktFeeSupportedAmount,
+    string? LastMktFeeNo,
+    DateTime? LastMktFeeDate,
+    int MktFeeCount,
+    List<MarketingFeeDetail> MarketingFeeLines
+);
+
 
 
 

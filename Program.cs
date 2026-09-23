@@ -5441,6 +5441,205 @@ app.MapGet("/api/vehicles/{vin}/visits", async (string vin, IVehicleService svc)
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Quản lý Đề nghị & Quyết toán Chi phí Hỗ trợ Marketing Đại lý OEM (BizHTC.Marketing / MKT_MarketingFee, MKT_MarketingFeeDetail, Mst_MarketingActivity) =====
+
+app.MapGet("/api/marketing-activity-types", async (IVehicleService svc, bool? activeOnly) =>
+    Results.Ok(await svc.ListMarketingActivityTypesAsync(activeOnly))).RequireAuthorization();
+
+app.MapPost("/api/marketing-activity-types", async (CreateMarketingActivityTypeDto dto, IVehicleService svc) =>
+{
+    try { return Results.Ok(await svc.CreateMarketingActivityTypeAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/marketing-activities", async (IVehicleService svc, string? typeCode, bool? activeOnly, string? q) =>
+    Results.Ok(await svc.ListMarketingActivitiesAsync(typeCode, activeOnly, q))).RequireAuthorization();
+
+app.MapGet("/api/marketing-activities/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.GetMarketingActivityAsync(code);
+    return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hoạt động marketing." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-activities", async (CreateMarketingActivityDto dto, IVehicleService svc) =>
+{
+    try { return Results.Ok(await svc.CreateMarketingActivityAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/marketing-activities/{code}", async (string code, UpdateMarketingActivityDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateMarketingActivityAsync(code, dto);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hoạt động marketing." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-activities/{code}/update", async (string code, UpdateMarketingActivityDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateMarketingActivityAsync(code, dto);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hoạt động marketing." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-fees", async (CreateMarketingFeeDto dto, IVehicleService svc) =>
+{
+    try { return Results.Ok(await svc.CreateMarketingFeeAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/marketing-fees", async (IVehicleService svc, string? status, string? dealer, string? month, string? feeCode, string? q) =>
+    Results.Ok(await svc.ListMarketingFeesAsync(status, dealer, month, feeCode, q))).RequireAuthorization();
+
+app.MapGet("/api/marketing-fees/summary", async (IVehicleService svc, string? campaignMonth, string? dealerCode) =>
+    Results.Ok(await svc.GetMarketingFeeSummaryAsync(campaignMonth, dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/reports/marketing-fees/summary", async (IVehicleService svc, string? campaignMonth, string? dealerCode) =>
+    Results.Ok(await svc.GetMarketingFeeSummaryAsync(campaignMonth, dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/marketing-fees/{code}", async (string code, IVehicleService svc) =>
+{
+    var r = await svc.GetMarketingFeeAsync(code);
+    return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hồ sơ quyết toán marketing." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/marketing-fees/{code}", async (string code, UpdateMarketingFeeHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateMarketingFeeHeaderAsync(code, dto);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hồ sơ hoặc hồ sơ đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-fees/{code}/update", async (string code, UpdateMarketingFeeHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateMarketingFeeHeaderAsync(code, dto);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hồ sơ hoặc hồ sơ đã hoàn tất/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/marketing-fees/{code}", async (string code, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveMarketingFeeAsync(code);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hồ sơ hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/marketing-fees/{code}/lines/{lineIndex:int}", async (string code, int lineIndex, UpdateMarketingFeeDetailDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateMarketingFeeDetailAsync(code, lineIndex, dto);
+        return r is null ? Results.NotFound(new { code, lineIndex, error = "Không tìm thấy dòng hoạt động." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-fees/{code}/lines/{lineIndex:int}/update", async (string code, int lineIndex, UpdateMarketingFeeDetailDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateMarketingFeeDetailAsync(code, lineIndex, dto);
+        return r is null ? Results.NotFound(new { code, lineIndex, error = "Không tìm thấy dòng hoạt động." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/marketing-fees/{code}/lines/{lineIndex:int}/htc-limit", async (string code, int lineIndex, UpdateHTCLimitPriceDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateDetailHTCLimitAsync(code, lineIndex, dto);
+        return r is null ? Results.NotFound(new { code, lineIndex, error = "Không tìm thấy dòng hoạt động." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-fees/{code}/lines/{lineIndex:int}/approve", async (string code, int lineIndex, decimal? approvedQty, decimal? approvedAmount, string? actor, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.ApproveMarketingFeeDetailAsync(code, lineIndex, approvedQty, approvedAmount, actor);
+        return r is null ? Results.NotFound(new { code, lineIndex, error = "Không tìm thấy dòng hoạt động hoặc hồ sơ đã chốt." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-fees/{code}/lines/{lineIndex:int}/reject", async (string code, int lineIndex, string reason, string? actor, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RejectMarketingFeeDetailAsync(code, lineIndex, reason, actor);
+        return r is null ? Results.NotFound(new { code, lineIndex, error = "Không tìm thấy dòng hoạt động hoặc hồ sơ đã chốt." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-fees/{code}/lines/{lineIndex:int}/attachments", async (string code, int lineIndex, AddMarketingFeeAttachDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.FileName))
+        return Results.BadRequest(new { error = "Cần tên tệp tin FileName." });
+    try
+    {
+        var r = await svc.AddMarketingFeeAttachAsync(code, lineIndex, dto);
+        return r is null ? Results.NotFound(new { code, lineIndex, error = "Không tìm thấy dòng hoạt động." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-fees/{code}/attachments/{attachCode}/review", async (string code, string attachCode, ReviewMarketingFeeAttachDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.ReviewMarketingFeeAttachAsync(code, attachCode, dto);
+        return r is null ? Results.NotFound(new { code, attachCode, error = "Không tìm thấy chứng từ đính kèm." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/marketing-fees/{code}/{action}", async (string code, string action, MarketingFeeTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "pending" or "approve" or "finish" or "settle" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|finish|settle|reject|cancel" });
+    try
+    {
+        var r = await svc.MarketingFeeTransitionAsync(code, action, dto);
+        return r is null ? Results.NotFound(new { code, error = "Không tìm thấy hồ sơ hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/marketing-fee-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleMarketingFeeInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/marketing-fee-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleMarketingFeeHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/marketing-fees", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleMarketingFeeHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
