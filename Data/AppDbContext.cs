@@ -105,6 +105,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<GpsUninstallationLine> GpsUninstallationLines => Set<GpsUninstallationLine>();
     public DbSet<GpsClaim> GpsClaims => Set<GpsClaim>();
     public DbSet<GpsLocationLog> GpsLocationLogs => Set<GpsLocationLog>();
+    public DbSet<ServiceCavity> ServiceCavities => Set<ServiceCavity>();
+    public DbSet<CavityDispatchLog> CavityDispatchLogs => Set<CavityDispatchLog>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -157,5 +159,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<GpsInstallation>().HasIndex(x => new { x.OrgId, x.GpsInNo }).IsUnique();
         b.Entity<GpsUninstallation>().HasIndex(x => new { x.OrgId, x.GpsOutNo }).IsUnique();
         b.Entity<GpsClaim>().HasIndex(x => new { x.OrgId, x.GpsClaimNo }).IsUnique();
+        b.Entity<ServiceCavity>().HasIndex(x => new { x.OrgId, x.CavityNo }).IsUnique();
+        b.Entity<CavityDispatchLog>().HasIndex(x => new { x.OrgId, x.DispatchNo }).IsUnique();
     }
 }

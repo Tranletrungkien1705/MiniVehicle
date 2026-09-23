@@ -1982,6 +1982,22 @@ public interface IVehicleService
     Task<object?> GetVinGpsLocationAsync(string vin);
     Task<object?> GetVehicleGpsHistoryAsync(string vin);
     Task<object> GetGpsFleetSummaryAsync(string? provider, string? storageCode);
+
+    // Quản lý Khoang sửa chữa xưởng dịch vụ & Điều phối xe (BizCarSv / Ser_Cavity & Ser_CavityDispatch)
+    Task<object> CreateCavityAsync(CreateServiceCavityDto dto);
+    Task<object> ListCavitiesAsync(string? status, string? cavityType, string? dealer, string? q);
+    Task<object?> GetCavityAsync(string cavityNo);
+    Task<object?> UpdateCavityAsync(string cavityNo, UpdateServiceCavityDto dto);
+    Task<object?> DeleteCavityAsync(string cavityNo);
+    Task<object?> DispatchVehicleToCavityAsync(string cavityNo, DispatchVehicleToCavityDto dto);
+    Task<object?> TransferCavityAsync(string cavityNo, TransferCavityDto dto);
+    Task<object?> ReleaseCavityAsync(string cavityNo, ReleaseCavityDto? dto);
+    Task<object?> SetCavityMaintenanceAsync(string cavityNo, SetCavityMaintenanceDto dto);
+    Task<object> GetCavitySummaryAsync(string? dealerCode);
+    Task<object> GetCavityDispatchBoardAsync(string? dealerCode);
+    Task<object?> GetCavityHistoryAsync(string cavityNo);
+    Task<object?> GetVehicleCavityHistoryAsync(string vin);
+    Task<object?> GetVehicleCavityInfoAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -26661,6 +26677,641 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             totalGeofenceAlerts,
             byProvider,
             byStorage
+        );
+    }
+
+    // ===== Quản lý Khoang sửa chữa xưởng dịch vụ & Điều phối xe (BizCarSv / Ser_Cavity & Ser_CavityDispatch) =====
+
+    public async Task<object> CreateCavityAsync(CreateServiceCavityDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.CavityNo))
+            throw new InvalidOperationException("Cần mã khoang / số hiệu cầu CavityNo.");
+        if (string.IsNullOrWhiteSpace(dto.CavityName))
+            throw new InvalidOperationException("Cần tên khoang CavityName.");
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode.");
+
+        var cavityNo = dto.CavityNo.Trim().ToUpperInvariant();
+        if (await db.ServiceCavities.AnyAsync(c => c.OrgId == Org && c.CavityNo == cavityNo))
+            throw new InvalidOperationException($"Mã khoang/cầu {cavityNo} đã tồn tại trong hệ thống.");
+
+        var cavity = new ServiceCavity
+        {
+            OrgId = Org,
+            CavityNo = cavityNo,
+            CavityNoUser = dto.CavityNoUser?.Trim(),
+            CavityName = dto.CavityName.Trim(),
+            DealerCode = dto.DealerCode.Trim().ToUpperInvariant(),
+            CavityType = string.IsNullOrWhiteSpace(dto.CavityType) ? "GeneralRepair" : dto.CavityType.Trim(),
+            Status = "Available",
+            LiftType = string.IsNullOrWhiteSpace(dto.LiftType) ? "2PostLift" : dto.LiftType.Trim(),
+            MaxPayloadKg = dto.MaxPayloadKg ?? 4000m,
+            StartUseDate = dto.StartUseDate ?? DateTime.Now,
+            FinishUseDate = dto.FinishUseDate,
+            IsActive = true,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.ServiceCavities.Add(cavity);
+        await db.SaveChangesAsync();
+        return cavity;
+    }
+
+    public async Task<object> ListCavitiesAsync(string? status, string? cavityType, string? dealer, string? q)
+    {
+        var query = db.ServiceCavities.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(c => c.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(cavityType)) query = query.Where(c => c.CavityType == cavityType.Trim());
+        if (!string.IsNullOrWhiteSpace(dealer)) query = query.Where(c => c.DealerCode == dealer.Trim().ToUpperInvariant());
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var pattern = q.Trim().ToUpperInvariant();
+            query = query.Where(c => c.CavityNo.ToUpper().Contains(pattern) ||
+                                     c.CavityName.ToUpper().Contains(pattern) ||
+                                     (c.CurrentVin != null && c.CurrentVin.ToUpper().Contains(pattern)) ||
+                                     (c.CurrentPlateNo != null && c.CurrentPlateNo.ToUpper().Contains(pattern)) ||
+                                     (c.CurrentRoNo != null && c.CurrentRoNo.ToUpper().Contains(pattern)) ||
+                                     (c.CurrentTechnician != null && c.CurrentTechnician.ToUpper().Contains(pattern)));
+        }
+
+        var items = await query.OrderBy(c => c.DealerCode).ThenBy(c => c.CavityNo).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCavityAsync(string cavityNo)
+    {
+        cavityNo = cavityNo.Trim().ToUpperInvariant();
+        var cavity = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo == cavityNo);
+        if (cavity is null) return null;
+
+        var recentLogs = await db.CavityDispatchLogs
+            .Where(l => l.OrgId == Org && l.CavityId == cavity.Id)
+            .OrderByDescending(l => l.CheckInTime)
+            .Take(20)
+            .ToListAsync();
+
+        return new { cavity, recentLogs };
+    }
+
+    public async Task<object?> UpdateCavityAsync(string cavityNo, UpdateServiceCavityDto dto)
+    {
+        cavityNo = cavityNo.Trim().ToUpperInvariant();
+        var cavity = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo == cavityNo);
+        if (cavity is null) return null;
+
+        if (dto.CavityNoUser != null) cavity.CavityNoUser = dto.CavityNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CavityName)) cavity.CavityName = dto.CavityName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) cavity.DealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.CavityType)) cavity.CavityType = dto.CavityType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.LiftType)) cavity.LiftType = dto.LiftType.Trim();
+        if (dto.MaxPayloadKg.HasValue) cavity.MaxPayloadKg = dto.MaxPayloadKg.Value;
+        if (dto.StartUseDate.HasValue) cavity.StartUseDate = dto.StartUseDate.Value;
+        if (dto.FinishUseDate.HasValue) cavity.FinishUseDate = dto.FinishUseDate.Value;
+        if (dto.IsActive.HasValue) cavity.IsActive = dto.IsActive.Value;
+        if (dto.Remark != null) cavity.Remark = dto.Remark.Trim();
+
+        if (!string.IsNullOrWhiteSpace(dto.Status) && cavity.Status != "Occupied")
+        {
+            cavity.Status = dto.Status.Trim();
+        }
+
+        cavity.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return cavity;
+    }
+
+    public async Task<object?> DeleteCavityAsync(string cavityNo)
+    {
+        cavityNo = cavityNo.Trim().ToUpperInvariant();
+        var cavity = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo == cavityNo);
+        if (cavity is null) return null;
+
+        if (cavity.Status == "Occupied" || !string.IsNullOrWhiteSpace(cavity.CurrentVin))
+            throw new InvalidOperationException("Không thể xóa khoang đang có xe hoạt động. Vui lòng giải phóng khoang trước.");
+
+        var logs = await db.CavityDispatchLogs.Where(l => l.OrgId == Org && l.CavityId == cavity.Id).ToListAsync();
+        db.CavityDispatchLogs.RemoveRange(logs);
+        db.ServiceCavities.Remove(cavity);
+        await db.SaveChangesAsync();
+        return new { cavityNo, deleted = true };
+    }
+
+    public async Task<object?> DispatchVehicleToCavityAsync(string cavityNo, DispatchVehicleToCavityDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Vin))
+            throw new InvalidOperationException("Cần cung cấp số khung VIN xe để điều phối vào khoang.");
+
+        cavityNo = cavityNo.Trim().ToUpperInvariant();
+        var cavity = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo == cavityNo);
+        if (cavity is null) return null;
+
+        if (!cavity.IsActive)
+            throw new InvalidOperationException($"Khoang {cavityNo} đang bị khóa không hoạt động.");
+        if (cavity.Status == "Maintenance")
+            throw new InvalidOperationException($"Khoang {cavityNo} đang trong quá trình bảo trì thiết bị.");
+        if (cavity.Status == "Occupied" && !string.IsNullOrWhiteSpace(cavity.CurrentVin))
+            throw new InvalidOperationException($"Khoang {cavityNo} hiện đang có xe {cavity.CurrentVin} đang chiếm dụng.");
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null)
+            throw new InvalidOperationException($"Không tìm thấy xe có số khung VIN: {vin}");
+
+        // Kiểm tra xem xe này có đang nằm ở một khoang khác hay không
+        var otherCavity = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo != cavityNo && c.CurrentVin == vin);
+        if (otherCavity != null)
+            throw new InvalidOperationException($"Xe {vin} hiện đang ở khoang {otherCavity.CavityNo}. Vui lòng chuyển khoang hoặc giải phóng trước.");
+
+        var now = dto.CheckInTime ?? DateTime.Now;
+        var dispatchNo = $"DSP-{now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
+
+        // Cập nhật thông tin khoang
+        cavity.Status = "Occupied";
+        cavity.CurrentVin = vin;
+        cavity.CurrentModel = !string.IsNullOrWhiteSpace(dto.Model) ? dto.Model.Trim() : vehicle.Model;
+        cavity.CurrentPlateNo = !string.IsNullOrWhiteSpace(dto.PlateNo) ? dto.PlateNo.Trim() : vehicle.PlateNo;
+        cavity.CurrentRoNo = !string.IsNullOrWhiteSpace(dto.RoNo) ? dto.RoNo.Trim() : vehicle.LastRoNo;
+        cavity.CurrentAppNo = !string.IsNullOrWhiteSpace(dto.AppNo) ? dto.AppNo.Trim() : vehicle.LastAppointmentNo;
+        cavity.CurrentTechnician = dto.Technician?.Trim();
+        cavity.CurrentAdvisor = dto.Advisor?.Trim();
+        cavity.CurrentWorkItem = dto.WorkItem?.Trim() ?? "Bảo dưỡng / Sửa chữa chung";
+        cavity.OccupiedAt = now;
+        cavity.EstimatedReleaseAt = dto.EstimatedReleaseAt ?? now.AddHours(2);
+        cavity.UpdatedAt = DateTime.Now;
+
+        // Cập nhật Vehicle
+        vehicle.LastCavityNo = cavity.CavityNo;
+        vehicle.LastCavityName = cavity.CavityName;
+        vehicle.LastCavityDate = now;
+        vehicle.CavityVisitCount += 1;
+
+        // Thêm nhật ký điều phối
+        var log = new CavityDispatchLog
+        {
+            OrgId = Org,
+            CavityId = cavity.Id,
+            CavityNo = cavity.CavityNo,
+            DealerCode = cavity.DealerCode,
+            DispatchNo = dispatchNo,
+            Vin = vin,
+            Model = cavity.CurrentModel,
+            PlateNo = cavity.CurrentPlateNo,
+            RoNo = cavity.CurrentRoNo,
+            AppNo = cavity.CurrentAppNo,
+            DispatchType = "CheckIn",
+            Technician = cavity.CurrentTechnician,
+            ServiceAdvisor = cavity.CurrentAdvisor,
+            WorkDescription = cavity.CurrentWorkItem,
+            CheckInTime = now,
+            Status = "InCavity",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.CavityDispatchLogs.Add(log);
+
+        Log(vin, "CavityCheckIn", $"Vào khoang {cavity.CavityNo} ({cavity.CavityName}). KTV: {cavity.CurrentTechnician ?? "N/A"}. Lệnh: {cavity.CurrentRoNo ?? "N/A"}");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            cavity,
+            dispatch = log,
+            vehicle = new
+            {
+                vehicle.Vin,
+                vehicle.Model,
+                vehicle.LastCavityNo,
+                vehicle.LastCavityName,
+                vehicle.LastCavityDate,
+                vehicle.CavityVisitCount
+            }
+        };
+    }
+
+    public async Task<object?> TransferCavityAsync(string cavityNo, TransferCavityDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.TargetCavityNo))
+            throw new InvalidOperationException("Cần chỉ định mã khoang đích TargetCavityNo.");
+
+        cavityNo = cavityNo.Trim().ToUpperInvariant();
+        var targetCavityNo = dto.TargetCavityNo.Trim().ToUpperInvariant();
+
+        if (cavityNo == targetCavityNo)
+            throw new InvalidOperationException("Khoang nguồn và khoang đích không được trùng nhau.");
+
+        var src = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo == cavityNo);
+        if (src is null) return null;
+
+        if (src.Status != "Occupied" || string.IsNullOrWhiteSpace(src.CurrentVin))
+            throw new InvalidOperationException($"Khoang {cavityNo} hiện không có xe để chuyển.");
+
+        var target = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo == targetCavityNo);
+        if (target is null)
+            throw new InvalidOperationException($"Không tìm thấy khoang đích {targetCavityNo}.");
+
+        if (!target.IsActive)
+            throw new InvalidOperationException($"Khoang đích {targetCavityNo} đang bị khóa không hoạt động.");
+        if (target.Status == "Maintenance")
+            throw new InvalidOperationException($"Khoang đích {targetCavityNo} đang trong quá trình bảo trì.");
+        if (target.Status == "Occupied" && !string.IsNullOrWhiteSpace(target.CurrentVin))
+            throw new InvalidOperationException($"Khoang đích {targetCavityNo} đang có xe {target.CurrentVin} chiếm dụng.");
+
+        var now = DateTime.Now;
+        var vin = src.CurrentVin;
+
+        // Đóng log khoang cũ
+        var prevLog = await db.CavityDispatchLogs
+            .Where(l => l.OrgId == Org && l.CavityId == src.Id && l.Vin == vin && l.Status == "InCavity")
+            .OrderByDescending(l => l.CheckInTime)
+            .FirstOrDefaultAsync();
+
+        if (prevLog != null)
+        {
+            prevLog.CheckOutTime = now;
+            prevLog.DurationMinutes = (int)Math.Max(1, (now - prevLog.CheckInTime).TotalMinutes);
+            prevLog.Status = "Transferred";
+        }
+
+        // Tạo log mới khoang đích
+        var newDispatchNo = $"DSP-{now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
+        var newLog = new CavityDispatchLog
+        {
+            OrgId = Org,
+            CavityId = target.Id,
+            CavityNo = target.CavityNo,
+            DealerCode = target.DealerCode,
+            DispatchNo = newDispatchNo,
+            Vin = vin,
+            Model = src.CurrentModel,
+            PlateNo = src.CurrentPlateNo,
+            RoNo = src.CurrentRoNo,
+            AppNo = src.CurrentAppNo,
+            DispatchType = "Transfer",
+            FromCavityNo = src.CavityNo,
+            ToCavityNo = target.CavityNo,
+            Technician = dto.Technician?.Trim() ?? src.CurrentTechnician,
+            ServiceAdvisor = src.CurrentAdvisor,
+            WorkDescription = dto.WorkItem?.Trim() ?? src.CurrentWorkItem,
+            CheckInTime = now,
+            Status = "InCavity",
+            Remark = dto.Remark?.Trim() ?? $"Chuyển từ khoang {src.CavityNo}",
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = now
+        };
+        db.CavityDispatchLogs.Add(newLog);
+
+        // Chuyển dữ liệu sang khoang đích
+        target.Status = "Occupied";
+        target.CurrentVin = vin;
+        target.CurrentModel = src.CurrentModel;
+        target.CurrentPlateNo = src.CurrentPlateNo;
+        target.CurrentRoNo = src.CurrentRoNo;
+        target.CurrentAppNo = src.CurrentAppNo;
+        target.CurrentTechnician = dto.Technician?.Trim() ?? src.CurrentTechnician;
+        target.CurrentAdvisor = src.CurrentAdvisor;
+        target.CurrentWorkItem = dto.WorkItem?.Trim() ?? src.CurrentWorkItem;
+        target.OccupiedAt = now;
+        target.EstimatedReleaseAt = dto.EstimatedReleaseAt ?? now.AddHours(1);
+        target.UpdatedAt = now;
+
+        // Giải phóng khoang nguồn
+        src.Status = "Available";
+        src.CurrentVin = null;
+        src.CurrentModel = null;
+        src.CurrentPlateNo = null;
+        src.CurrentRoNo = null;
+        src.CurrentAppNo = null;
+        src.CurrentTechnician = null;
+        src.CurrentAdvisor = null;
+        src.CurrentWorkItem = null;
+        src.OccupiedAt = null;
+        src.EstimatedReleaseAt = null;
+        src.UpdatedAt = now;
+
+        // Cập nhật Vehicle
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle != null)
+        {
+            vehicle.LastCavityNo = target.CavityNo;
+            vehicle.LastCavityName = target.CavityName;
+            vehicle.LastCavityDate = now;
+        }
+
+        Log(vin, "CavityTransferred", $"Chuyển từ khoang {src.CavityNo} sang khoang {target.CavityNo} ({target.CavityName})");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            fromCavity = src.CavityNo,
+            toCavity = target.CavityNo,
+            vin,
+            dispatch = newLog
+        };
+    }
+
+    public async Task<object?> ReleaseCavityAsync(string cavityNo, ReleaseCavityDto? dto)
+    {
+        cavityNo = cavityNo.Trim().ToUpperInvariant();
+        var cavity = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo == cavityNo);
+        if (cavity is null) return null;
+
+        if (cavity.Status != "Occupied" || string.IsNullOrWhiteSpace(cavity.CurrentVin))
+            throw new InvalidOperationException($"Khoang {cavityNo} hiện không có xe để giải phóng.");
+
+        var now = dto?.CheckOutTime ?? DateTime.Now;
+        var vin = cavity.CurrentVin;
+
+        var log = await db.CavityDispatchLogs
+            .Where(l => l.OrgId == Org && l.CavityId == cavity.Id && l.Vin == vin && l.Status == "InCavity")
+            .OrderByDescending(l => l.CheckInTime)
+            .FirstOrDefaultAsync();
+
+        if (log != null)
+        {
+            log.CheckOutTime = now;
+            log.DurationMinutes = (int)Math.Max(1, (now - log.CheckInTime).TotalMinutes);
+            log.Status = "Completed";
+            if (!string.IsNullOrWhiteSpace(dto?.Remark))
+            {
+                log.Remark = string.IsNullOrWhiteSpace(log.Remark) ? dto.Remark : $"{log.Remark} | {dto.Remark}";
+            }
+        }
+
+        var durationMinutes = log?.DurationMinutes ?? 0;
+        Log(vin, "CavityRelease", $"Rời khoang {cavity.CavityNo} ({cavity.CavityName}). Thời gian thao tác: {durationMinutes} phút. Người thực hiện: {dto?.Actor ?? "N/A"}");
+
+        // Đặt lại trạng thái khoang
+        cavity.Status = string.IsNullOrWhiteSpace(dto?.NextStatus) ? "Available" : dto.NextStatus.Trim();
+        cavity.CurrentVin = null;
+        cavity.CurrentModel = null;
+        cavity.CurrentPlateNo = null;
+        cavity.CurrentRoNo = null;
+        cavity.CurrentAppNo = null;
+        cavity.CurrentTechnician = null;
+        cavity.CurrentAdvisor = null;
+        cavity.CurrentWorkItem = null;
+        cavity.OccupiedAt = null;
+        cavity.EstimatedReleaseAt = null;
+        cavity.UpdatedAt = now;
+
+        await db.SaveChangesAsync();
+        return new
+        {
+            cavityNo = cavity.CavityNo,
+            status = cavity.Status,
+            releasedVin = vin,
+            durationMinutes
+        };
+    }
+
+    public async Task<object?> SetCavityMaintenanceAsync(string cavityNo, SetCavityMaintenanceDto dto)
+    {
+        cavityNo = cavityNo.Trim().ToUpperInvariant();
+        var cavity = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo == cavityNo);
+        if (cavity is null) return null;
+
+        if (dto.IsMaintenance)
+        {
+            if (cavity.Status == "Occupied" || !string.IsNullOrWhiteSpace(cavity.CurrentVin))
+                throw new InvalidOperationException($"Không thể đưa khoang {cavityNo} vào bảo trì khi đang có xe hoạt động.");
+
+            cavity.Status = "Maintenance";
+            if (dto.EstimatedFinishDate.HasValue) cavity.FinishUseDate = dto.EstimatedFinishDate.Value;
+            if (!string.IsNullOrWhiteSpace(dto.Reason))
+            {
+                cavity.Remark = string.IsNullOrWhiteSpace(cavity.Remark) ? $"Bảo trì: {dto.Reason}" : $"{cavity.Remark} | Bảo trì: {dto.Reason}";
+            }
+        }
+        else
+        {
+            cavity.Status = "Available";
+        }
+
+        cavity.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+        return cavity;
+    }
+
+    public async Task<object> GetCavitySummaryAsync(string? dealerCode)
+    {
+        var query = db.ServiceCavities.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+            query = query.Where(c => c.DealerCode == dealerCode.Trim().ToUpperInvariant());
+
+        var cavities = await query.ToListAsync();
+
+        int totalCavities = cavities.Count;
+        int totalActive = cavities.Count(c => c.IsActive);
+        int totalAvailable = cavities.Count(c => c.Status == "Available" && c.IsActive);
+        int totalOccupied = cavities.Count(c => c.Status == "Occupied");
+        int totalReserved = cavities.Count(c => c.Status == "Reserved");
+        int totalMaintenance = cavities.Count(c => c.Status == "Maintenance");
+        int totalClosed = cavities.Count(c => c.Status == "Closed" || !c.IsActive);
+
+        decimal utilizationRatePercent = totalCavities > 0
+            ? Math.Round((decimal)totalOccupied / totalCavities * 100m, 1)
+            : 0;
+
+        var typeNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["GeneralRepair"] = "Sửa chữa chung (SCC)",
+            ["BodyPaint"] = "Đồng sơn & Buồng sơn sấy (BP)",
+            ["QuickService"] = "Bảo dưỡng nhanh (EM)",
+            ["Washing"] = "Rửa xe & Car Care",
+            ["PDIInspection"] = "Kiểm định PDI",
+            ["Parking"] = "Khoang đỗ xe / chờ phụ tùng"
+        };
+
+        var byType = cavities
+            .GroupBy(c => c.CavityType)
+            .Select(g => new CavityTypeStatsDto(
+                g.Key,
+                typeNames.TryGetValue(g.Key, out var name) ? name : g.Key,
+                g.Count(),
+                g.Count(x => x.Status == "Available"),
+                g.Count(x => x.Status == "Occupied"),
+                g.Count(x => x.Status == "Maintenance")
+            ))
+            .OrderByDescending(x => x.TotalCount)
+            .ToList();
+
+        var byDealer = cavities
+            .GroupBy(c => c.DealerCode)
+            .Select(g => new CavityDealerStatsDto(
+                g.Key,
+                g.Count(),
+                g.Count(x => x.Status == "Available"),
+                g.Count(x => x.Status == "Occupied"),
+                g.Count(x => x.Status == "Maintenance"),
+                g.Count() > 0 ? Math.Round((decimal)g.Count(x => x.Status == "Occupied") / g.Count() * 100m, 1) : 0
+            ))
+            .OrderByDescending(x => x.TotalCount)
+            .ToList();
+
+        return new ServiceCavitySummaryDto(
+            totalCavities,
+            totalActive,
+            totalAvailable,
+            totalOccupied,
+            totalReserved,
+            totalMaintenance,
+            totalClosed,
+            utilizationRatePercent,
+            byType,
+            byDealer
+        );
+    }
+
+    public async Task<object> GetCavityDispatchBoardAsync(string? dealerCode)
+    {
+        var query = db.ServiceCavities.Where(c => c.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+            query = query.Where(c => c.DealerCode == dealerCode.Trim().ToUpperInvariant());
+
+        var cavities = await query.OrderBy(c => c.DealerCode).ThenBy(c => c.CavityNo).ToListAsync();
+        var now = DateTime.Now;
+
+        var boardItems = cavities.Select(c =>
+        {
+            int? elapsed = null;
+            int? remaining = null;
+            bool isOverdue = false;
+
+            if (c.Status == "Occupied" && c.OccupiedAt.HasValue)
+            {
+                elapsed = (int)Math.Max(0, (now - c.OccupiedAt.Value).TotalMinutes);
+                if (c.EstimatedReleaseAt.HasValue)
+                {
+                    remaining = (int)(c.EstimatedReleaseAt.Value - now).TotalMinutes;
+                    if (remaining < 0) isOverdue = true;
+                }
+            }
+
+            return new CavityBoardItemDto(
+                c.Id,
+                c.CavityNo,
+                c.CavityName,
+                c.DealerCode,
+                c.CavityType,
+                c.Status,
+                c.LiftType,
+                c.MaxPayloadKg,
+                c.CurrentVin,
+                c.CurrentModel,
+                c.CurrentPlateNo,
+                c.CurrentRoNo,
+                c.CurrentAppNo,
+                c.CurrentTechnician,
+                c.CurrentAdvisor,
+                c.CurrentWorkItem,
+                c.OccupiedAt,
+                c.EstimatedReleaseAt,
+                elapsed,
+                remaining,
+                isOverdue,
+                c.IsActive
+            );
+        }).ToList();
+
+        int total = boardItems.Count;
+        int avail = boardItems.Count(x => x.Status == "Available" && x.IsActive);
+        int occ = boardItems.Count(x => x.Status == "Occupied");
+        int mtn = boardItems.Count(x => x.Status == "Maintenance");
+        decimal rate = total > 0 ? Math.Round((decimal)occ / total * 100m, 1) : 0;
+
+        return new CavityDispatchBoardDto(
+            dealerCode,
+            now,
+            total,
+            avail,
+            occ,
+            mtn,
+            rate,
+            boardItems
+        );
+    }
+
+    public async Task<object?> GetCavityHistoryAsync(string cavityNo)
+    {
+        cavityNo = cavityNo.Trim().ToUpperInvariant();
+        var cavity = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CavityNo == cavityNo);
+        if (cavity is null) return null;
+
+        var logs = await db.CavityDispatchLogs
+            .Where(l => l.OrgId == Org && l.CavityId == cavity.Id)
+            .OrderByDescending(l => l.CheckInTime)
+            .Take(100)
+            .ToListAsync();
+
+        return new { cavity, logs };
+    }
+
+    public async Task<object?> GetVehicleCavityHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var logs = await db.CavityDispatchLogs
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.CheckInTime)
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("Cavity")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.PlateNo,
+                veh.EngineNo,
+                veh.Color,
+                veh.LastCavityNo,
+                veh.LastCavityName,
+                veh.LastCavityDate,
+                veh.CavityVisitCount
+            },
+            dispatches = logs,
+            events
+        };
+    }
+
+    public async Task<object?> GetVehicleCavityInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var currentCavity = await db.ServiceCavities.FirstOrDefaultAsync(c => c.OrgId == Org && c.CurrentVin == vin);
+        var recentLogs = await db.CavityDispatchLogs
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.CheckInTime)
+            .Take(10)
+            .ToListAsync();
+
+        return new VehicleCavityInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.PlateNo,
+            veh.EngineNo,
+            veh.Color,
+            currentCavity?.CavityNo,
+            currentCavity?.CavityName,
+            veh.LastCavityNo,
+            veh.LastCavityName,
+            veh.LastCavityDate,
+            veh.CavityVisitCount,
+            currentCavity,
+            recentLogs
         );
     }
 }

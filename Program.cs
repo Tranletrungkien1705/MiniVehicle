@@ -3482,6 +3482,135 @@ app.MapGet("/api/vehicles/{vin}/gps-history", async (string vin, IVehicleService
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Quản lý Khoang sửa chữa xưởng dịch vụ & Điều phối xe (BizCarSv / Ser_Cavity & Ser_CavityDispatch / FrmCavityCreate, FrmCavitySearch, FrmShowCavityStatus) =====
+
+app.MapPost("/api/cavities", async (CreateServiceCavityDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.CavityNo) || string.IsNullOrWhiteSpace(dto.CavityName) || string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần mã khoang CavityNo, tên khoang CavityName và mã đại lý DealerCode." });
+    try { return Results.Ok(await svc.CreateCavityAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/cavities", async (IVehicleService svc, string? status, string? cavityType, string? dealer, string? q) =>
+    Results.Ok(await svc.ListCavitiesAsync(status, cavityType, dealer, q))).RequireAuthorization();
+
+app.MapGet("/api/cavities/summary", async (IVehicleService svc, string? dealerCode) =>
+    Results.Ok(await svc.GetCavitySummaryAsync(dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/reports/cavities/summary", async (IVehicleService svc, string? dealerCode) =>
+    Results.Ok(await svc.GetCavitySummaryAsync(dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/cavities/board", async (IVehicleService svc, string? dealerCode) =>
+    Results.Ok(await svc.GetCavityDispatchBoardAsync(dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/cavities/dispatch-board", async (IVehicleService svc, string? dealerCode) =>
+    Results.Ok(await svc.GetCavityDispatchBoardAsync(dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/cavities/{cavityNo}", async (string cavityNo, IVehicleService svc) =>
+{
+    var r = await svc.GetCavityAsync(cavityNo);
+    return r is null ? Results.NotFound(new { cavityNo, error = "Không tìm thấy khoang sửa chữa / cầu nâng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/cavities/{cavityNo}", async (string cavityNo, UpdateServiceCavityDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateCavityAsync(cavityNo, dto);
+        return r is null ? Results.NotFound(new { cavityNo, error = "Không tìm thấy khoang sửa chữa / cầu nâng." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/cavities/{cavityNo}/update", async (string cavityNo, UpdateServiceCavityDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateCavityAsync(cavityNo, dto);
+        return r is null ? Results.NotFound(new { cavityNo, error = "Không tìm thấy khoang sửa chữa / cầu nâng." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/cavities/{cavityNo}", async (string cavityNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.DeleteCavityAsync(cavityNo);
+        return r is null ? Results.NotFound(new { cavityNo, error = "Không tìm thấy khoang sửa chữa hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/cavities/{cavityNo}/dispatch", async (string cavityNo, DispatchVehicleToCavityDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần cung cấp số khung VIN xe để điều phối vào khoang." });
+    try
+    {
+        var r = await svc.DispatchVehicleToCavityAsync(cavityNo, dto);
+        return r is null ? Results.NotFound(new { cavityNo, error = "Không tìm thấy khoang sửa chữa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/cavities/{cavityNo}/transfer", async (string cavityNo, TransferCavityDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.TargetCavityNo))
+        return Results.BadRequest(new { error = "Cần chỉ định mã khoang đích TargetCavityNo." });
+    try
+    {
+        var r = await svc.TransferCavityAsync(cavityNo, dto);
+        return r is null ? Results.NotFound(new { cavityNo, error = "Không tìm thấy khoang sửa chữa nguồn." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/cavities/{cavityNo}/release", async (string cavityNo, ReleaseCavityDto? dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.ReleaseCavityAsync(cavityNo, dto);
+        return r is null ? Results.NotFound(new { cavityNo, error = "Không tìm thấy khoang sửa chữa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/cavities/{cavityNo}/maintenance", async (string cavityNo, SetCavityMaintenanceDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.SetCavityMaintenanceAsync(cavityNo, dto);
+        return r is null ? Results.NotFound(new { cavityNo, error = "Không tìm thấy khoang sửa chữa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/cavities/{cavityNo}/history", async (string cavityNo, IVehicleService svc) =>
+{
+    var r = await svc.GetCavityHistoryAsync(cavityNo);
+    return r is null ? Results.NotFound(new { cavityNo, error = "Không tìm thấy khoang sửa chữa." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/cavity-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleCavityInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/cavity-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleCavityHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/cavities", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleCavityHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

@@ -3546,6 +3546,138 @@ public static class Seeder
                 v2Gps.GpsDeviceCount = 1;
             }
         }
+        if (!await db.ServiceCavities.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var c1 = new ServiceCavity
+            {
+                OrgId = org,
+                CavityNo = "BAY-01",
+                CavityNoUser = "KHOANG-SCC-01",
+                CavityName = "Khoang sửa chữa chung 01 (Cầu 2 trụ)",
+                DealerCode = "DLR-HN01",
+                CavityType = "GeneralRepair",
+                Status = "Occupied",
+                LiftType = "2PostLift",
+                MaxPayloadKg = 4000,
+                CurrentVin = "DEMOVIN00000001",
+                CurrentModel = "Accent 1.4 AT",
+                CurrentPlateNo = "30A-999.88",
+                CurrentRoNo = "RO202603-001",
+                CurrentAppNo = "APP-202603-001",
+                CurrentTechnician = "Nguyễn Văn Hùng (KTV Bậc 4)",
+                CurrentAdvisor = "Trần Đình Long (CVDV)",
+                CurrentWorkItem = "Bảo dưỡng định kỳ 20.000 km & Cân bằng động lốp",
+                OccupiedAt = DateTime.Now.AddHours(-1),
+                EstimatedReleaseAt = DateTime.Now.AddHours(1),
+                StartUseDate = DateTime.Now.AddMonths(-12),
+                IsActive = true,
+                Remark = "Khoang cầu 2 trụ Bisonic 4 tấn tiêu chuẩn Hyundai OEM",
+                CreatedBy = "admin"
+            };
+
+            var c2 = new ServiceCavity
+            {
+                OrgId = org,
+                CavityNo = "EM-01",
+                CavityNoUser = "KHOANG-EM-01",
+                CavityName = "Khoang bảo dưỡng nhanh EM (Express Maintenance 60p)",
+                DealerCode = "DLR-HN01",
+                CavityType = "QuickService",
+                Status = "Available",
+                LiftType = "ScissorLift",
+                MaxPayloadKg = 3500,
+                StartUseDate = DateTime.Now.AddMonths(-6),
+                IsActive = true,
+                Remark = "Khoang phục vụ dịch vụ bảo dưỡng nhanh 2 KTV phối hợp",
+                CreatedBy = "admin"
+            };
+
+            var c3 = new ServiceCavity
+            {
+                OrgId = org,
+                CavityNo = "BP-01",
+                CavityNoUser = "BUONG-SON-01",
+                CavityName = "Buồng sơn sấy nhiệt công nghệ cao BP 01",
+                DealerCode = "DLR-HN01",
+                CavityType = "BodyPaint",
+                Status = "Available",
+                LiftType = "PaintBooth",
+                MaxPayloadKg = 5000,
+                StartUseDate = DateTime.Now.AddMonths(-18),
+                IsActive = true,
+                Remark = "Buồng sơn sấy đối lưu nhiệt Blowtherm chuẩn HMC",
+                CreatedBy = "admin"
+            };
+
+            var c4 = new ServiceCavity
+            {
+                OrgId = org,
+                CavityNo = "PDI-01",
+                CavityNoUser = "KHOANG-PDI-01",
+                CavityName = "Khoang kiểm tra chất lượng tiền bàn giao PDI",
+                DealerCode = "DLR-HN01",
+                CavityType = "PDIInspection",
+                Status = "Available",
+                LiftType = "GroundBay",
+                MaxPayloadKg = 3500,
+                StartUseDate = DateTime.Now.AddMonths(-10),
+                IsActive = true,
+                Remark = "Khoang kiểm tra chức năng hệ thống điện tử & quét lỗi OBD",
+                CreatedBy = "admin"
+            };
+
+            var c5 = new ServiceCavity
+            {
+                OrgId = org,
+                CavityNo = "WASH-01",
+                CavityNoUser = "KHOANG-RUA-01",
+                CavityName = "Khoang rửa xe & Vệ sinh nội thất Car Care",
+                DealerCode = "DLR-HN01",
+                CavityType = "Washing",
+                Status = "Available",
+                LiftType = "WashBay",
+                MaxPayloadKg = 4000,
+                StartUseDate = DateTime.Now.AddMonths(-24),
+                IsActive = true,
+                Remark = "Hệ thống rửa xe bọt tuyết và cầu xịt gầm áp lực cao",
+                CreatedBy = "admin"
+            };
+
+            db.ServiceCavities.AddRange(c1, c2, c3, c4, c5);
+            await db.SaveChangesAsync();
+
+            db.CavityDispatchLogs.Add(new CavityDispatchLog
+            {
+                OrgId = org,
+                CavityId = c1.Id,
+                CavityNo = c1.CavityNo,
+                DealerCode = c1.DealerCode,
+                DispatchNo = "DSP-202603-0001",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                PlateNo = "30A-999.88",
+                RoNo = "RO202603-001",
+                AppNo = "APP-202603-001",
+                DispatchType = "CheckIn",
+                Technician = "Nguyễn Văn Hùng",
+                ServiceAdvisor = "Trần Đình Long",
+                WorkDescription = "Bảo dưỡng định kỳ 20.000 km & Cân bằng động lốp",
+                CheckInTime = DateTime.Now.AddHours(-1),
+                Status = "InCavity",
+                CreatedBy = "admin",
+                CreatedAt = DateTime.Now.AddHours(-1)
+            });
+
+            var v1Cavity = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Cavity != null)
+            {
+                v1Cavity.LastCavityNo = "BAY-01";
+                v1Cavity.LastCavityName = "Khoang sửa chữa chung 01 (Cầu 2 trụ)";
+                v1Cavity.LastCavityDate = DateTime.Now.AddHours(-1);
+                v1Cavity.CavityVisitCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -3728,7 +3860,13 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"GpsUninstallations\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsOutNo\" text NOT NULL DEFAULT '', \"GpsOutNoUser\" text NULL, \"Reason\" text NOT NULL DEFAULT 'DeliveryToDealer', \"StorageCodeGps\" text NOT NULL DEFAULT 'KHO_GPS_NINHBINH', \"ReceiverName\" text NULL, \"UninstallDate\" timestamp NOT NULL DEFAULT now(), \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"GpsUninstallationLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsUninstallationId\" bigint NOT NULL, \"GpsOutNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"GpsCode\" text NULL, \"OdoKm\" integer NULL, \"DeviceCondition\" text NOT NULL DEFAULT 'Good', \"Technician\" text NULL, \"UninstalledAt\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"GpsClaims\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsClaimNo\" text NOT NULL DEFAULT '', \"GpsClaimNoUser\" text NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"ImeiNo\" text NULL, \"SimNo\" text NULL, \"VendorCode\" text NOT NULL DEFAULT 'VELOCA', \"VendorName\" text NULL, \"FaultType\" text NOT NULL DEFAULT 'PowerLoss', \"FaultDescription\" text NULL, \"Vin\" text NULL, \"RepairCost\" numeric NOT NULL DEFAULT 0, \"ReplacementGpsCode\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"SubmittedBy\" text NULL, \"SubmittedAt\" timestamp NULL, \"SentBy\" text NULL, \"SentAt\" timestamp NULL, \"RepairedBy\" text NULL, \"RepairedAt\" timestamp NULL, \"ReceivedBy\" text NULL, \"ReceivedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"GpsLocationLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"Latitude\" numeric NOT NULL DEFAULT 0, \"Longitude\" numeric NOT NULL DEFAULT 0, \"SpeedKmH\" numeric NOT NULL DEFAULT 0, \"BatteryVolt\" numeric NOT NULL DEFAULT 12.6, \"EngineStatus\" text NULL DEFAULT 'Off', \"Address\" text NULL, \"IsInGeofence\" boolean NOT NULL DEFAULT true, \"RecordedAt\" timestamp NOT NULL DEFAULT now())"
+            "CREATE TABLE IF NOT EXISTS public.\"GpsLocationLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"GpsCode\" text NOT NULL DEFAULT '', \"Vin\" text NULL, \"Latitude\" numeric NOT NULL DEFAULT 0, \"Longitude\" numeric NOT NULL DEFAULT 0, \"SpeedKmH\" numeric NOT NULL DEFAULT 0, \"BatteryVolt\" numeric NOT NULL DEFAULT 12.6, \"EngineStatus\" text NULL DEFAULT 'Off', \"Address\" text NULL, \"IsInGeofence\" boolean NOT NULL DEFAULT true, \"RecordedAt\" timestamp NOT NULL DEFAULT now())",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCavityNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCavityName\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCavityDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"CavityVisitCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"ServiceCavities\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CavityNo\" text NOT NULL DEFAULT '', \"CavityNoUser\" text NULL, \"CavityName\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"CavityType\" text NOT NULL DEFAULT 'GeneralRepair', \"Status\" text NOT NULL DEFAULT 'Available', \"LiftType\" text NULL DEFAULT '2PostLift', \"MaxPayloadKg\" numeric NOT NULL DEFAULT 4000, \"CurrentVin\" text NULL, \"CurrentModel\" text NULL, \"CurrentPlateNo\" text NULL, \"CurrentRoNo\" text NULL, \"CurrentAppNo\" text NULL, \"CurrentTechnician\" text NULL, \"CurrentAdvisor\" text NULL, \"CurrentWorkItem\" text NULL, \"OccupiedAt\" timestamp NULL, \"EstimatedReleaseAt\" timestamp NULL, \"StartUseDate\" timestamp NULL, \"FinishUseDate\" timestamp NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"CavityDispatchLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CavityId\" bigint NOT NULL, \"CavityNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"DispatchNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"PlateNo\" text NULL, \"RoNo\" text NULL, \"AppNo\" text NULL, \"DispatchType\" text NOT NULL DEFAULT 'CheckIn', \"FromCavityNo\" text NULL, \"ToCavityNo\" text NULL, \"Technician\" text NULL, \"ServiceAdvisor\" text NULL, \"WorkDescription\" text NULL, \"CheckInTime\" timestamp NOT NULL DEFAULT now(), \"CheckOutTime\" timestamp NULL, \"DurationMinutes\" integer NULL, \"Status\" text NOT NULL DEFAULT 'InCavity', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

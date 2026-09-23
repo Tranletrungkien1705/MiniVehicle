@@ -101,6 +101,10 @@ public sealed class Vehicle
     public decimal? LastGpsBatteryVolt { get; set; } // Điện áp nguồn thiết bị GPS / ắc quy xe (V)
     public DateTime? LastGpsSignalTime { get; set; } // Thời điểm cập nhật tín hiệu GPS gần nhất
     public int GpsDeviceCount { get; set; } = 0;     // Tổng số lần xe đã từng gắn / đổi thiết bị định vị
+    public string? LastCavityNo { get; set; }       // Mã khoang/cầu sửa chữa xưởng dịch vụ gần nhất xe vào (BizCarSv.Ser_Cavity / ServiceCavity)
+    public string? LastCavityName { get; set; }     // Tên khoang/cầu sửa chữa gần nhất
+    public DateTime? LastCavityDate { get; set; }   // Thời điểm vào khoang sửa chữa gần nhất
+    public int CavityVisitCount { get; set; } = 0;   // Tổng số lượt xe đã vào khoang cầu làm dịch vụ
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -3288,6 +3292,222 @@ public sealed record VehicleGpsInfoDto(
     int GpsDeviceCount,
     GpsDevice? GpsDevice
 );
+
+// ===== Quản lý Khoang sửa chữa xưởng dịch vụ / Cầu nâng & Bảng điều phối khoang xưởng (BizCarSv / Ser_Cavity & Ser_CavityDispatch / FrmCavityCreate, FrmCavitySearch, FrmShowCavityStatus) =====
+
+/// <summary>Khoang sửa chữa / Cầu nâng xưởng dịch vụ xe đại lý (BizCarSv / Ser_Cavity / ServiceCavity): quản lý danh mục khoang cầu xưởng (SCC, Đồng sơn BP, Bảo dưỡng nhanh EM, Rửa xe, PDI), trạng thái sẵn sàng/đang chiếm dụng/bảo trì và thông tin xe đang thao tác trên cầu.</summary>
+public sealed class ServiceCavity
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string CavityNo { get; set; } = "";             // Mã định danh khoang / số hiệu cầu (BAY-01, BAY-02, EM-01, BP-01, PDI-01, WASH-01...)
+    public string? CavityNoUser { get; set; }            // Mã số khoang tham chiếu nội bộ đại lý
+    public string CavityName { get; set; } = "";           // Tên khoang (Khoang sửa chữa chung 01, Khoang bảo dưỡng nhanh EM, Buồng sơn sấy...)
+    public string DealerCode { get; set; } = "";          // Mã đại lý sở hữu khoang/xưởng dịch vụ (DLR-HN01...)
+    public string CavityType { get; set; } = "GeneralRepair"; // Loại khoang: GeneralRepair (Sửa chữa chung SCC), BodyPaint (Đồng sơn BP / Buồng sơn sấy), QuickService (Bảo dưỡng nhanh EM), Washing (Rửa xe & Car Care), PDIInspection (Kiểm định PDI), Parking (Khoang đỗ xe / chờ phụ tùng)
+    public string Status { get; set; } = "Available";     // Trạng thái khoang: Available (Sẵn sàng/trống), Occupied (Đang có xe sửa chữa), Reserved (Đã đặt trước theo lịch hẹn), Maintenance (Đang bảo trì thiết bị/cầu nâng), Closed (Tạm ngừng sử dụng)
+    public string? LiftType { get; set; } = "2PostLift";  // Chủng loại cầu nâng: 2PostLift (Cầu 2 trụ), 4PostLift (Cầu 4 trụ), ScissorLift (Cầu cắt kéo), PaintBooth (Buồng sơn sấy), GroundBay (Khoang mặt sàn), WashBay (Cầu rửa xe)
+    public decimal MaxPayloadKg { get; set; } = 4000m;    // Tải trọng tối đa của cầu nâng (kg)
+    public string? CurrentVin { get; set; }               // Số khung VIN của xe đang chiếm dụng khoang
+    public string? CurrentModel { get; set; }             // Dòng xe đang trên cầu
+    public string? CurrentPlateNo { get; set; }           // Biển số xe đang trên cầu
+    public string? CurrentRoNo { get; set; }              // Mã Lệnh sửa chữa RO đang thực hiện (Ser_RO)
+    public string? CurrentAppNo { get; set; }             // Mã Lịch hẹn dịch vụ liên kết (Ser_App)
+    public string? CurrentTechnician { get; set; }        // Kỹ thuật viên chính phụ trách
+    public string? CurrentAdvisor { get; set; }           // Cố vấn dịch vụ phụ trách
+    public string? CurrentWorkItem { get; set; }          // Hạng mục công việc đang thực hiện
+    public DateTime? OccupiedAt { get; set; }             // Thời điểm xe vào khoang cầu
+    public DateTime? EstimatedReleaseAt { get; set; }     // Thời điểm dự kiến bàn giao xe / trả khoang
+    public DateTime? StartUseDate { get; set; }           // Ngày đưa cầu nâng vào khai thác
+    public DateTime? FinishUseDate { get; set; }          // Ngày hết hạn kiểm định / khai thác
+    public bool IsActive { get; set; } = true;            // Đang hoạt động
+    public string? Remark { get; set; }                   // Ghi chú thiết bị/khoang
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+}
+
+/// <summary>Nhật ký Điều phối xe vào / ra khoang sửa chữa cầu nâng (BizCarSv / Ser_CavityDispatch / CavityDispatchLog): lưu vết lịch sử xe chiếm dụng khoang, chuyển khoang công đoạn, thời gian hoàn thành dịch vụ và giải phóng cầu nâng.</summary>
+public sealed class CavityDispatchLog
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long CavityId { get; set; }
+    public string CavityNo { get; set; } = "";             // Mã khoang/cầu
+    public string DealerCode { get; set; } = "";          // Mã đại lý
+    public string DispatchNo { get; set; } = "";          // Mã phiếu điều phối (DSP-2026-0001...)
+    public string Vin { get; set; } = "";                 // Số khung VIN
+    public string? Model { get; set; }                    // Dòng xe
+    public string? PlateNo { get; set; }                  // Biển số xe
+    public string? RoNo { get; set; }                     // Mã lệnh sửa chữa (Ser_RO)
+    public string? AppNo { get; set; }                    // Mã lịch hẹn (Ser_App)
+    public string DispatchType { get; set; } = "CheckIn"; // Loại điều phối: CheckIn (Xe vào khoang), Transfer (Chuyển khoang công đoạn), Release (Rời khoang/hoàn tất), Reservation (Giữ chỗ lịch hẹn)
+    public string? FromCavityNo { get; set; }             // Khoang trước đó (nếu chuyển khoang)
+    public string? ToCavityNo { get; set; }               // Khoang chuyển đến
+    public string? Technician { get; set; }               // Kỹ thuật viên thao tác
+    public string? ServiceAdvisor { get; set; }           // Cố vấn dịch vụ
+    public string? WorkDescription { get; set; }          // Mô tả công việc thực hiện trong khoang
+    public DateTime CheckInTime { get; set; } = DateTime.Now; // Thời điểm vào khoang
+    public DateTime? CheckOutTime { get; set; }           // Thời điểm rời khoang
+    public int? DurationMinutes { get; set; }             // Tổng thời gian chiếm dụng khoang (phút)
+    public string Status { get; set; } = "InCavity";      // Trạng thái: InCavity (Đang trong khoang), Completed (Hoàn thành rời khoang), Transferred (Đã chuyển khoang khác), Cancelled (Hủy điều phối)
+    public string? Remark { get; set; }                   // Ghi chú điều phối
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+// ===== DTOs cho Quản lý Khoang sửa chữa xưởng dịch vụ & Điều phối xe (BizCarSv / Ser_Cavity & Ser_CavityDispatch) =====
+
+public sealed record CreateServiceCavityDto(
+    string CavityNo,
+    string? CavityNoUser,
+    string CavityName,
+    string DealerCode,
+    string? CavityType,
+    string? LiftType,
+    decimal? MaxPayloadKg,
+    DateTime? StartUseDate,
+    DateTime? FinishUseDate,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record UpdateServiceCavityDto(
+    string? CavityNoUser,
+    string? CavityName,
+    string? DealerCode,
+    string? CavityType,
+    string? Status,
+    string? LiftType,
+    decimal? MaxPayloadKg,
+    DateTime? StartUseDate,
+    DateTime? FinishUseDate,
+    bool? IsActive,
+    string? Remark
+);
+
+public sealed record DispatchVehicleToCavityDto(
+    string Vin,
+    string? PlateNo,
+    string? Model,
+    string? RoNo,
+    string? AppNo,
+    string? Technician,
+    string? Advisor,
+    string? WorkItem,
+    DateTime? CheckInTime,
+    DateTime? EstimatedReleaseAt,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record TransferCavityDto(
+    string TargetCavityNo,
+    string? Technician,
+    string? WorkItem,
+    DateTime? EstimatedReleaseAt,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record ReleaseCavityDto(
+    DateTime? CheckOutTime,
+    string? NextStatus,
+    string? Remark,
+    string? Actor
+);
+
+public sealed record SetCavityMaintenanceDto(
+    bool IsMaintenance,
+    string? Reason,
+    DateTime? EstimatedFinishDate,
+    string? Remark,
+    string? Actor
+);
+
+public sealed record ServiceCavitySummaryDto(
+    int TotalCavities,
+    int TotalActive,
+    int TotalAvailable,
+    int TotalOccupied,
+    int TotalReserved,
+    int TotalMaintenance,
+    int TotalClosed,
+    decimal UtilizationRatePercent,
+    List<CavityTypeStatsDto> ByType,
+    List<CavityDealerStatsDto> ByDealer
+);
+
+public sealed record CavityTypeStatsDto(
+    string CavityType,
+    string CavityTypeName,
+    int TotalCount,
+    int AvailableCount,
+    int OccupiedCount,
+    int MaintenanceCount
+);
+
+public sealed record CavityDealerStatsDto(
+    string DealerCode,
+    int TotalCount,
+    int AvailableCount,
+    int OccupiedCount,
+    int MaintenanceCount,
+    decimal UtilizationRatePercent
+);
+
+public sealed record CavityDispatchBoardDto(
+    string? DealerCode,
+    DateTime GeneratedAt,
+    int TotalCavities,
+    int AvailableCount,
+    int OccupiedCount,
+    int MaintenanceCount,
+    decimal UtilizationRatePercent,
+    List<CavityBoardItemDto> Cavities
+);
+
+public sealed record CavityBoardItemDto(
+    long Id,
+    string CavityNo,
+    string CavityName,
+    string DealerCode,
+    string CavityType,
+    string Status,
+    string? LiftType,
+    decimal MaxPayloadKg,
+    string? CurrentVin,
+    string? CurrentModel,
+    string? CurrentPlateNo,
+    string? CurrentRoNo,
+    string? CurrentAppNo,
+    string? CurrentTechnician,
+    string? CurrentAdvisor,
+    string? CurrentWorkItem,
+    DateTime? OccupiedAt,
+    DateTime? EstimatedReleaseAt,
+    int? ElapsedMinutes,
+    int? RemainingMinutes,
+    bool IsOverdue,
+    bool IsActive
+);
+
+public sealed record VehicleCavityInfoDto(
+    string Vin,
+    string Model,
+    string? PlateNo,
+    string? EngineNo,
+    string? Color,
+    string? CurrentCavityNo,
+    string? CurrentCavityName,
+    string? LastCavityNo,
+    string? LastCavityName,
+    DateTime? LastCavityDate,
+    int CavityVisitCount,
+    ServiceCavity? CurrentCavity,
+    List<CavityDispatchLog> RecentDispatches
+);
+
 
 
 
