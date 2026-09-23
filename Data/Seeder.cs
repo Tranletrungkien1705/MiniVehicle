@@ -5042,6 +5042,459 @@ public static class Seeder
                 v3Th.ThresholdAuditCount = 1;
             }
         }
+
+        // ===== Quản lý Khóa Đào tạo, Sát hạch & Cấp Chứng chỉ Chuẩn hóa Nhân sự Đại lý (TrainingCourse & StaffCertificate) =====
+        if (!await db.TrainingCourses.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+
+            // Khóa 1: Đào tạo sản phẩm xe mới & Hybrid 2026 (Completed)
+            var trn1 = new TrainingCourse
+            {
+                OrgId = org,
+                TrainingCode = "TRN-2026-001",
+                TrainingCodeUser = "KĐT/2026/03-SP-SANTAFE",
+                CourseName = "Khóa Đào tạo Sản phẩm & Công nghệ Hyundai SantaFe All-New & Tucson Turbo Hybrid 2026",
+                TrainingType = "NewProduct",
+                Level = "Intermediate",
+                Format = "PracticalWorkshop",
+                TrainerName = "Nguyễn Văn Hùng - Giảng viên Cao cấp HTV Training Center",
+                Location = "Trung tâm Đào tạo Kỹ thuật Hyundai Thành Công Ninh Bình",
+                StartDate = DateTime.Now.AddDays(-20),
+                EndDate = DateTime.Now.AddDays(-17),
+                MaxCapacity = 30,
+                TotalEnrolled = 3,
+                TotalPassed = 3,
+                TotalFailed = 0,
+                PassingScore = 70.0m,
+                BudgetAmount = 85000000m,
+                ActualCost = 78000000m,
+                Status = "Completed",
+                Remark = "Khóa đào tạo chuyên sâu về hệ truyền động Hybrid SmartStream, gói an toàn chủ động Hyundai SmartSense thế hệ mới và tính năng kết nối Bluelink",
+                CreatedBy = "training.coordinator",
+                CreatedAt = DateTime.Now.AddDays(-25),
+                ApprovedBy = "TrainingDirector.LeVanLong",
+                ApprovedAt = DateTime.Now.AddDays(-22),
+                CompletedBy = "Nguyễn Văn Hùng",
+                CompletedAt = DateTime.Now.AddDays(-17)
+            };
+            db.TrainingCourses.Add(trn1);
+            await db.SaveChangesAsync();
+
+            var enr1_1 = new TrainingEnrollment
+            {
+                OrgId = org,
+                TrainingCourseId = trn1.Id,
+                TrainingCode = trn1.TrainingCode,
+                EnrollmentNo = "ENR-TRN-2026-001-001",
+                LineIndex = 1,
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                StaffCode = "TVBH-01",
+                StaffName = "Nguyễn Văn Tuấn",
+                StaffEmail = "tuan.nv@hyundaidongdo.com.vn",
+                StaffPhone = "0901234567",
+                Position = "SalesConsultant",
+                AttendancePercent = 100,
+                TheoryScore = 92,
+                PracticeScore = 96,
+                FinalScore = 94.4m,
+                EvaluationGrade = "Excellent",
+                ResultStatus = "Passed",
+                IsCertificateIssued = true,
+                CertificateNo = "CERT-2026-SALE-0001",
+                CertificateIssueDate = DateTime.Now.AddDays(-17),
+                Status = "Certified",
+                Remark = "Nắm rất vững thông số kỹ thuật động cơ SmartStream và kỹ năng tư vấn tính năng SmartSense cho khách hàng"
+            };
+
+            var enr1_2 = new TrainingEnrollment
+            {
+                OrgId = org,
+                TrainingCourseId = trn1.Id,
+                TrainingCode = trn1.TrainingCode,
+                EnrollmentNo = "ENR-TRN-2026-001-002",
+                LineIndex = 2,
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                StaffCode = "TVBH-02",
+                StaffName = "Trần Thị Mai",
+                StaffEmail = "mai.tt@hyundaidongdo.com.vn",
+                StaffPhone = "0912345678",
+                Position = "SalesConsultant",
+                AttendancePercent = 100,
+                TheoryScore = 85,
+                PracticeScore = 88,
+                FinalScore = 86.8m,
+                EvaluationGrade = "Good",
+                ResultStatus = "Passed",
+                IsCertificateIssued = true,
+                CertificateNo = "CERT-2026-SALE-0002",
+                CertificateIssueDate = DateTime.Now.AddDays(-17),
+                Status = "Certified",
+                Remark = "Kỹ năng thuyết trình sản phẩm và xử lý tình huống so sánh đối thủ rất tốt"
+            };
+
+            var enr1_3 = new TrainingEnrollment
+            {
+                OrgId = org,
+                TrainingCourseId = trn1.Id,
+                TrainingCode = trn1.TrainingCode,
+                EnrollmentNo = "ENR-TRN-2026-001-003",
+                LineIndex = 3,
+                DealerCode = "DLR-HCM01",
+                DealerName = "Hyundai Sài Gòn",
+                StaffCode = "TVBH-03",
+                StaffName = "Lê Hoàng Nam",
+                StaffEmail = "nam.lh@hyundaisaigon.com.vn",
+                StaffPhone = "0987654321",
+                Position = "SalesConsultant",
+                AttendancePercent = 100,
+                TheoryScore = 78,
+                PracticeScore = 82,
+                FinalScore = 80.4m,
+                EvaluationGrade = "Good",
+                ResultStatus = "Passed",
+                IsCertificateIssued = true,
+                CertificateNo = "CERT-2026-SALE-0003",
+                CertificateIssueDate = DateTime.Now.AddDays(-17),
+                Status = "Certified",
+                Remark = "Đạt chuẩn sát hạch tư vấn bán hàng chuyên nghiệp dòng SUV cao cấp"
+            };
+
+            db.TrainingEnrollments.AddRange(enr1_1, enr1_2, enr1_3);
+
+            // Khóa 2: Chuẩn hóa kỹ năng Cố vấn dịch vụ CVDV (Completed)
+            var trn2 = new TrainingCourse
+            {
+                OrgId = org,
+                TrainingCode = "TRN-2026-002",
+                TrainingCodeUser = "KĐT/2026/03-CVDV-ADV",
+                CourseName = "Khóa Sát hạch & Chuẩn hóa Kỹ năng Cố vấn Dịch vụ Chuyên nghiệp Hyundai Service Advisor",
+                TrainingType = "ServiceAdvisor",
+                Level = "Advanced",
+                Format = "OfflineInClass",
+                TrainerName = "Trần Đình Trọng - Giám khảo Dịch vụ Quốc tế Hyundai Motor",
+                Location = "Showroom & Xưởng Dịch vụ Đào tạo Chuẩn 3S Hà Nội",
+                StartDate = DateTime.Now.AddDays(-14),
+                EndDate = DateTime.Now.AddDays(-12),
+                MaxCapacity = 25,
+                TotalEnrolled = 2,
+                TotalPassed = 2,
+                TotalFailed = 0,
+                PassingScore = 75.0m,
+                BudgetAmount = 65000000m,
+                ActualCost = 61000000m,
+                Status = "Completed",
+                Remark = "Quy trình tiếp nhận xe 6 bước chuẩn Hyundai, kỹ năng giải thích báo giá dịch vụ, nâng cao chỉ số hài lòng khách hàng CSI",
+                CreatedBy = "service.trainer",
+                CreatedAt = DateTime.Now.AddDays(-18),
+                ApprovedBy = "AfterSalesDirector.PhamQuocBao",
+                ApprovedAt = DateTime.Now.AddDays(-16),
+                CompletedBy = "Trần Đình Trọng",
+                CompletedAt = DateTime.Now.AddDays(-12)
+            };
+            db.TrainingCourses.Add(trn2);
+            await db.SaveChangesAsync();
+
+            var enr2_1 = new TrainingEnrollment
+            {
+                OrgId = org,
+                TrainingCourseId = trn2.Id,
+                TrainingCode = trn2.TrainingCode,
+                EnrollmentNo = "ENR-TRN-2026-002-001",
+                LineIndex = 1,
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                StaffCode = "CVDV-01",
+                StaffName = "Phạm Quốc Tuấn",
+                StaffEmail = "tuan.pq@hyundaidongdo.com.vn",
+                StaffPhone = "0934567890",
+                Position = "ServiceAdvisor",
+                AttendancePercent = 100,
+                TheoryScore = 88,
+                PracticeScore = 90,
+                FinalScore = 89.2m,
+                EvaluationGrade = "Good",
+                ResultStatus = "Passed",
+                IsCertificateIssued = true,
+                CertificateNo = "CERT-2026-SERV-0001",
+                CertificateIssueDate = DateTime.Now.AddDays(-12),
+                Status = "Certified",
+                Remark = "Thao tác phần mềm DMS và giao tiếp tư vấn khách hàng giải thích hạng mục sửa chữa rất chuyên nghiệp"
+            };
+
+            var enr2_2 = new TrainingEnrollment
+            {
+                OrgId = org,
+                TrainingCourseId = trn2.Id,
+                TrainingCode = trn2.TrainingCode,
+                EnrollmentNo = "ENR-TRN-2026-002-002",
+                LineIndex = 2,
+                DealerCode = "DLR-HN02",
+                DealerName = "Hyundai Phạm Văn Đồng",
+                StaffCode = "CVDV-02",
+                StaffName = "Vũ Hồng Sơn",
+                StaffEmail = "son.vh@hyundaiphamvandong.com.vn",
+                StaffPhone = "0945678901",
+                Position = "ServiceAdvisor",
+                AttendancePercent = 100,
+                TheoryScore = 90,
+                PracticeScore = 92,
+                FinalScore = 91.2m,
+                EvaluationGrade = "Excellent",
+                ResultStatus = "Passed",
+                IsCertificateIssued = true,
+                CertificateNo = "CERT-2026-SERV-0002",
+                CertificateIssueDate = DateTime.Now.AddDays(-12),
+                Status = "Certified",
+                Remark = "Tư vấn báo giá sửa chữa rõ ràng, xử lý phàn nàn khách hàng xuất sắc"
+            };
+
+            db.TrainingEnrollments.AddRange(enr2_1, enr2_2);
+
+            // Khóa 3: Chẩn đoán & Kỹ thuật Xe điện IONIQ EV Master (InProgress)
+            var trn3 = new TrainingCourse
+            {
+                OrgId = org,
+                TrainingCode = "TRN-2026-003",
+                TrainingCodeUser = "KĐT/2026/03-EV-MASTER",
+                CourseName = "Khóa Đào tạo Kỹ thuật Chuyên sâu & Chẩn đoán Pin Cao áp Xe điện Hyundai IONIQ 5 & IONIQ 6 EV Master",
+                TrainingType = "EVTechnician",
+                Level = "Master",
+                Format = "PracticalWorkshop",
+                TrainerName = "Park Sung-Hoon - Chuyên gia Đào tạo Kỹ thuật Điện áp Cao Hyundai Motor Company",
+                Location = "Trung tâm Đào tạo Kỹ thuật Hyundai Thành Công Ninh Bình",
+                StartDate = DateTime.Now.AddDays(-2),
+                EndDate = DateTime.Now.AddDays(2),
+                MaxCapacity = 20,
+                TotalEnrolled = 2,
+                TotalPassed = 0,
+                TotalFailed = 0,
+                PassingScore = 80.0m,
+                BudgetAmount = 120000000m,
+                ActualCost = 45000000m,
+                Status = "InProgress",
+                Remark = "An toàn làm việc với hệ thống điện 800V E-GMP, tháo lắp mô-đun pin cao áp, chẩn đoán hệ thống biến tần Inverter và động cơ điện đồng bộ nam châm vĩnh cửu",
+                CreatedBy = "technical.director",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ApprovedBy = "AfterSalesDirector.PhamQuocBao",
+                ApprovedAt = DateTime.Now.AddDays(-8)
+            };
+            db.TrainingCourses.Add(trn3);
+            await db.SaveChangesAsync();
+
+            var enr3_1 = new TrainingEnrollment
+            {
+                OrgId = org,
+                TrainingCourseId = trn3.Id,
+                TrainingCode = trn3.TrainingCode,
+                EnrollmentNo = "ENR-TRN-2026-003-001",
+                LineIndex = 1,
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                StaffCode = "KTV-01",
+                StaffName = "Hoàng Văn Hưng",
+                StaffEmail = "hung.hv@hyundaidongdo.com.vn",
+                StaffPhone = "0956789012",
+                Position = "Technician",
+                AttendancePercent = 100,
+                TheoryScore = 86,
+                PracticeScore = 0,
+                FinalScore = 34.4m,
+                EvaluationGrade = "Pending",
+                ResultStatus = "Attended",
+                IsCertificateIssued = false,
+                Status = "InTraining",
+                Remark = "Đã hoàn thành xuất sắc phần lý thuyết an toàn điện 800V, đang tiến hành bài thi thực hành xưởng"
+            };
+
+            var enr3_2 = new TrainingEnrollment
+            {
+                OrgId = org,
+                TrainingCourseId = trn3.Id,
+                TrainingCode = trn3.TrainingCode,
+                EnrollmentNo = "ENR-TRN-2026-003-002",
+                LineIndex = 2,
+                DealerCode = "DLR-HCM01",
+                DealerName = "Hyundai Sài Gòn",
+                StaffCode = "KTV-02",
+                StaffName = "Đỗ Minh Đức",
+                StaffEmail = "duc.dm@hyundaisaigon.com.vn",
+                StaffPhone = "0967890123",
+                Position = "Technician",
+                AttendancePercent = 100,
+                TheoryScore = 90,
+                PracticeScore = 0,
+                FinalScore = 36.0m,
+                EvaluationGrade = "Pending",
+                ResultStatus = "Attended",
+                IsCertificateIssued = false,
+                Status = "InTraining",
+                Remark = "Đã hoàn thành lý thuyết mạch điều khiển BMS, đang thực hành chẩn đoán GDS-Mobile trên xe IONIQ 5"
+            };
+
+            db.TrainingEnrollments.AddRange(enr3_1, enr3_2);
+
+            // Seed danh mục chứng chỉ nhân sự đã cấp (StaffCertificate)
+            var cert1 = new StaffCertificate
+            {
+                OrgId = org,
+                CertificateNo = "CERT-2026-SALE-0001",
+                CertificateNoUser = "CC-2026/TVBH/HN01-001",
+                StaffCode = "TVBH-01",
+                StaffName = "Nguyễn Văn Tuấn",
+                StaffEmail = "tuan.nv@hyundaidongdo.com.vn",
+                StaffPhone = "0901234567",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                Position = "SalesConsultant",
+                CertificateType = "SalesConsultant",
+                Level = "Gold",
+                IssueDate = DateTime.Now.AddDays(-17),
+                ExpiryDate = DateTime.Now.AddDays(-17).AddYears(2),
+                IssuedBy = "Trung tâm Đào tạo Hyundai Thành Công Việt Nam (HTV Training Center)",
+                Status = "Active",
+                LinkedTrainingCode = "TRN-2026-001",
+                LinkedEnrollmentNo = "ENR-TRN-2026-001-001",
+                ScoreAchieved = 94.4m,
+                Grade = "Excellent",
+                Remark = "Chứng chỉ Tư vấn Bán hàng Chuyên nghiệp Hạng Vàng (Hyundai Certified Sales Master)",
+                CreatedAt = DateTime.Now.AddDays(-17)
+            };
+
+            var cert2 = new StaffCertificate
+            {
+                OrgId = org,
+                CertificateNo = "CERT-2026-SALE-0002",
+                CertificateNoUser = "CC-2026/TVBH/HN01-002",
+                StaffCode = "TVBH-02",
+                StaffName = "Trần Thị Mai",
+                StaffEmail = "mai.tt@hyundaidongdo.com.vn",
+                StaffPhone = "0912345678",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                Position = "SalesConsultant",
+                CertificateType = "SalesConsultant",
+                Level = "Silver",
+                IssueDate = DateTime.Now.AddDays(-17),
+                ExpiryDate = DateTime.Now.AddDays(-17).AddYears(2),
+                IssuedBy = "Trung tâm Đào tạo Hyundai Thành Công Việt Nam (HTV Training Center)",
+                Status = "Active",
+                LinkedTrainingCode = "TRN-2026-001",
+                LinkedEnrollmentNo = "ENR-TRN-2026-001-002",
+                ScoreAchieved = 86.8m,
+                Grade = "Good",
+                Remark = "Chứng chỉ Tư vấn Bán hàng Chuyên nghiệp Hạng Bạc (Hyundai Certified Sales Consultant)",
+                CreatedAt = DateTime.Now.AddDays(-17)
+            };
+
+            var cert3 = new StaffCertificate
+            {
+                OrgId = org,
+                CertificateNo = "CERT-2026-SALE-0003",
+                CertificateNoUser = "CC-2026/TVBH/HCM01-003",
+                StaffCode = "TVBH-03",
+                StaffName = "Lê Hoàng Nam",
+                StaffEmail = "nam.lh@hyundaisaigon.com.vn",
+                StaffPhone = "0987654321",
+                DealerCode = "DLR-HCM01",
+                DealerName = "Hyundai Sài Gòn",
+                Position = "SalesConsultant",
+                CertificateType = "SalesConsultant",
+                Level = "Silver",
+                IssueDate = DateTime.Now.AddDays(-17),
+                ExpiryDate = DateTime.Now.AddDays(-17).AddYears(2),
+                IssuedBy = "Trung tâm Đào tạo Hyundai Thành Công Việt Nam (HTV Training Center)",
+                Status = "Active",
+                LinkedTrainingCode = "TRN-2026-001",
+                LinkedEnrollmentNo = "ENR-TRN-2026-001-003",
+                ScoreAchieved = 80.4m,
+                Grade = "Good",
+                Remark = "Chứng chỉ Tư vấn Bán hàng Chuyên nghiệp Hạng Bạc (Hyundai Certified Sales Consultant)",
+                CreatedAt = DateTime.Now.AddDays(-17)
+            };
+
+            var cert4 = new StaffCertificate
+            {
+                OrgId = org,
+                CertificateNo = "CERT-2026-SERV-0001",
+                CertificateNoUser = "CC-2026/CVDV/HN01-001",
+                StaffCode = "CVDV-01",
+                StaffName = "Phạm Quốc Tuấn",
+                StaffEmail = "tuan.pq@hyundaidongdo.com.vn",
+                StaffPhone = "0934567890",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                Position = "ServiceAdvisor",
+                CertificateType = "ServiceAdvisor",
+                Level = "Gold",
+                IssueDate = DateTime.Now.AddDays(-12),
+                ExpiryDate = DateTime.Now.AddDays(-12).AddYears(2),
+                IssuedBy = "Trung tâm Đào tạo Hyundai Thành Công Việt Nam (HTV Training Center)",
+                Status = "Active",
+                LinkedTrainingCode = "TRN-2026-002",
+                LinkedEnrollmentNo = "ENR-TRN-2026-002-001",
+                ScoreAchieved = 89.2m,
+                Grade = "Good",
+                Remark = "Chứng chỉ Cố vấn Dịch vụ Chuyên nghiệp Hạng Vàng (Hyundai Certified Service Advisor Gold)",
+                CreatedAt = DateTime.Now.AddDays(-12)
+            };
+
+            var cert5 = new StaffCertificate
+            {
+                OrgId = org,
+                CertificateNo = "CERT-2026-SERV-0002",
+                CertificateNoUser = "CC-2026/CVDV/HN02-002",
+                StaffCode = "CVDV-02",
+                StaffName = "Vũ Hồng Sơn",
+                StaffEmail = "son.vh@hyundaiphamvandong.com.vn",
+                StaffPhone = "0945678901",
+                DealerCode = "DLR-HN02",
+                DealerName = "Hyundai Phạm Văn Đồng",
+                Position = "ServiceAdvisor",
+                CertificateType = "ServiceAdvisor",
+                Level = "Gold",
+                IssueDate = DateTime.Now.AddDays(-12),
+                ExpiryDate = DateTime.Now.AddDays(-12).AddYears(2),
+                IssuedBy = "Trung tâm Đào tạo Hyundai Thành Công Việt Nam (HTV Training Center)",
+                Status = "Active",
+                LinkedTrainingCode = "TRN-2026-002",
+                LinkedEnrollmentNo = "ENR-TRN-2026-002-002",
+                ScoreAchieved = 91.2m,
+                Grade = "Excellent",
+                Remark = "Chứng chỉ Cố vấn Dịch vụ Xuất sắc Hạng Vàng (Hyundai Master Service Advisor)",
+                CreatedAt = DateTime.Now.AddDays(-12)
+            };
+
+            var cert6 = new StaffCertificate
+            {
+                OrgId = org,
+                CertificateNo = "CERT-2026-TECH-0001",
+                CertificateNoUser = "CC-2026/KTV/HN01-003",
+                StaffCode = "KTV-03",
+                StaffName = "Bùi Văn Thắng",
+                StaffEmail = "thang.bv@hyundaidongdo.com.vn",
+                StaffPhone = "0978901234",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                Position = "Technician",
+                CertificateType = "MasterTechnician",
+                Level = "Master",
+                IssueDate = DateTime.Now.AddMonths(-3),
+                ExpiryDate = DateTime.Now.AddMonths(-3).AddYears(2),
+                IssuedBy = "Trung tâm Đào tạo Hyundai Thành Công Việt Nam (HTV Training Center)",
+                Status = "Active",
+                LinkedTrainingCode = "TRN-2025-099",
+                LinkedEnrollmentNo = "ENR-TRN-2025-099-001",
+                ScoreAchieved = 96.0m,
+                Grade = "Excellent",
+                Remark = "Chứng chỉ Kỹ thuật viên Trưởng Bậc Thầy (Hyundai Master Diagnostic Technician)",
+                CreatedAt = DateTime.Now.AddMonths(-3)
+            };
+
+            db.StaffCertificates.AddRange(cert1, cert2, cert3, cert4, cert5, cert6);
+        }
         await db.SaveChangesAsync();
     }
 
@@ -5277,7 +5730,10 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastThresholdNo\" text NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"ThresholdAuditCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"DealerInventoryThresholds\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ThresholdNo\" text NOT NULL DEFAULT '', \"ThresholdNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RegionCode\" text NULL DEFAULT 'MienBac', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"PeriodMonth\" integer NOT NULL DEFAULT 5, \"PeriodYear\" integer NOT NULL DEFAULT 2026, \"MinInvQty\" integer NOT NULL DEFAULT 5, \"TargetInvQty\" integer NOT NULL DEFAULT 10, \"MaxInvQty\" integer NOT NULL DEFAULT 25, \"WarningThresholdPercent\" numeric NOT NULL DEFAULT 20, \"DailySalesRate\" numeric NOT NULL DEFAULT 0.5, \"EffectiveFrom\" timestamp NULL, \"EffectiveTo\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SuspendedBy\" text NULL, \"SuspendedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"InventoryAuditRecords\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AuditNo\" text NOT NULL DEFAULT '', \"ThresholdId\" bigint NULL, \"ThresholdNo\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RegionCode\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"MinInvQty\" integer NOT NULL DEFAULT 5, \"TargetInvQty\" integer NOT NULL DEFAULT 10, \"MaxInvQty\" integer NOT NULL DEFAULT 25, \"InStockCount\" integer NOT NULL DEFAULT 0, \"AllocatedCount\" integer NOT NULL DEFAULT 0, \"InTransitCount\" integer NOT NULL DEFAULT 0, \"TotalOnHand\" integer NOT NULL DEFAULT 0, \"VarianceQty\" integer NOT NULL DEFAULT 0, \"StockFulfillmentRate\" numeric NOT NULL DEFAULT 0, \"DaysOfSupply\" numeric NOT NULL DEFAULT 0, \"HealthStatus\" text NOT NULL DEFAULT 'Optimal', \"RebalanceAction\" text NULL, \"RecommendedTransferDealer\" text NULL, \"RecommendedTransferQty\" integer NOT NULL DEFAULT 0, \"AuditDate\" timestamp NOT NULL DEFAULT now(), \"AuditedBy\" text NULL, \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"InventoryAuditRecords\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AuditNo\" text NOT NULL DEFAULT '', \"ThresholdId\" bigint NULL, \"ThresholdNo\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RegionCode\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"MinInvQty\" integer NOT NULL DEFAULT 5, \"TargetInvQty\" integer NOT NULL DEFAULT 10, \"MaxInvQty\" integer NOT NULL DEFAULT 25, \"InStockCount\" integer NOT NULL DEFAULT 0, \"AllocatedCount\" integer NOT NULL DEFAULT 0, \"InTransitCount\" integer NOT NULL DEFAULT 0, \"TotalOnHand\" integer NOT NULL DEFAULT 0, \"VarianceQty\" integer NOT NULL DEFAULT 0, \"StockFulfillmentRate\" numeric NOT NULL DEFAULT 0, \"DaysOfSupply\" numeric NOT NULL DEFAULT 0, \"HealthStatus\" text NOT NULL DEFAULT 'Optimal', \"RebalanceAction\" text NULL, \"RecommendedTransferDealer\" text NULL, \"RecommendedTransferQty\" integer NOT NULL DEFAULT 0, \"AuditDate\" timestamp NOT NULL DEFAULT now(), \"AuditedBy\" text NULL, \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"TrainingCourses\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TrainingCode\" text NOT NULL DEFAULT '', \"TrainingCodeUser\" text NULL, \"CourseName\" text NOT NULL DEFAULT '', \"TrainingType\" text NOT NULL DEFAULT 'SalesConsultant', \"Level\" text NOT NULL DEFAULT 'Intermediate', \"Format\" text NOT NULL DEFAULT 'OfflineInClass', \"TrainerName\" text NULL, \"Location\" text NULL, \"StartDate\" timestamp NOT NULL DEFAULT now(), \"EndDate\" timestamp NOT NULL DEFAULT now(), \"MaxCapacity\" integer NOT NULL DEFAULT 30, \"TotalEnrolled\" integer NOT NULL DEFAULT 0, \"TotalPassed\" integer NOT NULL DEFAULT 0, \"TotalFailed\" integer NOT NULL DEFAULT 0, \"PassingScore\" numeric NOT NULL DEFAULT 70.0, \"BudgetAmount\" numeric NOT NULL DEFAULT 0, \"ActualCost\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"TrainingEnrollments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TrainingCourseId\" bigint NOT NULL, \"TrainingCode\" text NOT NULL DEFAULT '', \"EnrollmentNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"StaffCode\" text NOT NULL DEFAULT '', \"StaffName\" text NOT NULL DEFAULT '', \"StaffEmail\" text NULL, \"StaffPhone\" text NULL, \"Position\" text NOT NULL DEFAULT 'SalesConsultant', \"AttendancePercent\" numeric NOT NULL DEFAULT 100, \"TheoryScore\" numeric NOT NULL DEFAULT 0, \"PracticeScore\" numeric NOT NULL DEFAULT 0, \"FinalScore\" numeric NOT NULL DEFAULT 0, \"EvaluationGrade\" text NOT NULL DEFAULT 'Pending', \"ResultStatus\" text NOT NULL DEFAULT 'Registered', \"IsCertificateIssued\" boolean NOT NULL DEFAULT false, \"CertificateNo\" text NULL, \"CertificateIssueDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"StaffCertificates\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CertificateNo\" text NOT NULL DEFAULT '', \"CertificateNoUser\" text NULL, \"StaffCode\" text NOT NULL DEFAULT '', \"StaffName\" text NOT NULL DEFAULT '', \"StaffEmail\" text NULL, \"StaffPhone\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Position\" text NOT NULL DEFAULT 'SalesConsultant', \"CertificateType\" text NOT NULL DEFAULT 'SalesConsultant', \"Level\" text NOT NULL DEFAULT 'Certified', \"IssueDate\" timestamp NOT NULL DEFAULT now(), \"ExpiryDate\" timestamp NOT NULL DEFAULT now(), \"IssuedBy\" text NOT NULL DEFAULT 'HTV Training Center', \"Status\" text NOT NULL DEFAULT 'Active', \"LinkedTrainingCode\" text NULL, \"LinkedEnrollmentNo\" text NULL, \"ScoreAchieved\" numeric NOT NULL DEFAULT 0, \"Grade\" text NULL, \"RevokeReason\" text NULL, \"RevokedBy\" text NULL, \"RevokedAt\" timestamp NULL, \"FileUrl\" text NULL, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

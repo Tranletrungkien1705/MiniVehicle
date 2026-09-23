@@ -233,6 +233,19 @@
 <li><code>PUT /api/inventory-thresholds/{thresholdNo}</code> &amp; <code>POST /api/inventory-thresholds/{thresholdNo}/update</code> — cập nhật các tham số định mức tồn kho tối thiểu, mục tiêu, tối đa, tốc độ bán hàng ngày và biên độ cảnh báo nguy cấp</li>
 <li><code>DELETE /api/inventory-thresholds/{thresholdNo}</code> — xóa thiết lập định mức tồn kho ở trạng thái Draft hoặc Cancelled</li>
 <li><code>GET /api/vehicles/{vin}/inventory-threshold-info</code> &amp; <code>GET /api/vehicles/{vin}/inventory-thresholds</code> &amp; <code>GET /api/vehicles/{vin}/inventory-threshold-history</code> — tra cứu thông tin định mức tồn kho áp dụng, trạng thái sức khỏe tồn kho và lịch sử đối soát kiểm kê của số khung VIN</li>
+<li><code>POST /api/trainings</code> &amp; <code>/api/trainings/{trainingCode}/{action}</code> — tạo, xếp lịch, bắt đầu, tổng kết hoàn tất &amp; hủy Khóa Đào tạo Chuẩn hóa Nhân sự Đại lý (BizHTC.MasterData &amp; TERP.HTCClient / Mst_Training / TrainingCourse: submit, schedule, start, complete, cancel)</li>
+<li><code>GET /api/trainings?status=&amp;trainingType=&amp;level=&amp;trainingCode=&amp;q=</code> — tra cứu danh sách khóa đào tạo (Sản phẩm mới NewProduct, Tư vấn bán hàng TVBH, Cố vấn dịch vụ CVDV, KTV Master/EV, Quản lý Đại lý)</li>
+<li><code>GET /api/trainings/summary</code> &amp; <code>GET /api/reports/trainings/summary</code> — báo cáo tổng hợp KPI đào tạo, tỷ lệ đỗ sát hạch %, số lượng chứng chỉ chuẩn hóa cấp phát và tỷ lệ chuẩn hóa theo Đại lý / Cấp độ</li>
+<li><code>GET /api/trainings/dealer-matrix?dealerCode=</code> — ma trận năng lực đào tạo &amp; chuẩn hóa chứng chỉ nhân sự theo từng Đại lý (Dealer Training Matrix: TVBH, CVDV, KTV, EV Master)</li>
+<li><code>GET /api/trainings/staff/{staffCode}</code> — tra cứu hồ sơ đào tạo, kết quả sát hạch và toàn bộ văn bằng chứng chỉ chuẩn hóa của nhân viên</li>
+<li><code>GET /api/trainings/{trainingCode}</code> — chi tiết khóa đào tạo, danh sách học viên ghi danh và chứng chỉ đã cấp</li>
+<li><code>PUT /api/trainings/{trainingCode}</code> &amp; <code>POST /api/trainings/{trainingCode}/update</code> — cập nhật thông tin giảng viên, địa điểm, thời gian, ngân sách và điểm sàn sát hạch của khóa học</li>
+<li><code>POST /api/trainings/{trainingCode}/enroll</code> &amp; <code>POST /api/trainings/{trainingCode}/batch-enroll</code> — đăng ký đơn lẻ hoặc hàng loạt học viên đại lý tham gia khóa đào tạo (TrainingEnrollment)</li>
+<li><code>POST /api/trainings/{trainingCode}/enrollments/{enrollmentNo}/grade</code> &amp; <code>POST /api/trainings/{trainingCode}/batch-grade</code> — chấm điểm sát hạch lý thuyết &amp; thực hành, tự động tính điểm tổng kết và xếp loại (Excellent, Good, Pass, Fail)</li>
+<li><code>DELETE /api/trainings/{trainingCode}/enrollments/{enrollmentNo}</code> — rút bớt hoặc hủy lượt đăng ký học viên chưa cấp chứng chỉ</li>
+<li><code>POST /api/trainings/{trainingCode}/auto-issue-certificates</code> — tự động phát hành chứng chỉ chuẩn hãng Hyundai cho tất cả học viên thi Đạt chuẩn trong khóa học</li>
+<li><code>GET /api/certificates?status=&amp;dealer=&amp;certType=&amp;staffCode=&amp;certNo=</code> — tra cứu danh sách chứng chỉ nhân sự đại lý toàn quốc (StaffCertificate: SalesConsultant, ServiceAdvisor, MasterTechnician, EVTechnician)</li>
+<li><code>POST /api/certificates</code> &amp; <code>PUT /api/certificates/{certNo}</code> &amp; <code>/api/certificates/{certNo}/{action}</code> — cấp mới, cập nhật, kích hoạt, gia hạn thời hạn, tạm đình chỉ hoặc thu hồi chứng chỉ (activate, renew, suspend, expire, revoke)</li>
 <li><code>POST /api/transfers</code> &amp; <code>/api/transfers/{code}/{action}</code> — điều chuyển kho/đại lý</li>
 <li><code>POST /api/claims</code> &amp; <code>/api/claims/{no}/approve|reject|settle</code> — yêu cầu bảo hành</li>
 <li><code>POST /api/recalls</code> &amp; <code>/api/recalls/{code}/done</code> — chiến dịch triệu hồi</li>

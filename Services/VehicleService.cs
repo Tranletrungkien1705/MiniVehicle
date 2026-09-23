@@ -2103,6 +2103,28 @@ public interface IVehicleService
     Task<object> GetDealerInventoryThresholdSummaryAsync(int? month, int? year, string? region);
     Task<object?> GetVehicleInventoryThresholdInfoAsync(string vin);
     Task<object?> GetVehicleInventoryThresholdHistoryAsync(string vin);
+
+    // ===== Đào tạo, Sát hạch & Chứng chỉ Chuẩn hóa Nhân sự Đại lý (TrainingCourse & StaffCertificate) =====
+    Task<object> CreateTrainingCourseAsync(CreateTrainingCourseDto dto);
+    Task<object> ListTrainingCoursesAsync(string? status, string? trainingType, string? level, string? trainingCode, string? q);
+    Task<object?> GetTrainingCourseAsync(string trainingCode);
+    Task<object?> UpdateTrainingCourseHeaderAsync(string trainingCode, UpdateTrainingCourseHeaderDto dto);
+    Task<object?> TrainingCourseTransitionAsync(string trainingCode, string action, TrainingCourseTransitionDto? dto);
+    Task<object?> EnrollStaffAsync(string trainingCode, EnrollStaffDto dto);
+    Task<object?> BatchEnrollStaffAsync(string trainingCode, BatchEnrollStaffDto dto);
+    Task<object?> UpdateEnrollmentAsync(string trainingCode, string enrollmentNo, UpdateEnrollmentDto dto);
+    Task<object?> GradeEnrollmentAsync(string trainingCode, string enrollmentNo, GradeEnrollmentDto dto);
+    Task<object?> BatchGradeEnrollmentsAsync(string trainingCode, BatchGradeEnrollmentDto dto);
+    Task<object?> RemoveEnrollmentAsync(string trainingCode, string enrollmentNo);
+    Task<object?> AutoIssueCertificatesAsync(string trainingCode, AutoIssueCertificatesDto? dto);
+    Task<object> ListStaffCertificatesAsync(string? status, string? dealer, string? certType, string? staffCode, string? certNo);
+    Task<object?> GetStaffCertificateAsync(string certNo);
+    Task<object> CreateStaffCertificateAsync(CreateStaffCertificateDto dto);
+    Task<object?> UpdateStaffCertificateAsync(string certNo, UpdateStaffCertificateDto dto);
+    Task<object?> StaffCertificateTransitionAsync(string certNo, string action, StaffCertificateTransitionDto? dto);
+    Task<object?> GetDealerTrainingMatrixAsync(string? dealerCode);
+    Task<object?> GetStaffTrainingProfileAsync(string staffCode);
+    Task<object> GetTrainingSummaryAsync(int? year, string? trainingType);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -33212,5 +33234,1054 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             audits,
             events
         };
+    }
+
+    // ===== Đào tạo, Sát hạch & Chứng chỉ Chuẩn hóa Nhân sự Đại lý (TrainingCourse & StaffCertificate) =====
+
+    public async Task<object> CreateTrainingCourseAsync(CreateTrainingCourseDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.CourseName))
+            throw new InvalidOperationException("Cần tên khóa đào tạo CourseName.");
+
+        var tCode = string.IsNullOrWhiteSpace(dto.TrainingCode)
+            ? $"TRN-{DateTime.Now:yyyy}-{(await db.TrainingCourses.CountAsync(c => c.OrgId == Org) + 1):D3}"
+            : dto.TrainingCode.Trim().ToUpperInvariant();
+
+        if (await db.TrainingCourses.AnyAsync(c => c.OrgId == Org && c.TrainingCode == tCode))
+            throw new InvalidOperationException($"Mã khóa đào tạo {tCode} đã tồn tại trong hệ thống.");
+
+        var course = new TrainingCourse
+        {
+            OrgId = Org,
+            TrainingCode = tCode,
+            TrainingCodeUser = dto.TrainingCodeUser?.Trim(),
+            CourseName = dto.CourseName.Trim(),
+            TrainingType = string.IsNullOrWhiteSpace(dto.TrainingType) ? "SalesConsultant" : dto.TrainingType.Trim(),
+            Level = string.IsNullOrWhiteSpace(dto.Level) ? "Intermediate" : dto.Level.Trim(),
+            Format = string.IsNullOrWhiteSpace(dto.Format) ? "OfflineInClass" : dto.Format.Trim(),
+            TrainerName = dto.TrainerName?.Trim(),
+            Location = dto.Location?.Trim(),
+            StartDate = dto.StartDate ?? DateTime.Now.AddDays(7),
+            EndDate = dto.EndDate ?? (dto.StartDate ?? DateTime.Now.AddDays(7)).AddDays(3),
+            MaxCapacity = dto.MaxCapacity ?? 30,
+            PassingScore = dto.PassingScore ?? 70.0m,
+            BudgetAmount = dto.BudgetAmount ?? 0m,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "TrainingCenter",
+            CreatedAt = DateTime.Now
+        };
+
+        db.TrainingCourses.Add(course);
+        await db.SaveChangesAsync();
+
+        if (dto.Enrollments != null && dto.Enrollments.Count > 0)
+        {
+            int lineIdx = 1;
+            var enrollments = new List<TrainingEnrollment>();
+            foreach (var item in dto.Enrollments)
+            {
+                if (string.IsNullOrWhiteSpace(item.StaffCode) || string.IsNullOrWhiteSpace(item.StaffName)) continue;
+                var enrNo = $"ENR-{tCode}-{lineIdx:D3}";
+                var enr = new TrainingEnrollment
+                {
+                    OrgId = Org,
+                    TrainingCourseId = course.Id,
+                    TrainingCode = course.TrainingCode,
+                    EnrollmentNo = enrNo,
+                    LineIndex = lineIdx++,
+                    DealerCode = item.DealerCode.Trim().ToUpperInvariant(),
+                    DealerName = item.DealerName?.Trim(),
+                    StaffCode = item.StaffCode.Trim().ToUpperInvariant(),
+                    StaffName = item.StaffName.Trim(),
+                    StaffEmail = item.StaffEmail?.Trim(),
+                    StaffPhone = item.StaffPhone?.Trim(),
+                    Position = string.IsNullOrWhiteSpace(item.Position) ? "SalesConsultant" : item.Position.Trim(),
+                    AttendancePercent = 100,
+                    TheoryScore = 0,
+                    PracticeScore = 0,
+                    FinalScore = 0,
+                    EvaluationGrade = "Pending",
+                    ResultStatus = "Registered",
+                    Status = "Pending",
+                    Remark = item.Remark?.Trim()
+                };
+                enrollments.Add(enr);
+            }
+            if (enrollments.Count > 0)
+            {
+                db.TrainingEnrollments.AddRange(enrollments);
+                course.TotalEnrolled = enrollments.Count;
+                await db.SaveChangesAsync();
+            }
+        }
+
+        return course;
+    }
+
+    public async Task<object> ListTrainingCoursesAsync(string? status, string? trainingType, string? level, string? trainingCode, string? q)
+    {
+        var query = db.TrainingCourses.Where(c => c.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var s = status.Trim();
+            query = query.Where(c => c.Status == s);
+        }
+
+        if (!string.IsNullOrWhiteSpace(trainingType))
+        {
+            var tt = trainingType.Trim();
+            query = query.Where(c => c.TrainingType == tt);
+        }
+
+        if (!string.IsNullOrWhiteSpace(level))
+        {
+            var lv = level.Trim();
+            query = query.Where(c => c.Level == lv);
+        }
+
+        if (!string.IsNullOrWhiteSpace(trainingCode))
+        {
+            var tc = trainingCode.Trim().ToUpperInvariant();
+            query = query.Where(c => c.TrainingCode.Contains(tc) || (c.TrainingCodeUser != null && c.TrainingCodeUser.ToUpper().Contains(tc)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var search = q.Trim().ToUpperInvariant();
+            query = query.Where(c => c.CourseName.ToUpper().Contains(search) || (c.TrainerName != null && c.TrainerName.ToUpper().Contains(search)) || (c.Location != null && c.Location.ToUpper().Contains(search)));
+        }
+
+        var items = await query.OrderByDescending(c => c.StartDate)
+                               .ThenByDescending(c => c.Id)
+                               .ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetTrainingCourseAsync(string trainingCode)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && (c.TrainingCode == trainingCode || c.TrainingCodeUser == trainingCode));
+        if (course is null) return null;
+
+        var enrollments = await db.TrainingEnrollments
+            .Where(e => e.OrgId == Org && e.TrainingCourseId == course.Id)
+            .OrderBy(e => e.LineIndex)
+            .ToListAsync();
+
+        var certificates = await db.StaffCertificates
+            .Where(c => c.OrgId == Org && c.LinkedTrainingCode == course.TrainingCode)
+            .ToListAsync();
+
+        return new
+        {
+            course,
+            enrollments,
+            certificates
+        };
+    }
+
+    public async Task<object?> UpdateTrainingCourseHeaderAsync(string trainingCode, UpdateTrainingCourseHeaderDto dto)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && (c.TrainingCode == trainingCode || c.TrainingCodeUser == trainingCode));
+        if (course is null) return null;
+
+        if (course.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa thông tin khóa đào tạo đã {course.Status}.");
+
+        if (dto.TrainingCodeUser != null) course.TrainingCodeUser = dto.TrainingCodeUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CourseName)) course.CourseName = dto.CourseName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.TrainingType)) course.TrainingType = dto.TrainingType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Level)) course.Level = dto.Level.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Format)) course.Format = dto.Format.Trim();
+        if (dto.TrainerName != null) course.TrainerName = dto.TrainerName.Trim();
+        if (dto.Location != null) course.Location = dto.Location.Trim();
+        if (dto.StartDate.HasValue) course.StartDate = dto.StartDate.Value;
+        if (dto.EndDate.HasValue) course.EndDate = dto.EndDate.Value;
+        if (dto.MaxCapacity.HasValue && dto.MaxCapacity.Value > 0) course.MaxCapacity = dto.MaxCapacity.Value;
+        if (dto.PassingScore.HasValue) course.PassingScore = dto.PassingScore.Value;
+        if (dto.BudgetAmount.HasValue) course.BudgetAmount = dto.BudgetAmount.Value;
+        if (dto.ActualCost.HasValue) course.ActualCost = dto.ActualCost.Value;
+        if (dto.Remark != null) course.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return course;
+    }
+
+    public async Task<object?> TrainingCourseTransitionAsync(string trainingCode, string action, TrainingCourseTransitionDto? dto)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && (c.TrainingCode == trainingCode || c.TrainingCodeUser == trainingCode));
+        if (course is null) return null;
+
+        var actor = dto?.Actor?.Trim() ?? "TrainingManager";
+        var now = dto?.TransitionDate ?? DateTime.Now;
+
+        switch (action.Trim().ToLowerInvariant())
+        {
+            case "submit":
+            case "schedule":
+            case "approve":
+                if (course.Status != "Draft")
+                    throw new InvalidOperationException($"Chỉ có thể xếp lịch/phê duyệt khóa học từ trạng thái Draft. Hiện tại là {course.Status}.");
+                course.Status = "Scheduled";
+                course.ApprovedBy = actor;
+                course.ApprovedAt = now;
+                break;
+
+            case "start":
+            case "in-progress":
+            case "inprogress":
+                if (course.Status is not ("Draft" or "Scheduled"))
+                    throw new InvalidOperationException($"Chỉ có thể bắt đầu khóa học từ trạng thái Draft hoặc Scheduled. Hiện tại là {course.Status}.");
+                course.Status = "InProgress";
+                var enrolleds = await db.TrainingEnrollments.Where(e => e.OrgId == Org && e.TrainingCourseId == course.Id).ToListAsync();
+                foreach (var e in enrolleds)
+                {
+                    if (e.Status == "Pending") e.Status = "InTraining";
+                    if (e.ResultStatus == "Registered") e.ResultStatus = "Attended";
+                }
+                break;
+
+            case "complete":
+            case "finish":
+                if (course.Status is not ("InProgress" or "Scheduled"))
+                    throw new InvalidOperationException($"Chỉ có thể hoàn tất tổng kết khóa học từ trạng thái InProgress hoặc Scheduled. Hiện tại là {course.Status}.");
+                course.Status = "Completed";
+                course.CompletedBy = actor;
+                course.CompletedAt = now;
+
+                var listEnr = await db.TrainingEnrollments.Where(e => e.OrgId == Org && e.TrainingCourseId == course.Id).ToListAsync();
+                course.TotalEnrolled = listEnr.Count;
+                course.TotalPassed = listEnr.Count(e => e.ResultStatus == "Passed");
+                course.TotalFailed = listEnr.Count(e => e.ResultStatus is "Failed" or "Dropped");
+                break;
+
+            case "cancel":
+                if (course.Status == "Completed")
+                    throw new InvalidOperationException("Không thể hủy khóa học đã hoàn tất tổng kết.");
+                course.Status = "Cancelled";
+                course.CancelledBy = actor;
+                course.CancelledAt = now;
+                course.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hủy theo yêu cầu";
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động chuyển trạng thái không hợp lệ: {action}");
+        }
+
+        await db.SaveChangesAsync();
+        return course;
+    }
+
+    public async Task<object?> EnrollStaffAsync(string trainingCode, EnrollStaffDto dto)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && (c.TrainingCode == trainingCode || c.TrainingCodeUser == trainingCode));
+        if (course is null) return null;
+
+        if (course.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Khóa đào tạo đã {course.Status}, không thể đăng ký thêm học viên.");
+
+        if (string.IsNullOrWhiteSpace(dto.StaffCode) || string.IsNullOrWhiteSpace(dto.StaffName))
+            throw new InvalidOperationException("Cần mã nhân viên StaffCode và họ tên StaffName.");
+
+        var sCode = dto.StaffCode.Trim().ToUpperInvariant();
+        if (await db.TrainingEnrollments.AnyAsync(e => e.OrgId == Org && e.TrainingCourseId == course.Id && e.StaffCode == sCode))
+            throw new InvalidOperationException($"Học viên {sCode} đã được đăng ký trong khóa đào tạo này.");
+
+        var maxIdx = await db.TrainingEnrollments.Where(e => e.OrgId == Org && e.TrainingCourseId == course.Id).Select(e => (int?)e.LineIndex).MaxAsync() ?? 0;
+        int nextIdx = maxIdx + 1;
+        var enrNo = $"ENR-{course.TrainingCode}-{nextIdx:D3}";
+
+        var enr = new TrainingEnrollment
+        {
+            OrgId = Org,
+            TrainingCourseId = course.Id,
+            TrainingCode = course.TrainingCode,
+            EnrollmentNo = enrNo,
+            LineIndex = nextIdx,
+            DealerCode = dto.DealerCode.Trim().ToUpperInvariant(),
+            DealerName = dto.DealerName?.Trim(),
+            StaffCode = sCode,
+            StaffName = dto.StaffName.Trim(),
+            StaffEmail = dto.StaffEmail?.Trim(),
+            StaffPhone = dto.StaffPhone?.Trim(),
+            Position = string.IsNullOrWhiteSpace(dto.Position) ? "SalesConsultant" : dto.Position.Trim(),
+            AttendancePercent = 100,
+            TheoryScore = 0,
+            PracticeScore = 0,
+            FinalScore = 0,
+            EvaluationGrade = "Pending",
+            ResultStatus = course.Status == "InProgress" ? "Attended" : "Registered",
+            Status = course.Status == "InProgress" ? "InTraining" : "Pending",
+            Remark = dto.Remark?.Trim()
+        };
+
+        db.TrainingEnrollments.Add(enr);
+        course.TotalEnrolled++;
+        await db.SaveChangesAsync();
+
+        return enr;
+    }
+
+    public async Task<object?> BatchEnrollStaffAsync(string trainingCode, BatchEnrollStaffDto dto)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && (c.TrainingCode == trainingCode || c.TrainingCodeUser == trainingCode));
+        if (course is null) return null;
+
+        if (course.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Khóa đào tạo đã {course.Status}, không thể đăng ký thêm học viên.");
+
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần danh sách học viên trong Items.");
+
+        var maxIdx = await db.TrainingEnrollments.Where(e => e.OrgId == Org && e.TrainingCourseId == course.Id).Select(e => (int?)e.LineIndex).MaxAsync() ?? 0;
+        var existingStaff = await db.TrainingEnrollments.Where(e => e.OrgId == Org && e.TrainingCourseId == course.Id).Select(e => e.StaffCode).ToListAsync();
+
+        var addedList = new List<TrainingEnrollment>();
+        foreach (var item in dto.Items)
+        {
+            if (string.IsNullOrWhiteSpace(item.StaffCode) || string.IsNullOrWhiteSpace(item.StaffName)) continue;
+            var sCode = item.StaffCode.Trim().ToUpperInvariant();
+            if (existingStaff.Contains(sCode)) continue;
+
+            maxIdx++;
+            var enrNo = $"ENR-{course.TrainingCode}-{maxIdx:D3}";
+            var enr = new TrainingEnrollment
+            {
+                OrgId = Org,
+                TrainingCourseId = course.Id,
+                TrainingCode = course.TrainingCode,
+                EnrollmentNo = enrNo,
+                LineIndex = maxIdx,
+                DealerCode = item.DealerCode.Trim().ToUpperInvariant(),
+                DealerName = item.DealerName?.Trim(),
+                StaffCode = sCode,
+                StaffName = item.StaffName.Trim(),
+                StaffEmail = item.StaffEmail?.Trim(),
+                StaffPhone = item.StaffPhone?.Trim(),
+                Position = string.IsNullOrWhiteSpace(item.Position) ? "SalesConsultant" : item.Position.Trim(),
+                AttendancePercent = 100,
+                TheoryScore = 0,
+                PracticeScore = 0,
+                FinalScore = 0,
+                EvaluationGrade = "Pending",
+                ResultStatus = course.Status == "InProgress" ? "Attended" : "Registered",
+                Status = course.Status == "InProgress" ? "InTraining" : "Pending",
+                Remark = item.Remark?.Trim()
+            };
+
+            db.TrainingEnrollments.Add(enr);
+            addedList.Add(enr);
+            existingStaff.Add(sCode);
+        }
+
+        course.TotalEnrolled += addedList.Count;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            course.TrainingCode,
+            totalAdded = addedList.Count,
+            totalEnrolled = course.TotalEnrolled,
+            enrollments = addedList
+        };
+    }
+
+    public async Task<object?> UpdateEnrollmentAsync(string trainingCode, string enrollmentNo, UpdateEnrollmentDto dto)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        enrollmentNo = enrollmentNo.Trim().ToUpperInvariant();
+
+        var enr = await db.TrainingEnrollments.FirstOrDefaultAsync(e => e.OrgId == Org && (e.TrainingCode == trainingCode || e.EnrollmentNo == enrollmentNo) && e.EnrollmentNo == enrollmentNo);
+        if (enr is null) return null;
+
+        if (dto.StaffName != null) enr.StaffName = dto.StaffName.Trim();
+        if (dto.StaffEmail != null) enr.StaffEmail = dto.StaffEmail.Trim();
+        if (dto.StaffPhone != null) enr.StaffPhone = dto.StaffPhone.Trim();
+        if (dto.Position != null) enr.Position = dto.Position.Trim();
+        if (dto.AttendancePercent.HasValue) enr.AttendancePercent = dto.AttendancePercent.Value;
+        if (dto.TheoryScore.HasValue) enr.TheoryScore = dto.TheoryScore.Value;
+        if (dto.PracticeScore.HasValue) enr.PracticeScore = dto.PracticeScore.Value;
+        if (dto.ResultStatus != null) enr.ResultStatus = dto.ResultStatus.Trim();
+        if (dto.Remark != null) enr.Remark = dto.Remark.Trim();
+
+        // Tự động tính lại điểm nếu có điểm
+        if (dto.TheoryScore.HasValue || dto.PracticeScore.HasValue)
+        {
+            enr.FinalScore = Math.Round(enr.TheoryScore * 0.4m + enr.PracticeScore * 0.6m, 1);
+            var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && c.Id == enr.TrainingCourseId);
+            var passingScore = course?.PassingScore ?? 70.0m;
+
+            if (enr.FinalScore >= 90m) enr.EvaluationGrade = "Excellent";
+            else if (enr.FinalScore >= 80m) enr.EvaluationGrade = "Good";
+            else if (enr.FinalScore >= passingScore) enr.EvaluationGrade = "Pass";
+            else enr.EvaluationGrade = "Fail";
+
+            if (enr.AttendancePercent >= 80m && enr.FinalScore >= passingScore) enr.ResultStatus = "Passed";
+            else enr.ResultStatus = "Failed";
+
+            enr.Status = "Evaluated";
+        }
+
+        await db.SaveChangesAsync();
+        return enr;
+    }
+
+    public async Task<object?> GradeEnrollmentAsync(string trainingCode, string enrollmentNo, GradeEnrollmentDto dto)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        enrollmentNo = enrollmentNo.Trim().ToUpperInvariant();
+
+        var enr = await db.TrainingEnrollments.FirstOrDefaultAsync(e => e.OrgId == Org && (e.TrainingCode == trainingCode || e.EnrollmentNo == enrollmentNo) && e.EnrollmentNo == enrollmentNo);
+        if (enr is null) return null;
+
+        var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && c.Id == enr.TrainingCourseId);
+        var passingScore = course?.PassingScore ?? 70.0m;
+
+        enr.TheoryScore = dto.TheoryScore;
+        enr.PracticeScore = dto.PracticeScore;
+        if (dto.AttendancePercent.HasValue) enr.AttendancePercent = dto.AttendancePercent.Value;
+        if (!string.IsNullOrWhiteSpace(dto.InstructorFeedback)) enr.Remark = dto.InstructorFeedback.Trim();
+
+        enr.FinalScore = Math.Round(enr.TheoryScore * 0.4m + enr.PracticeScore * 0.6m, 1);
+
+        if (enr.FinalScore >= 90m) enr.EvaluationGrade = "Excellent";
+        else if (enr.FinalScore >= 80m) enr.EvaluationGrade = "Good";
+        else if (enr.FinalScore >= passingScore) enr.EvaluationGrade = "Pass";
+        else enr.EvaluationGrade = "Fail";
+
+        if (enr.AttendancePercent >= 80m && enr.FinalScore >= passingScore)
+            enr.ResultStatus = "Passed";
+        else
+            enr.ResultStatus = "Failed";
+
+        enr.Status = "Evaluated";
+
+        if (course != null)
+        {
+            var listEnr = await db.TrainingEnrollments.Where(e => e.OrgId == Org && e.TrainingCourseId == course.Id).ToListAsync();
+            course.TotalPassed = listEnr.Count(e => e.EnrollmentNo != enr.EnrollmentNo ? e.ResultStatus == "Passed" : enr.ResultStatus == "Passed");
+            course.TotalFailed = listEnr.Count(e => e.EnrollmentNo != enr.EnrollmentNo ? (e.ResultStatus is "Failed" or "Dropped") : (enr.ResultStatus is "Failed" or "Dropped"));
+        }
+
+        await db.SaveChangesAsync();
+        return enr;
+    }
+
+    public async Task<object?> BatchGradeEnrollmentsAsync(string trainingCode, BatchGradeEnrollmentDto dto)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && (c.TrainingCode == trainingCode || c.TrainingCodeUser == trainingCode));
+        if (course is null) return null;
+
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần danh sách chấm điểm Items.");
+
+        var passingScore = course.PassingScore;
+        var enrollments = await db.TrainingEnrollments.Where(e => e.OrgId == Org && e.TrainingCourseId == course.Id).ToListAsync();
+        var enrDict = enrollments.ToDictionary(e => e.EnrollmentNo);
+
+        var gradedList = new List<TrainingEnrollment>();
+        foreach (var item in dto.Items)
+        {
+            if (string.IsNullOrWhiteSpace(item.EnrollmentNo)) continue;
+            var enrNo = item.EnrollmentNo.Trim().ToUpperInvariant();
+            if (!enrDict.TryGetValue(enrNo, out var enr)) continue;
+
+            enr.TheoryScore = item.TheoryScore;
+            enr.PracticeScore = item.PracticeScore;
+            if (item.AttendancePercent.HasValue) enr.AttendancePercent = item.AttendancePercent.Value;
+            if (!string.IsNullOrWhiteSpace(item.InstructorFeedback)) enr.Remark = item.InstructorFeedback.Trim();
+
+            enr.FinalScore = Math.Round(enr.TheoryScore * 0.4m + enr.PracticeScore * 0.6m, 1);
+
+            if (enr.FinalScore >= 90m) enr.EvaluationGrade = "Excellent";
+            else if (enr.FinalScore >= 80m) enr.EvaluationGrade = "Good";
+            else if (enr.FinalScore >= passingScore) enr.EvaluationGrade = "Pass";
+            else enr.EvaluationGrade = "Fail";
+
+            if (enr.AttendancePercent >= 80m && enr.FinalScore >= passingScore)
+                enr.ResultStatus = "Passed";
+            else
+                enr.ResultStatus = "Failed";
+
+            enr.Status = "Evaluated";
+            gradedList.Add(enr);
+        }
+
+        course.TotalPassed = enrollments.Count(e => e.ResultStatus == "Passed");
+        course.TotalFailed = enrollments.Count(e => e.ResultStatus is "Failed" or "Dropped");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            course.TrainingCode,
+            totalGraded = gradedList.Count,
+            totalPassed = course.TotalPassed,
+            totalFailed = course.TotalFailed,
+            gradedEnrollments = gradedList
+        };
+    }
+
+    public async Task<object?> RemoveEnrollmentAsync(string trainingCode, string enrollmentNo)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        enrollmentNo = enrollmentNo.Trim().ToUpperInvariant();
+
+        var enr = await db.TrainingEnrollments.FirstOrDefaultAsync(e => e.OrgId == Org && (e.TrainingCode == trainingCode || e.EnrollmentNo == enrollmentNo) && e.EnrollmentNo == enrollmentNo);
+        if (enr is null) return null;
+
+        if (enr.IsCertificateIssued)
+            throw new InvalidOperationException("Không thể xóa học viên đã được cấp chứng chỉ.");
+
+        var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && c.Id == enr.TrainingCourseId);
+
+        db.TrainingEnrollments.Remove(enr);
+        if (course != null)
+        {
+            course.TotalEnrolled = Math.Max(0, course.TotalEnrolled - 1);
+            if (enr.ResultStatus == "Passed") course.TotalPassed = Math.Max(0, course.TotalPassed - 1);
+            if (enr.ResultStatus == "Failed") course.TotalFailed = Math.Max(0, course.TotalFailed - 1);
+        }
+
+        await db.SaveChangesAsync();
+        return new { deleted = true, enrollmentNo, trainingCode };
+    }
+
+    public async Task<object?> AutoIssueCertificatesAsync(string trainingCode, AutoIssueCertificatesDto? dto)
+    {
+        trainingCode = trainingCode.Trim().ToUpperInvariant();
+        var course = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && (c.TrainingCode == trainingCode || c.TrainingCodeUser == trainingCode));
+        if (course is null) return null;
+
+        var passedEnrollments = await db.TrainingEnrollments
+            .Where(e => e.OrgId == Org && e.TrainingCourseId == course.Id && e.ResultStatus == "Passed" && !e.IsCertificateIssued)
+            .ToListAsync();
+
+        if (passedEnrollments.Count == 0)
+            return new { course.TrainingCode, issuedCount = 0, message = "Không có học viên nào đạt chuẩn cần cấp chứng chỉ (hoặc đã được cấp hết)." };
+
+        var now = DateTime.Now;
+        int valYears = dto?.ValidityYears ?? 2;
+        var issuer = !string.IsNullOrWhiteSpace(dto?.IssuedBy) ? dto.IssuedBy.Trim() : "Trung tâm Đào tạo Hyundai Thành Công Việt Nam (HTV Training Center)";
+        var certType = !string.IsNullOrWhiteSpace(dto?.CertificateType) ? dto.CertificateType.Trim() : course.TrainingType;
+
+        var existingCertCount = await db.StaffCertificates.CountAsync(c => c.OrgId == Org);
+        var issuedCerts = new List<StaffCertificate>();
+
+        foreach (var enr in passedEnrollments)
+        {
+            existingCertCount++;
+            var certNo = $"CERT-{now:yyyy}-{(certType.Length > 4 ? certType[..4].ToUpper() : certType.ToUpper())}-{existingCertCount:D4}";
+            var level = !string.IsNullOrWhiteSpace(dto?.Level) ? dto.Level.Trim() : course.Level;
+
+            var cert = new StaffCertificate
+            {
+                OrgId = Org,
+                CertificateNo = certNo,
+                CertificateNoUser = $"CC-{now:yyyy}/{certType}/{enr.StaffCode}",
+                StaffCode = enr.StaffCode,
+                StaffName = enr.StaffName,
+                StaffEmail = enr.StaffEmail,
+                StaffPhone = enr.StaffPhone,
+                DealerCode = enr.DealerCode,
+                DealerName = enr.DealerName,
+                Position = enr.Position,
+                CertificateType = certType,
+                Level = level,
+                IssueDate = now,
+                ExpiryDate = now.AddYears(valYears),
+                IssuedBy = issuer,
+                Status = "Active",
+                LinkedTrainingCode = course.TrainingCode,
+                LinkedEnrollmentNo = enr.EnrollmentNo,
+                ScoreAchieved = enr.FinalScore,
+                Grade = enr.EvaluationGrade,
+                Remark = $"Cấp tự động sau khi hoàn thành xuất sắc khóa đào tạo {course.CourseName}",
+                CreatedAt = now
+            };
+
+            db.StaffCertificates.Add(cert);
+            issuedCerts.Add(cert);
+
+            enr.IsCertificateIssued = true;
+            enr.CertificateNo = certNo;
+            enr.CertificateIssueDate = now;
+            enr.Status = "Certified";
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            course.TrainingCode,
+            course.CourseName,
+            issuedCount = issuedCerts.Count,
+            issuedCertificates = issuedCerts
+        };
+    }
+
+    public async Task<object> ListStaffCertificatesAsync(string? status, string? dealer, string? certType, string? staffCode, string? certNo)
+    {
+        var query = db.StaffCertificates.Where(c => c.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var s = status.Trim();
+            query = query.Where(c => c.Status == s);
+        }
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            query = query.Where(c => c.DealerCode.Contains(d) || (c.DealerName != null && c.DealerName.ToUpper().Contains(d)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(certType))
+        {
+            var ct = certType.Trim();
+            query = query.Where(c => c.CertificateType == ct);
+        }
+
+        if (!string.IsNullOrWhiteSpace(staffCode))
+        {
+            var sc = staffCode.Trim().ToUpperInvariant();
+            query = query.Where(c => c.StaffCode.Contains(sc) || c.StaffName.ToUpper().Contains(sc));
+        }
+
+        if (!string.IsNullOrWhiteSpace(certNo))
+        {
+            var cn = certNo.Trim().ToUpperInvariant();
+            query = query.Where(c => c.CertificateNo.Contains(cn) || (c.CertificateNoUser != null && c.CertificateNoUser.ToUpper().Contains(cn)));
+        }
+
+        var items = await query.OrderByDescending(c => c.IssueDate)
+                               .ThenByDescending(c => c.Id)
+                               .ToListAsync();
+
+        // Tự động kiểm tra hạn hiệu lực
+        var now = DateTime.Now;
+        bool hasChanges = false;
+        foreach (var item in items)
+        {
+            if (item.Status == "Active" && item.ExpiryDate < now)
+            {
+                item.Status = "Expired";
+                hasChanges = true;
+            }
+        }
+        if (hasChanges) await db.SaveChangesAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetStaffCertificateAsync(string certNo)
+    {
+        certNo = certNo.Trim().ToUpperInvariant();
+        var cert = await db.StaffCertificates.FirstOrDefaultAsync(c => c.OrgId == Org && (c.CertificateNo == certNo || c.CertificateNoUser == certNo));
+        if (cert is null) return null;
+
+        TrainingCourse? linkedCourse = null;
+        TrainingEnrollment? linkedEnrollment = null;
+
+        if (!string.IsNullOrWhiteSpace(cert.LinkedTrainingCode))
+        {
+            linkedCourse = await db.TrainingCourses.FirstOrDefaultAsync(c => c.OrgId == Org && c.TrainingCode == cert.LinkedTrainingCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(cert.LinkedEnrollmentNo))
+        {
+            linkedEnrollment = await db.TrainingEnrollments.FirstOrDefaultAsync(e => e.OrgId == Org && e.EnrollmentNo == cert.LinkedEnrollmentNo);
+        }
+
+        return new
+        {
+            certificate = cert,
+            linkedCourse,
+            linkedEnrollment
+        };
+    }
+
+    public async Task<object> CreateStaffCertificateAsync(CreateStaffCertificateDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.StaffCode) || string.IsNullOrWhiteSpace(dto.StaffName))
+            throw new InvalidOperationException("Cần mã nhân viên StaffCode và họ tên StaffName.");
+
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode.");
+
+        var now = DateTime.Now;
+        var certType = string.IsNullOrWhiteSpace(dto.CertificateType) ? "SalesConsultant" : dto.CertificateType.Trim();
+        var certNo = string.IsNullOrWhiteSpace(dto.CertificateNo)
+            ? $"CERT-{now:yyyy}-{(certType.Length > 4 ? certType[..4].ToUpper() : certType.ToUpper())}-{(await db.StaffCertificates.CountAsync(c => c.OrgId == Org) + 1):D4}"
+            : dto.CertificateNo.Trim().ToUpperInvariant();
+
+        if (await db.StaffCertificates.AnyAsync(c => c.OrgId == Org && c.CertificateNo == certNo))
+            throw new InvalidOperationException($"Mã chứng chỉ {certNo} đã tồn tại trong hệ thống.");
+
+        var cert = new StaffCertificate
+        {
+            OrgId = Org,
+            CertificateNo = certNo,
+            CertificateNoUser = dto.CertificateNoUser?.Trim() ?? $"CC-{now:yyyy}/{certType}/{dto.StaffCode.Trim()}",
+            StaffCode = dto.StaffCode.Trim().ToUpperInvariant(),
+            StaffName = dto.StaffName.Trim(),
+            StaffEmail = dto.StaffEmail?.Trim(),
+            StaffPhone = dto.StaffPhone?.Trim(),
+            DealerCode = dto.DealerCode.Trim().ToUpperInvariant(),
+            DealerName = dto.DealerName?.Trim(),
+            Position = string.IsNullOrWhiteSpace(dto.Position) ? "SalesConsultant" : dto.Position.Trim(),
+            CertificateType = certType,
+            Level = string.IsNullOrWhiteSpace(dto.Level) ? "Certified" : dto.Level.Trim(),
+            IssueDate = dto.IssueDate ?? now,
+            ExpiryDate = dto.ExpiryDate ?? (dto.IssueDate ?? now).AddYears(2),
+            IssuedBy = !string.IsNullOrWhiteSpace(dto.IssuedBy) ? dto.IssuedBy.Trim() : "Trung tâm Đào tạo Hyundai Thành Công Việt Nam (HTV Training Center)",
+            Status = "Active",
+            LinkedTrainingCode = dto.LinkedTrainingCode?.Trim(),
+            LinkedEnrollmentNo = dto.LinkedEnrollmentNo?.Trim(),
+            ScoreAchieved = dto.ScoreAchieved ?? 85.0m,
+            Grade = dto.Grade?.Trim() ?? "Good",
+            FileUrl = dto.FileUrl?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = now
+        };
+
+        db.StaffCertificates.Add(cert);
+        await db.SaveChangesAsync();
+
+        return cert;
+    }
+
+    public async Task<object?> UpdateStaffCertificateAsync(string certNo, UpdateStaffCertificateDto dto)
+    {
+        certNo = certNo.Trim().ToUpperInvariant();
+        var cert = await db.StaffCertificates.FirstOrDefaultAsync(c => c.OrgId == Org && (c.CertificateNo == certNo || c.CertificateNoUser == certNo));
+        if (cert is null) return null;
+
+        if (dto.CertificateNoUser != null) cert.CertificateNoUser = dto.CertificateNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.StaffName)) cert.StaffName = dto.StaffName.Trim();
+        if (dto.StaffEmail != null) cert.StaffEmail = dto.StaffEmail.Trim();
+        if (dto.StaffPhone != null) cert.StaffPhone = dto.StaffPhone.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) cert.DealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        if (dto.DealerName != null) cert.DealerName = dto.DealerName.Trim();
+        if (dto.Position != null) cert.Position = dto.Position.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CertificateType)) cert.CertificateType = dto.CertificateType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Level)) cert.Level = dto.Level.Trim();
+        if (dto.IssueDate.HasValue) cert.IssueDate = dto.IssueDate.Value;
+        if (dto.ExpiryDate.HasValue) cert.ExpiryDate = dto.ExpiryDate.Value;
+        if (dto.IssuedBy != null) cert.IssuedBy = dto.IssuedBy.Trim();
+        if (dto.FileUrl != null) cert.FileUrl = dto.FileUrl.Trim();
+        if (dto.Remark != null) cert.Remark = dto.Remark.Trim();
+        cert.UpdatedAt = DateTime.Now;
+
+        await db.SaveChangesAsync();
+        return cert;
+    }
+
+    public async Task<object?> StaffCertificateTransitionAsync(string certNo, string action, StaffCertificateTransitionDto? dto)
+    {
+        certNo = certNo.Trim().ToUpperInvariant();
+        var cert = await db.StaffCertificates.FirstOrDefaultAsync(c => c.OrgId == Org && (c.CertificateNo == certNo || c.CertificateNoUser == certNo));
+        if (cert is null) return null;
+
+        var actor = dto?.Actor?.Trim() ?? "Admin";
+        var now = dto?.TransitionDate ?? DateTime.Now;
+
+        switch (action.Trim().ToLowerInvariant())
+        {
+            case "activate":
+                cert.Status = "Active";
+                cert.UpdatedAt = now;
+                break;
+
+            case "renew":
+                cert.Status = "Active";
+                cert.ExpiryDate = dto?.ExpiryDate ?? cert.ExpiryDate.AddYears(2);
+                cert.Remark = (cert.Remark != null ? cert.Remark + "; " : "") + $"Gia hạn hiệu lực chứng chỉ đến {cert.ExpiryDate:dd/MM/yyyy} bởi {actor}";
+                cert.UpdatedAt = now;
+                break;
+
+            case "suspend":
+                if (cert.Status != "Active")
+                    throw new InvalidOperationException($"Chỉ có thể tạm đình chỉ chứng chỉ đang Active. Hiện tại là {cert.Status}.");
+                cert.Status = "Suspended";
+                cert.Remark = (cert.Remark != null ? cert.Remark + "; " : "") + $"Tạm đình chỉ bởi {actor}: {dto?.Reason ?? dto?.Note ?? "N/A"}";
+                cert.UpdatedAt = now;
+                break;
+
+            case "expire":
+                cert.Status = "Expired";
+                cert.UpdatedAt = now;
+                break;
+
+            case "revoke":
+                if (cert.Status == "Revoked")
+                    throw new InvalidOperationException("Chứng chỉ này đã bị thu hồi trước đó.");
+                cert.Status = "Revoked";
+                cert.RevokedBy = actor;
+                cert.RevokedAt = now;
+                cert.RevokeReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Thu hồi do vi phạm quy chế đại lý";
+                cert.UpdatedAt = now;
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động không hợp lệ: {action}");
+        }
+
+        await db.SaveChangesAsync();
+        return cert;
+    }
+
+    public async Task<object?> GetDealerTrainingMatrixAsync(string? dealerCode)
+    {
+        var qCert = db.StaffCertificates.Where(c => c.OrgId == Org);
+        var qEnr = db.TrainingEnrollments.Where(e => e.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+        {
+            var d = dealerCode.Trim().ToUpperInvariant();
+            qCert = qCert.Where(c => c.DealerCode == d);
+            qEnr = qEnr.Where(e => e.DealerCode == d);
+        }
+
+        var certificates = await qCert.ToListAsync();
+        var enrollments = await qEnr.ToListAsync();
+
+        var dealerGroup = certificates.GroupBy(c => c.DealerCode).ToList();
+        var targetDealer = !string.IsNullOrWhiteSpace(dealerCode) ? dealerCode.Trim().ToUpperInvariant() : (dealerGroup.FirstOrDefault()?.Key ?? "DLR-HN01");
+        var dealerName = certificates.FirstOrDefault(c => c.DealerCode == targetDealer)?.DealerName ?? enrollments.FirstOrDefault(e => e.DealerCode == targetDealer)?.DealerName ?? targetDealer;
+
+        var dealerCerts = certificates.Where(c => c.DealerCode == targetDealer).ToList();
+        var dealerEnrs = enrollments.Where(e => e.DealerCode == targetDealer).ToList();
+
+        // Nhóm theo nhân sự của đại lý
+        var allStaffCodes = dealerCerts.Select(c => c.StaffCode).Union(dealerEnrs.Select(e => e.StaffCode)).Distinct().ToList();
+
+        var staffItems = new List<DealerStaffTrainingItemDto>();
+        foreach (var sc in allStaffCodes)
+        {
+            var sCerts = dealerCerts.Where(c => c.StaffCode == sc).OrderByDescending(c => c.IssueDate).ToList();
+            var sEnrs = dealerEnrs.Where(e => e.StaffCode == sc).ToList();
+            var activeCert = sCerts.FirstOrDefault(c => c.Status == "Active" && c.ExpiryDate >= DateTime.Now);
+
+            var sName = activeCert?.StaffName ?? sCerts.FirstOrDefault()?.StaffName ?? sEnrs.FirstOrDefault()?.StaffName ?? sc;
+            var pos = activeCert?.Position ?? sCerts.FirstOrDefault()?.Position ?? sEnrs.FirstOrDefault()?.Position ?? "Staff";
+
+            var attendedCount = sEnrs.Count;
+            var passedCount = sEnrs.Count(e => e.ResultStatus == "Passed");
+            var avgScore = sEnrs.Count > 0 ? Math.Round(sEnrs.Average(e => e.FinalScore), 1) : (activeCert?.ScoreAchieved ?? 0m);
+
+            staffItems.Add(new DealerStaffTrainingItemDto(
+                sc,
+                sName,
+                pos,
+                activeCert != null,
+                activeCert?.CertificateNo,
+                activeCert?.CertificateType,
+                activeCert?.Level,
+                activeCert?.ExpiryDate,
+                attendedCount,
+                passedCount,
+                avgScore
+            ));
+        }
+
+        var totalStaff = staffItems.Count;
+        var certifiedSales = staffItems.Count(s => s.IsCertified && (s.CertificateType == "SalesConsultant" || s.Position.Contains("Sales") || s.Position.Contains("TVBH")));
+        var certifiedAdvisor = staffItems.Count(s => s.IsCertified && (s.CertificateType == "ServiceAdvisor" || s.Position.Contains("Advisor") || s.Position.Contains("CVDV")));
+        var certifiedTech = staffItems.Count(s => s.IsCertified && (s.CertificateType == "MasterTechnician" || s.Position.Contains("Technician") || s.Position.Contains("KTV")));
+        var certifiedEV = staffItems.Count(s => s.IsCertified && (s.CertificateType == "EVTechnician" || s.Position.Contains("EV")));
+        var totalActive = staffItems.Count(s => s.IsCertified);
+        var stdScore = totalStaff > 0 ? Math.Round((decimal)totalActive / totalStaff * 100, 1) : 0m;
+
+        return new DealerTrainingMatrixDto(
+            targetDealer,
+            dealerName,
+            totalStaff,
+            certifiedSales,
+            certifiedAdvisor,
+            certifiedTech,
+            certifiedEV,
+            totalActive,
+            stdScore,
+            staffItems
+        );
+    }
+
+    public async Task<object?> GetStaffTrainingProfileAsync(string staffCode)
+    {
+        staffCode = staffCode.Trim().ToUpperInvariant();
+
+        var certs = await db.StaffCertificates
+            .Where(c => c.OrgId == Org && c.StaffCode == staffCode)
+            .OrderByDescending(c => c.IssueDate)
+            .ToListAsync();
+
+        var enrollments = await db.TrainingEnrollments
+            .Where(e => e.OrgId == Org && e.StaffCode == staffCode)
+            .OrderByDescending(e => e.Id)
+            .ToListAsync();
+
+        if (certs.Count == 0 && enrollments.Count == 0) return null;
+
+        var activeCert = certs.FirstOrDefault(c => c.Status == "Active" && c.ExpiryDate >= DateTime.Now);
+        var staffName = activeCert?.StaffName ?? certs.FirstOrDefault()?.StaffName ?? enrollments.FirstOrDefault()?.StaffName ?? staffCode;
+        var dealerCode = activeCert?.DealerCode ?? certs.FirstOrDefault()?.DealerCode ?? enrollments.FirstOrDefault()?.DealerCode ?? "";
+        var dealerName = activeCert?.DealerName ?? certs.FirstOrDefault()?.DealerName ?? enrollments.FirstOrDefault()?.DealerName ?? dealerCode;
+        var pos = activeCert?.Position ?? certs.FirstOrDefault()?.Position ?? enrollments.FirstOrDefault()?.Position ?? "Staff";
+        var email = activeCert?.StaffEmail ?? certs.FirstOrDefault()?.StaffEmail ?? enrollments.FirstOrDefault()?.StaffEmail;
+        var phone = activeCert?.StaffPhone ?? certs.FirstOrDefault()?.StaffPhone ?? enrollments.FirstOrDefault()?.StaffPhone;
+
+        var tCodes = enrollments.Select(e => e.TrainingCode).Distinct().ToList();
+        var courses = await db.TrainingCourses.Where(c => c.OrgId == Org && tCodes.Contains(c.TrainingCode)).ToDictionaryAsync(c => c.TrainingCode);
+
+        var history = enrollments.Select(e =>
+        {
+            courses.TryGetValue(e.TrainingCode, out var c);
+            return new StaffEnrollmentHistoryDto(
+                e.EnrollmentNo,
+                e.TrainingCode,
+                c?.CourseName ?? e.TrainingCode,
+                c?.TrainingType ?? "SalesConsultant",
+                c?.Level ?? "Intermediate",
+                c?.StartDate ?? DateTime.Now,
+                c?.EndDate ?? DateTime.Now,
+                e.AttendancePercent,
+                e.TheoryScore,
+                e.PracticeScore,
+                e.FinalScore,
+                e.EvaluationGrade,
+                e.ResultStatus,
+                e.IsCertificateIssued,
+                e.CertificateNo
+            );
+        }).ToList();
+
+        return new StaffTrainingProfileDto(
+            staffCode,
+            staffName,
+            email,
+            phone,
+            dealerCode,
+            dealerName,
+            pos,
+            activeCert != null,
+            activeCert,
+            certs,
+            history
+        );
+    }
+
+    public async Task<object> GetTrainingSummaryAsync(int? year, string? trainingType)
+    {
+        var qCourses = db.TrainingCourses.Where(c => c.OrgId == Org);
+        var qEnr = db.TrainingEnrollments.Where(e => e.OrgId == Org);
+        var qCert = db.StaffCertificates.Where(c => c.OrgId == Org);
+
+        if (year.HasValue && year.Value > 0)
+        {
+            qCourses = qCourses.Where(c => c.StartDate.Year == year.Value);
+            qCert = qCert.Where(c => c.IssueDate.Year == year.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(trainingType))
+        {
+            var tt = trainingType.Trim();
+            qCourses = qCourses.Where(c => c.TrainingType == tt);
+            qCert = qCert.Where(c => c.CertificateType == tt);
+        }
+
+        var courses = await qCourses.ToListAsync();
+        var enrollments = await qEnr.ToListAsync();
+        var certificates = await qCert.ToListAsync();
+
+        var totalCourses = courses.Count;
+        var totalDraft = courses.Count(c => c.Status == "Draft");
+        var totalScheduled = courses.Count(c => c.Status == "Scheduled");
+        var totalInProgress = courses.Count(c => c.Status == "InProgress");
+        var totalCompleted = courses.Count(c => c.Status == "Completed");
+        var totalCancelled = courses.Count(c => c.Status == "Cancelled");
+
+        var totalEnrollments = enrollments.Count;
+        var totalPassed = enrollments.Count(e => e.ResultStatus == "Passed");
+        var totalFailed = enrollments.Count(e => e.ResultStatus is "Failed" or "Dropped");
+        var passRate = totalEnrollments > 0 ? Math.Round((decimal)totalPassed / totalEnrollments * 100, 1) : 0m;
+
+        var totalCerts = certificates.Count;
+        var totalActive = certificates.Count(c => c.Status == "Active" && c.ExpiryDate >= DateTime.Now);
+        var totalExpired = certificates.Count(c => c.Status == "Expired" || (c.Status == "Active" && c.ExpiryDate < DateTime.Now));
+        var totalRevoked = certificates.Count(c => c.Status == "Revoked");
+
+        var byType = courses.GroupBy(c => c.TrainingType).Select(g =>
+        {
+            var cCodes = g.Select(x => x.TrainingCode).ToList();
+            var cEnrs = enrollments.Where(e => cCodes.Contains(e.TrainingCode)).ToList();
+            var pCount = cEnrs.Count(e => e.ResultStatus == "Passed");
+            var enrCount = cEnrs.Count;
+            var rate = enrCount > 0 ? Math.Round((decimal)pCount / enrCount * 100, 1) : 0m;
+            return new TrainingCourseTypeStatsDto(
+                g.Key,
+                g.Count(),
+                enrCount,
+                pCount,
+                rate
+            );
+        }).OrderByDescending(t => t.EnrolledCount).ToList();
+
+        var byDealer = enrollments.GroupBy(e => e.DealerCode).Select(g =>
+        {
+            var dCerts = certificates.Where(c => c.DealerCode == g.Key).ToList();
+            var activeCount = dCerts.Count(c => c.Status == "Active" && c.ExpiryDate >= DateTime.Now);
+            var pCount = g.Count(e => e.ResultStatus == "Passed");
+            var enrCount = g.Count();
+            var stdRate = enrCount > 0 ? Math.Round((decimal)activeCount / enrCount * 100, 1) : 0m;
+            return new TrainingDealerStatsDto(
+                g.Key,
+                g.First().DealerName ?? g.Key,
+                enrCount,
+                pCount,
+                activeCount,
+                stdRate
+            );
+        }).OrderBy(d => d.DealerCode).ToList();
+
+        var byLevel = courses.GroupBy(c => c.Level).Select(g =>
+        {
+            var cCodes = g.Select(x => x.TrainingCode).ToList();
+            var cEnrs = enrollments.Where(e => cCodes.Contains(e.TrainingCode)).ToList();
+            return new TrainingLevelStatsDto(
+                g.Key,
+                g.Count(),
+                cEnrs.Count,
+                cEnrs.Count(e => e.ResultStatus == "Passed")
+            );
+        }).OrderBy(l => l.Level).ToList();
+
+        return new TrainingSummaryDto(
+            totalCourses,
+            totalDraft,
+            totalScheduled,
+            totalInProgress,
+            totalCompleted,
+            totalCancelled,
+            totalEnrollments,
+            totalPassed,
+            totalFailed,
+            passRate,
+            totalCerts,
+            totalActive,
+            totalExpired,
+            totalRevoked,
+            byType,
+            byDealer,
+            byLevel
+        );
     }
 }

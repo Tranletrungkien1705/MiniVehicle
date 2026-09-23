@@ -120,6 +120,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<TransportInsurancePaymentLine> TransportInsurancePaymentLines => Set<TransportInsurancePaymentLine>();
     public DbSet<DealerInventoryThreshold> DealerInventoryThresholds => Set<DealerInventoryThreshold>();
     public DbSet<InventoryAuditRecord> InventoryAuditRecords => Set<InventoryAuditRecord>();
+    public DbSet<TrainingCourse> TrainingCourses => Set<TrainingCourse>();
+    public DbSet<TrainingEnrollment> TrainingEnrollments => Set<TrainingEnrollment>();
+    public DbSet<StaffCertificate> StaffCertificates => Set<StaffCertificate>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -197,5 +200,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<InventoryAuditRecord>().HasIndex(x => new { x.OrgId, x.AuditNo }).IsUnique();
         b.Entity<InventoryAuditRecord>().HasIndex(x => new { x.OrgId, x.DealerCode, x.Model });
         b.Entity<InventoryAuditRecord>().HasIndex(x => new { x.OrgId, x.HealthStatus });
+        b.Entity<TrainingCourse>().HasIndex(x => new { x.OrgId, x.TrainingCode }).IsUnique();
+        b.Entity<TrainingCourse>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<TrainingCourse>().HasIndex(x => new { x.OrgId, x.TrainingType });
+        b.Entity<TrainingEnrollment>().HasIndex(x => new { x.OrgId, x.EnrollmentNo }).IsUnique();
+        b.Entity<TrainingEnrollment>().HasIndex(x => new { x.OrgId, x.TrainingCode, x.StaffCode });
+        b.Entity<TrainingEnrollment>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<StaffCertificate>().HasIndex(x => new { x.OrgId, x.CertificateNo }).IsUnique();
+        b.Entity<StaffCertificate>().HasIndex(x => new { x.OrgId, x.StaffCode });
+        b.Entity<StaffCertificate>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<StaffCertificate>().HasIndex(x => new { x.OrgId, x.Status });
     }
 }

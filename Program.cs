@@ -4470,6 +4470,181 @@ app.MapGet("/api/vehicles/{vin}/inventory-threshold-history", async (string vin,
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Đào tạo, Sát hạch & Cấp Chứng chỉ Chuẩn hóa Nhân sự Đại lý (BizHTC.MasterData / Mst_Training & Mst_SalesManCertificate / TrainingCourse & StaffCertificate) =====
+
+app.MapPost("/api/trainings", async (CreateTrainingCourseDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.CourseName))
+        return Results.BadRequest(new { error = "Cần tên khóa đào tạo CourseName." });
+    try { return Results.Ok(await svc.CreateTrainingCourseAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/trainings", async (IVehicleService svc, string? status, string? trainingType, string? level, string? trainingCode, string? q) =>
+    Results.Ok(await svc.ListTrainingCoursesAsync(status, trainingType, level, trainingCode, q))).RequireAuthorization();
+
+app.MapGet("/api/trainings/summary", async (IVehicleService svc, int? year, string? trainingType) =>
+    Results.Ok(await svc.GetTrainingSummaryAsync(year, trainingType))).RequireAuthorization();
+
+app.MapGet("/api/reports/trainings/summary", async (IVehicleService svc, int? year, string? trainingType) =>
+    Results.Ok(await svc.GetTrainingSummaryAsync(year, trainingType))).RequireAuthorization();
+
+app.MapGet("/api/trainings/dealer-matrix", async (IVehicleService svc, string? dealerCode) =>
+    Results.Ok(await svc.GetDealerTrainingMatrixAsync(dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/trainings/staff/{staffCode}", async (string staffCode, IVehicleService svc) =>
+{
+    var r = await svc.GetStaffTrainingProfileAsync(staffCode);
+    return r is null ? Results.NotFound(new { staffCode, error = "Không tìm thấy hồ sơ đào tạo và chứng chỉ của nhân viên." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/trainings/{trainingCode}", async (string trainingCode, IVehicleService svc) =>
+{
+    var r = await svc.GetTrainingCourseAsync(trainingCode);
+    return r is null ? Results.NotFound(new { trainingCode, error = "Không tìm thấy khóa đào tạo." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/trainings/{trainingCode}", async (string trainingCode, UpdateTrainingCourseHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateTrainingCourseHeaderAsync(trainingCode, dto);
+        return r is null ? Results.NotFound(new { trainingCode, error = "Không tìm thấy khóa đào tạo." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/trainings/{trainingCode}/update", async (string trainingCode, UpdateTrainingCourseHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateTrainingCourseHeaderAsync(trainingCode, dto);
+        return r is null ? Results.NotFound(new { trainingCode, error = "Không tìm thấy khóa đào tạo." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/trainings/{trainingCode}/{action}", async (string trainingCode, string action, TrainingCourseTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "schedule" or "approve" or "start" or "in-progress" or "inprogress" or "complete" or "finish" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|schedule|approve|start|complete|cancel" });
+    try
+    {
+        var r = await svc.TrainingCourseTransitionAsync(trainingCode, action, dto);
+        return r is null ? Results.NotFound(new { trainingCode, error = "Không tìm thấy khóa đào tạo hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/trainings/{trainingCode}/enroll", async (string trainingCode, EnrollStaffDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.StaffCode) || string.IsNullOrWhiteSpace(dto.StaffName))
+        return Results.BadRequest(new { error = "Cần mã nhân viên StaffCode và họ tên StaffName." });
+    try
+    {
+        var r = await svc.EnrollStaffAsync(trainingCode, dto);
+        return r is null ? Results.NotFound(new { trainingCode, error = "Không tìm thấy khóa đào tạo." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/trainings/{trainingCode}/batch-enroll", async (string trainingCode, BatchEnrollStaffDto dto, IVehicleService svc) =>
+{
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách học viên trong Items." });
+    try
+    {
+        var r = await svc.BatchEnrollStaffAsync(trainingCode, dto);
+        return r is null ? Results.NotFound(new { trainingCode, error = "Không tìm thấy khóa đào tạo." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/trainings/{trainingCode}/enrollments/{enrollmentNo}", async (string trainingCode, string enrollmentNo, UpdateEnrollmentDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateEnrollmentAsync(trainingCode, enrollmentNo, dto);
+    return r is null ? Results.NotFound(new { trainingCode, enrollmentNo, error = "Không tìm thấy lượt ghi danh của học viên." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/trainings/{trainingCode}/enrollments/{enrollmentNo}/grade", async (string trainingCode, string enrollmentNo, GradeEnrollmentDto dto, IVehicleService svc) =>
+{
+    var r = await svc.GradeEnrollmentAsync(trainingCode, enrollmentNo, dto);
+    return r is null ? Results.NotFound(new { trainingCode, enrollmentNo, error = "Không tìm thấy lượt ghi danh của học viên." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/trainings/{trainingCode}/batch-grade", async (string trainingCode, BatchGradeEnrollmentDto dto, IVehicleService svc) =>
+{
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách học viên chấm điểm trong Items." });
+    try
+    {
+        var r = await svc.BatchGradeEnrollmentsAsync(trainingCode, dto);
+        return r is null ? Results.NotFound(new { trainingCode, error = "Không tìm thấy khóa đào tạo." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/trainings/{trainingCode}/enrollments/{enrollmentNo}", async (string trainingCode, string enrollmentNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveEnrollmentAsync(trainingCode, enrollmentNo);
+        return r is null ? Results.NotFound(new { trainingCode, enrollmentNo, error = "Không tìm thấy lượt ghi danh của học viên hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/trainings/{trainingCode}/auto-issue-certificates", async (string trainingCode, AutoIssueCertificatesDto? dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.AutoIssueCertificatesAsync(trainingCode, dto);
+        return r is null ? Results.NotFound(new { trainingCode, error = "Không tìm thấy khóa đào tạo." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/certificates", async (IVehicleService svc, string? status, string? dealer, string? certType, string? staffCode, string? certNo) =>
+    Results.Ok(await svc.ListStaffCertificatesAsync(status, dealer, certType, staffCode, certNo))).RequireAuthorization();
+
+app.MapGet("/api/certificates/{certNo}", async (string certNo, IVehicleService svc) =>
+{
+    var r = await svc.GetStaffCertificateAsync(certNo);
+    return r is null ? Results.NotFound(new { certNo, error = "Không tìm thấy chứng chỉ." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/certificates", async (CreateStaffCertificateDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.StaffCode) || string.IsNullOrWhiteSpace(dto.StaffName))
+        return Results.BadRequest(new { error = "Cần mã nhân viên StaffCode và họ tên StaffName." });
+    try { return Results.Ok(await svc.CreateStaffCertificateAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/certificates/{certNo}", async (string certNo, UpdateStaffCertificateDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateStaffCertificateAsync(certNo, dto);
+    return r is null ? Results.NotFound(new { certNo, error = "Không tìm thấy chứng chỉ." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/certificates/{certNo}/update", async (string certNo, UpdateStaffCertificateDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateStaffCertificateAsync(certNo, dto);
+    return r is null ? Results.NotFound(new { certNo, error = "Không tìm thấy chứng chỉ." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/certificates/{certNo}/{action}", async (string certNo, string action, StaffCertificateTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("activate" or "renew" or "suspend" or "expire" or "revoke"))
+        return Results.BadRequest(new { error = "action = activate|renew|suspend|expire|revoke" });
+    try
+    {
+        var r = await svc.StaffCertificateTransitionAsync(certNo, action, dto);
+        return r is null ? Results.NotFound(new { certNo, error = "Không tìm thấy chứng chỉ hoặc sai trạng thái." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

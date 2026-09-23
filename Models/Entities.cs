@@ -5044,3 +5044,347 @@ public sealed record VehicleInventoryThresholdInfoDto(
 
 
 
+
+
+// ===== Quản lý Khóa Đào tạo, Sát hạch & Cấp Chứng chỉ Chuẩn hóa Nhân sự Đại lý (BizHTC.MasterData / Mst_Training, Mst_TrainingDtl, Mst_SalesManCertificate) =====
+
+/// <summary>Khóa Đào tạo Chuẩn hóa Nhân sự Bán hàng & Dịch vụ Đại lý (BizHTC.MasterData / Mst_Training / TrainingCourse): quản lý các khóa đào tạo nâng cao nghiệp vụ (Sản phẩm mới NewProduct, Tư vấn bán hàng TVBH, Cố vấn dịch vụ CVDV, Kỹ thuật viên KTV Master/EV, Chăm sóc khách hàng & Trải nghiệm lái thử) do Hãng xe OEM HTV tổ chức.</summary>
+public sealed class TrainingCourse
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string TrainingCode { get; set; } = "";             // Mã khóa đào tạo (TRN-2026-001, TRN...)
+    public string? TrainingCodeUser { get; set; }            // Mã khóa nội bộ tham chiếu
+    public string CourseName { get; set; } = "";              // Tên khóa đào tạo
+    public string TrainingType { get; set; } = "SalesConsultant"; // Loại khóa học: SalesConsultant (Tư vấn bán hàng TVBH), ServiceAdvisor (Cố vấn dịch vụ CVDV), Technical (Kỹ thuật viên xưởng KTV), EVTechnician (KTV Chuyên gia Xe điện EV), NewProduct (Sản phẩm & Tính năng xe mới), CustomerExperience (Trải nghiệm khách hàng & Lái thử), Management (Kỹ năng Quản lý Đại lý)
+    public string Level { get; set; } = "Intermediate";       // Cấp độ: Basic (Cơ bản), Intermediate (Trung cấp), Advanced (Nâng cao), Master (Chuyên gia)
+    public string Format { get; set; } = "OfflineInClass";    // Hình thức: OfflineInClass (Trực tiếp tập trung tại HTV Training Center), Online (Trực tuyến E-Learning / Zoom), PracticalWorkshop (Thực hành xưởng / Thực chiến), RoadshowField (Đào tạo thực địa tại Đại lý)
+    public string? TrainerName { get; set; }                  // Giảng viên / Chuyên gia đào tạo phụ trách
+    public string? Location { get; set; }                     // Địa điểm tổ chức (Trung tâm Đào tạo HTV Ninh Bình, Showroom Đào tạo Hà Nội, Showroom Đào tạo TP.HCM...)
+    public DateTime StartDate { get; set; } = DateTime.Now;   // Ngày bắt đầu khóa học
+    public DateTime EndDate { get; set; } = DateTime.Now.AddDays(3); // Ngày kết thúc khóa học
+    public int MaxCapacity { get; set; } = 30;                // Số lượng học viên tối đa
+    public int TotalEnrolled { get; set; } = 0;               // Tổng số học viên đã đăng ký tham gia
+    public int TotalPassed { get; set; } = 0;                 // Số học viên sát hạch Đạt chuẩn (Pass/Good/Excellent)
+    public int TotalFailed { get; set; } = 0;                 // Số học viên Chưa đạt (Fail)
+    public decimal PassingScore { get; set; } = 70.0m;        // Điểm sàn sát hạch tối thiểu để đạt chuẩn (thang 100 điểm)
+    public decimal BudgetAmount { get; set; } = 0;            // Ngân sách dự toán cho khóa đào tạo (VNĐ)
+    public decimal ActualCost { get; set; } = 0;              // Chi phí thực tế tổ chức khóa học (VNĐ)
+    public string Status { get; set; } = "Draft";             // Draft → Scheduled → InProgress → Completed (hoặc Cancelled)
+    public string? Remark { get; set; }                       // Ghi chú / Yêu cầu đầu vào khóa học
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                   // Trưởng ban Đào tạo / Giám đốc Nhân sự duyệt kế hoạch khóa học
+    public DateTime? ApprovedAt { get; set; }
+    public string? CompletedBy { get; set; }                  // Người nghiệm thu / tổng kết khóa đào tạo
+    public DateTime? CompletedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết Học viên & Kết quả Sát hạch Khóa Đào tạo (BizHTC.MasterData / Mst_TrainingDtl / TrainingEnrollment): danh sách nhân sự đại lý tham gia khóa học, tỷ lệ điểm danh, điểm thi lý thuyết, điểm thực hành, điểm tổng kết, xếp loại sát hạch và trạng thái cấp chứng chỉ.</summary>
+public sealed class TrainingEnrollment
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long TrainingCourseId { get; set; }
+    public string TrainingCode { get; set; } = "";
+    public string EnrollmentNo { get; set; } = "";            // Mã lượt đăng ký học viên (ENR-2026-0001...)
+    public int LineIndex { get; set; } = 1;
+    public string DealerCode { get; set; } = "";              // Mã đại lý cử nhân sự đi học (DLR-HN01...)
+    public string? DealerName { get; set; }                   // Tên đại lý
+    public string StaffCode { get; set; } = "";               // Mã nhân viên / học viên (TVBH-01, CVDV-02, KTV-03...)
+    public string StaffName { get; set; } = "";               // Họ và tên học viên
+    public string? StaffEmail { get; set; }                   // Email học viên
+    public string? StaffPhone { get; set; }                   // SĐT học viên
+    public string Position { get; set; } = "SalesConsultant"; // Vị trí / chức danh: SalesConsultant (Tư vấn bán hàng TVBH), ServiceAdvisor (Cố vấn dịch vụ CVDV), Technician (Kỹ thuật viên KTV), SalesManager (Trưởng phòng Bán hàng), ServiceManager (Trưởng phòng Dịch vụ), CustomerCare (Chuyên viên CSKH)
+    public decimal AttendancePercent { get; set; } = 100;     // Tỷ lệ tham gia buổi học (%)
+    public decimal TheoryScore { get; set; } = 0;             // Điểm thi trắc nghiệm lý thuyết (0-100)
+    public decimal PracticeScore { get; set; } = 0;           // Điểm thi thực hành / đóng vai tình huống (0-100)
+    public decimal FinalScore { get; set; } = 0;              // Điểm tổng kết = TheoryScore * 0.4 + PracticeScore * 0.6
+    public string EvaluationGrade { get; set; } = "Pending";  // Xếp loại: Pending, Fail (<70), Pass (70-79), Good (80-89), Excellent (90-100)
+    public string ResultStatus { get; set; } = "Registered";  // Trạng thái kết quả: Registered (Đã ghi danh), Attended (Đã tham gia học), Passed (Đạt chuẩn sát hạch), Failed (Không đạt), Dropped (Bỏ học / Vắng mặt)
+    public bool IsCertificateIssued { get; set; } = false;    // Đã được cấp chứng chỉ chuẩn hóa
+    public string? CertificateNo { get; set; }                // Mã chứng chỉ được cấp (CERT-...)
+    public DateTime? CertificateIssueDate { get; set; }       // Ngày cấp chứng chỉ
+    public string Status { get; set; } = "Pending";           // Pending → InTraining → Evaluated → Certified (hoặc Cancelled)
+    public string? Remark { get; set; }                       // Nhận xét chi tiết của Giảng viên về học viên
+}
+
+/// <summary>Hồ sơ Chứng chỉ Chuẩn hóa Chức danh Nhân sự Đại lý Ô tô OEM (BizHTC.MasterData / Mst_SalesManCertificate / StaffCertificate): chứng chỉ hành nghề chuẩn hãng Hyundai cấp cho TVBH, CVDV, KTV khi hoàn thành đạt yêu cầu khóa đào tạo, dùng để đối soát tính hợp lệ khi bán hàng và làm dịch vụ.</summary>
+public sealed class StaffCertificate
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string CertificateNo { get; set; } = "";           // Mã số chứng chỉ (CERT-2026-TVBH-0001, CERT-2026-CVDV-0001...)
+    public string? CertificateNoUser { get; set; }          // Số hiệu chứng chỉ in trên văn bằng giấy
+    public string StaffCode { get; set; } = "";               // Mã nhân viên được cấp chứng chỉ
+    public string StaffName { get; set; } = "";               // Họ và tên nhân viên
+    public string? StaffEmail { get; set; }
+    public string? StaffPhone { get; set; }
+    public string DealerCode { get; set; } = "";              // Đại lý công tác hiện tại
+    public string? DealerName { get; set; }
+    public string Position { get; set; } = "SalesConsultant"; // Vị trí chức danh
+    public string CertificateType { get; set; } = "SalesConsultant"; // Loại chứng chỉ: SalesConsultant (Tư vấn bán hàng chuẩn Hyundai), ServiceAdvisor (Cố vấn dịch vụ chuẩn), MasterTechnician (KTV Bậc cao Master), EVTechnician (Chuyên gia Kỹ thuật Xe điện EV), CustomerCareSpecialist (Chuyên viên CSKH chuẩn hãng)
+    public string Level { get; set; } = "Certified";          // Hạng chứng chỉ: Certified (Đạt chuẩn), Silver (Bạc), Gold (Vàng), Platinum (Bạch kim), Master (Bậc thầy)
+    public DateTime IssueDate { get; set; } = DateTime.Now;   // Ngày cấp chứng chỉ
+    public DateTime ExpiryDate { get; set; } = DateTime.Now.AddYears(2); // Ngày hết hạn hiệu lực (mặc định 2 năm = 730 ngày)
+    public string IssuedBy { get; set; } = "Trung tâm Đào tạo Hyundai Thành Công Việt Nam (HTV Training Center)"; // Đơn vị cấp chứng chỉ
+    public string Status { get; set; } = "Active";            // Active (Đang có hiệu lực), Expired (Đã hết hạn), Suspended (Tạm đình chỉ), Revoked (Bị thu hồi do vi phạm quy chế)
+    public string? LinkedTrainingCode { get; set; }           // Mã khóa đào tạo hoàn thành để được cấp chứng chỉ
+    public string? LinkedEnrollmentNo { get; set; }           // Mã lượt học viên sát hạch tương ứng
+    public decimal ScoreAchieved { get; set; } = 0;           // Điểm thi đạt được khi sát hạch
+    public string? Grade { get; set; }                        // Xếp loại tốt nghiệp (Excellent, Good, Pass)
+    public string? RevokeReason { get; set; }                 // Lý do thu hồi chứng chỉ (nếu có)
+    public string? RevokedBy { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public string? FileUrl { get; set; }                     // Đường dẫn file PDF bản scan chứng chỉ điện tử
+    public string? Remark { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+}
+
+// ===== DTOs cho Quản lý Đào tạo & Cấp Chứng chỉ Nhân sự Đại lý (TrainingCourse & StaffCertificate) =====
+
+public sealed record CreateTrainingCourseDto(
+    string? TrainingCode,
+    string? TrainingCodeUser,
+    string CourseName,
+    string? TrainingType,
+    string? Level,
+    string? Format,
+    string? TrainerName,
+    string? Location,
+    DateTime? StartDate,
+    DateTime? EndDate,
+    int? MaxCapacity,
+    decimal? PassingScore,
+    decimal? BudgetAmount,
+    string? Remark,
+    string? CreatedBy,
+    List<EnrollStaffDto>? Enrollments
+);
+
+public sealed record UpdateTrainingCourseHeaderDto(
+    string? TrainingCodeUser,
+    string? CourseName,
+    string? TrainingType,
+    string? Level,
+    string? Format,
+    string? TrainerName,
+    string? Location,
+    DateTime? StartDate,
+    DateTime? EndDate,
+    int? MaxCapacity,
+    decimal? PassingScore,
+    decimal? BudgetAmount,
+    decimal? ActualCost,
+    string? Remark
+);
+
+public sealed record TrainingCourseTransitionDto(
+    string? Actor,
+    string? Note,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record EnrollStaffDto(
+    string DealerCode,
+    string? DealerName,
+    string StaffCode,
+    string StaffName,
+    string? StaffEmail,
+    string? StaffPhone,
+    string? Position,
+    string? Remark
+);
+
+public sealed record BatchEnrollStaffItemDto(
+    string DealerCode,
+    string? DealerName,
+    string StaffCode,
+    string StaffName,
+    string? StaffEmail,
+    string? StaffPhone,
+    string? Position,
+    string? Remark
+);
+
+public sealed record BatchEnrollStaffDto(
+    List<BatchEnrollStaffItemDto> Items,
+    string? CreatedBy
+);
+
+public sealed record UpdateEnrollmentDto(
+    string? StaffName,
+    string? StaffEmail,
+    string? StaffPhone,
+    string? Position,
+    decimal? AttendancePercent,
+    decimal? TheoryScore,
+    decimal? PracticeScore,
+    string? ResultStatus,
+    string? Remark
+);
+
+public sealed record GradeEnrollmentDto(
+    decimal TheoryScore,
+    decimal PracticeScore,
+    decimal? AttendancePercent,
+    string? InstructorFeedback,
+    string? Actor
+);
+
+public sealed record BatchGradeEnrollmentItemDto(
+    string EnrollmentNo,
+    decimal TheoryScore,
+    decimal PracticeScore,
+    decimal? AttendancePercent,
+    string? InstructorFeedback
+);
+
+public sealed record BatchGradeEnrollmentDto(
+    List<BatchGradeEnrollmentItemDto> Items,
+    string? Actor
+);
+
+public sealed record AutoIssueCertificatesDto(
+    int? ValidityYears,
+    string? IssuedBy,
+    string? Actor,
+    string? CertificateType,
+    string? Level
+);
+
+public sealed record CreateStaffCertificateDto(
+    string? CertificateNo,
+    string? CertificateNoUser,
+    string StaffCode,
+    string StaffName,
+    string? StaffEmail,
+    string? StaffPhone,
+    string DealerCode,
+    string? DealerName,
+    string? Position,
+    string? CertificateType,
+    string? Level,
+    DateTime? IssueDate,
+    DateTime? ExpiryDate,
+    string? IssuedBy,
+    string? LinkedTrainingCode,
+    string? LinkedEnrollmentNo,
+    decimal? ScoreAchieved,
+    string? Grade,
+    string? FileUrl,
+    string? Remark
+);
+
+public sealed record UpdateStaffCertificateDto(
+    string? CertificateNoUser,
+    string? StaffName,
+    string? StaffEmail,
+    string? StaffPhone,
+    string? DealerCode,
+    string? DealerName,
+    string? Position,
+    string? CertificateType,
+    string? Level,
+    DateTime? IssueDate,
+    DateTime? ExpiryDate,
+    string? IssuedBy,
+    string? FileUrl,
+    string? Remark
+);
+
+public sealed record StaffCertificateTransitionDto(
+    string? Actor,
+    string? Note,
+    string? Reason,
+    DateTime? ExpiryDate,
+    DateTime? TransitionDate
+);
+
+public sealed record TrainingSummaryDto(
+    int TotalCourses,
+    int TotalDraft,
+    int TotalScheduled,
+    int TotalInProgress,
+    int TotalCompleted,
+    int TotalCancelled,
+    int TotalEnrollments,
+    int TotalPassed,
+    int TotalFailed,
+    decimal PassRatePercent,
+    int TotalCertificatesIssued,
+    int TotalActiveCertificates,
+    int TotalExpiredCertificates,
+    int TotalRevokedCertificates,
+    List<TrainingCourseTypeStatsDto> ByTrainingType,
+    List<TrainingDealerStatsDto> ByDealer,
+    List<TrainingLevelStatsDto> ByLevel
+);
+
+public sealed record TrainingCourseTypeStatsDto(string TrainingType, int CourseCount, int EnrolledCount, int PassedCount, decimal PassRatePercent);
+public sealed record TrainingDealerStatsDto(string DealerCode, string DealerName, int EnrolledCount, int PassedCount, int ActiveCertificatesCount, decimal StandardizationRatePercent);
+public sealed record TrainingLevelStatsDto(string Level, int CourseCount, int EnrolledCount, int PassedCount);
+
+public sealed record DealerTrainingMatrixDto(
+    string DealerCode,
+    string DealerName,
+    int TotalStaffCount,
+    int CertifiedSalesConsultantCount,
+    int CertifiedServiceAdvisorCount,
+    int CertifiedTechnicianCount,
+    int CertifiedEVTechnicianCount,
+    int TotalActiveCertificates,
+    decimal DealerStandardizationScore,
+    List<DealerStaffTrainingItemDto> StaffMembers
+);
+
+public sealed record DealerStaffTrainingItemDto(
+    string StaffCode,
+    string StaffName,
+    string Position,
+    bool IsCertified,
+    string? ActiveCertificateNo,
+    string? CertificateType,
+    string? CertificateLevel,
+    DateTime? ExpiryDate,
+    int CoursesAttendedCount,
+    int CoursesPassedCount,
+    decimal AverageScore
+);
+
+public sealed record StaffTrainingProfileDto(
+    string StaffCode,
+    string StaffName,
+    string? StaffEmail,
+    string? StaffPhone,
+    string DealerCode,
+    string? DealerName,
+    string Position,
+    bool HasActiveCertificate,
+    StaffCertificate? ActiveCertificate,
+    List<StaffCertificate> AllCertificates,
+    List<StaffEnrollmentHistoryDto> EnrollmentHistory
+);
+
+public sealed record StaffEnrollmentHistoryDto(
+    string EnrollmentNo,
+    string TrainingCode,
+    string CourseName,
+    string TrainingType,
+    string Level,
+    DateTime StartDate,
+    DateTime EndDate,
+    decimal AttendancePercent,
+    decimal TheoryScore,
+    decimal PracticeScore,
+    decimal FinalScore,
+    string EvaluationGrade,
+    string ResultStatus,
+    bool IsCertificateIssued,
+    string? CertificateNo
+);
