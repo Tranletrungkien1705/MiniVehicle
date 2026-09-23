@@ -709,6 +709,7 @@ public sealed class DealerContract
     public decimal FinalAmount { get; set; } = 0;          // Tổng giá trị thực tế sau chiết khấu = TotalAmount - DiscountAmount
     public decimal DepositAmount { get; set; } = 0;        // Tiền đặt cọc hợp đồng
     public string Status { get; set; } = "Draft";          // Draft → Submitted → Approved → Completed (hoặc Rejected / Cancelled)
+    public string? BankCodeMD { get; set; }                // Mã ngân hàng thanh toán (BankCodeMD) — gán khi biên bản hủy thanh toán qua NH hoàn tất
     public string? CreatedBy { get; set; }
     public string? ApprovedBy { get; set; }
     public string? Remark { get; set; }                    // Điều khoản / ghi chú hợp đồng
@@ -8116,4 +8117,30 @@ public sealed class DealerContractFormTerm
     public string? CreateBy { get; set; }                  // Người tạo
     public DateTime? LogLUDateTime { get; set; }           // Thời điểm cập nhật gần nhất
     public string? LogLUBy { get; set; }                   // Người cập nhật gần nhất
+}
+
+/// <summary>Biên bản hủy hợp đồng thanh toán qua ngân hàng (BizHTC.DMS40.DMS40_DlrCtr_CancelBankMD / DMS40_DlrCtr_CancelBankMD): đại lý đề nghị hủy phương thức thanh toán qua ngân hàng (BankCodeMD) của một hợp đồng mua bán xe đã ký, trình hãng OEM duyệt, sau đó đại lý xác nhận hoàn tất để gỡ bỏ ràng buộc ngân hàng thanh toán trên hợp đồng. Luồng trạng thái: P (Pending) → A (Approved) → F (Finished), hoặc R (Rejected) / C (Cancelled).</summary>
+public sealed class CancelBankMD
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string CancelBankMDNo { get; set; } = "";       // Mã biên bản hủy thanh toán qua NH (CancelBankMDNo)
+    public string DlrCtrNo { get; set; } = "";             // Hợp đồng mua bán xe bị hủy thanh toán qua NH (DlrCtrNo)
+    public string DealerCode { get; set; } = "";           // Đại lý đề nghị (DealerCode)
+    public string? BankCodeMD { get; set; }                // Mã ngân hàng thanh toán bị hủy (BankCodeMD)
+    public string Status { get; set; } = "P";              // P (Pending) → A (Approved) → F (Finished); hoặc R (Rejected) / C (Cancelled)
+    public string? RemarkDlr { get; set; }                 // Ghi chú của đại lý (RemarkDlr)
+    public string? RemarkBank { get; set; }                // Ghi chú của hãng/ngân hàng (RemarkBank)
+    public string? CreateBy { get; set; }                  // Người tạo biên bản (CreateBy)
+    public string? ApproveBy { get; set; }                 // Người duyệt (ApproveBy)
+    public string? FinishBy { get; set; }                  // Người xác nhận hoàn tất (FinishBy)
+    public string? CancelBy { get; set; }                  // Người hủy (CancelBy)
+    public string? RejectBy { get; set; }                  // Người từ chối (RejectBy)
+    public DateTime CreatedAt { get; set; } = DateTime.Now; // Ngày tạo (CreateDTime)
+    public DateTime? ApproveAt { get; set; }               // Ngày duyệt (ApproveDateTime)
+    public DateTime? FinishAt { get; set; }                // Ngày hoàn tất (FinishDTime)
+    public DateTime? CancelAt { get; set; }                // Ngày hủy (CancelDTime)
+    public DateTime? RejectAt { get; set; }                // Ngày từ chối (RejectDTime)
+    public DateTime? LogLUDateTime { get; set; }           // Thời điểm cập nhật gần nhất (LogLUDateTime)
+    public string? LogLUBy { get; set; }                   // Người cập nhật gần nhất (LogLUBy)
 }

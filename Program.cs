@@ -6464,6 +6464,33 @@ app.MapDelete("/api/contract-form-terms/{dealerCode}/{contractFNo}", async (stri
     return r is null ? Results.NotFound(new { dealerCode, contractFNo, error = "Không tìm thấy điều khoản mẫu hợp đồng của đại lý." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Biên bản hủy hợp đồng thanh toán qua ngân hàng (BizHTC.DMS40.DMS40_DlrCtr_CancelBankMD) ----
+// Đại lý đề nghị hủy phương thức thanh toán qua ngân hàng (BankCodeMD) của hợp đồng đã ký → Hãng duyệt → Đại lý xác nhận hoàn tất (gỡ BankCodeMD).
+app.MapPost("/api/cancel-bank-mds", async (CreateCancelBankMDDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DlrCtrNo))
+        return Results.BadRequest(new { error = "Cần DlrCtrNo (mã hợp đồng mua bán)." });
+    try { return Results.Ok(await svc.CreateCancelBankMDAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/cancel-bank-mds", async (IVehicleService svc, string? status, string? dealer, string? dlrCtrNo, string? bankCodeMD) =>
+    Results.Ok(await svc.ListCancelBankMDsAsync(status, dealer, dlrCtrNo, bankCodeMD))).RequireAuthorization();
+
+app.MapGet("/api/cancel-bank-mds/{cancelBankMDNo}", async (string cancelBankMDNo, IVehicleService svc) =>
+{
+    var r = await svc.GetCancelBankMDAsync(cancelBankMDNo);
+    return r is null ? Results.NotFound(new { cancelBankMDNo, error = "Không tìm thấy biên bản hủy thanh toán qua ngân hàng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/cancel-bank-mds/{cancelBankMDNo}/{action}", async (string cancelBankMDNo, string action, CancelBankMDTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "finish" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|finish|reject|cancel" });
+    var r = await svc.CancelBankMDTransitionAsync(cancelBankMDNo, action, dto);
+    return r is null ? Results.NotFound(new { cancelBankMDNo, error = "Không thấy biên bản hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 app.Run();
 
 record ImportVehicleRowDto(string? VIN, string? ModelCode, string? SpecCode, string? ColorCode, string? EngineNo, int? ProductionYearActual, string? StorageCodeCurrent);

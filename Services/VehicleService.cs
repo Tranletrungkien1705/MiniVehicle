@@ -1800,6 +1800,10 @@ public record SaveDealerContractFormTermDto(
     string? Remark = null,
     string? By = null);
 
+// ===== Biên bản hủy hợp đồng thanh toán qua ngân hàng (DMS40_DlrCtr_CancelBankMD) =====
+public record CreateCancelBankMDDto(string DlrCtrNo, string? CancelBankMDNo = null, string? RemarkDlr = null, string? By = null);
+public record CancelBankMDTransitionDto(string? Note = null, string? By = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2624,6 +2628,12 @@ public interface IVehicleService
     Task<object> ListDealerContractFormTermsAsync(string? dealer, string? contractFNo, bool? activeOnly);
     Task<object?> GetDealerContractFormTermAsync(string dealerCode, string contractFNo);
     Task<object?> DeleteDealerContractFormTermAsync(string dealerCode, string contractFNo);
+
+    // ===== Biên bản hủy hợp đồng thanh toán qua ngân hàng (DMS40_DlrCtr_CancelBankMD) =====
+    Task<object> CreateCancelBankMDAsync(CreateCancelBankMDDto dto);
+    Task<object> ListCancelBankMDsAsync(string? status, string? dealer, string? dlrCtrNo, string? bankCodeMD);
+    Task<object?> GetCancelBankMDAsync(string cancelBankMDNo);
+    Task<object?> CancelBankMDTransitionAsync(string cancelBankMDNo, string action, CancelBankMDTransitionDto? dto);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -44976,5 +44986,194 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
         db.DealerContractFormTerms.Remove(term);
         await db.SaveChangesAsync();
         return new { deleted = dealer + "/" + code };
+    }
+
+    // ===== Biên bản hủy hợp đồng thanh toán qua ngân hàng (BizHTC.DMS40.DMS40_DlrCtr_CancelBankMD) =====
+    // Luồng: P (Pending) → A (Approved) → F (Finished); hoặc R (Rejected) / C (Cancelled).
+    // Ràng buộc nguồn: hợp đồng phải ở trạng thái Signed (DlrSignStatus=Approved, HTCSignStatus=Approved2, DlrCtrStatus=Signed);
+    // không được còn biên bản hủy hợp đồng (CancelMinutes) chưa hủy; khi Finish thì gỡ BankCodeMD trên hợp đồng.
+    public async Task<object> CreateCancelBankMDAsync(CreateCancelBankMDDto dto)
+    {
+        var dlrCtrNo = dto.DlrCtrNo?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(dlrCtrNo))
+            throw new InvalidOperationException("Cần mã hợp đồng mua bán DlrCtrNo.");
+
+        // Hợp đồng phải tồn tại và đã ký (DMS40_CT_DealerContract_CheckDB: DlrCtrStatus = Signed).
+        var ctr = await db.DealerContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == dlrCtrNo);
+        if (ctr is null)
+            throw new InvalidOperationException($"Không tìm thấy hợp đồng mua bán {dlrCtrNo}.");
+        if (ctr.Status != "Approved" && ctr.Status != "Completed")
+            throw new InvalidOperationException($"Hợp đồng {dlrCtrNo} chưa ở trạng thái đã ký (Signed).");
+
+        // Không được còn biên bản hủy hợp đồng (CancelMinutes) chưa hủy cho hợp đồng này.
+        var pendingCancelMinutes = await db.DealerContractCancelMinutes
+            .AnyAsync(m => m.OrgId == Org && m.DlrCtrNo == dlrCtrNo && m.CancelMinutesStatus != "C");
+        if (pendingCancelMinutes)
+            throw new InvalidOperationException($"Hợp đồng {dlrCtrNo} còn biên bản hủy hợp đồng chưa hủy.");
+
+        var no = string.IsNullOrWhiteSpace(dto.CancelBankMDNo)
+            ? $"CBMD-{DateTime.Now:yyyyMMddHHmmss}"
+            : dto.CancelBankMDNo.Trim().ToUpperInvariant();
+        if (await db.CancelBankMDs.AnyAsync(x => x.OrgId == Org && x.CancelBankMDNo == no))
+            throw new InvalidOperationException($"Mã biên bản hủy thanh toán {no} đã tồn tại.");
+
+        var now = DateTime.Now;
+        var entity = new CancelBankMD
+        {
+            OrgId = Org,
+            CancelBankMDNo = no,
+            DlrCtrNo = dlrCtrNo,
+            DealerCode = ctr.DealerCode,
+            BankCodeMD = ctr.BankCodeMD,
+            Status = "P",
+            RemarkDlr = dto.RemarkDlr?.Trim(),
+            CreateBy = dto.By?.Trim(),
+            CreatedAt = now,
+            LogLUDateTime = now,
+            LogLUBy = dto.By?.Trim()
+        };
+        db.CancelBankMDs.Add(entity);
+        await db.SaveChangesAsync();
+
+        return new { entity.Id, entity.CancelBankMDNo, entity.DlrCtrNo, entity.DealerCode, entity.BankCodeMD, status = entity.Status };
+    }
+
+    public async Task<object> ListCancelBankMDsAsync(string? status, string? dealer, string? dlrCtrNo, string? bankCodeMD)
+    {
+        var q = db.CancelBankMDs.Where(x => x.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(x => x.DealerCode == dealer.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(dlrCtrNo)) q = q.Where(x => x.DlrCtrNo == dlrCtrNo.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(bankCodeMD)) q = q.Where(x => x.BankCodeMD == bankCodeMD.Trim().ToUpperInvariant());
+
+        var rows = await q.OrderByDescending(x => x.CreatedAt).ToListAsync();
+        return rows.Select(x => new
+        {
+            x.Id,
+            x.CancelBankMDNo,
+            x.DlrCtrNo,
+            x.DealerCode,
+            x.BankCodeMD,
+            x.Status,
+            x.RemarkDlr,
+            x.RemarkBank,
+            x.CreateBy,
+            x.ApproveBy,
+            x.FinishBy,
+            x.CancelBy,
+            x.RejectBy,
+            x.CreatedAt,
+            x.ApproveAt,
+            x.FinishAt,
+            x.CancelAt,
+            x.RejectAt,
+            x.LogLUDateTime,
+            x.LogLUBy
+        });
+    }
+
+    public async Task<object?> GetCancelBankMDAsync(string cancelBankMDNo)
+    {
+        var no = cancelBankMDNo.Trim().ToUpperInvariant();
+        var x = await db.CancelBankMDs.FirstOrDefaultAsync(e => e.OrgId == Org && e.CancelBankMDNo == no);
+        if (x is null) return null;
+
+        var ctr = await db.DealerContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == x.DlrCtrNo);
+        return new
+        {
+            x.Id,
+            x.CancelBankMDNo,
+            x.DlrCtrNo,
+            x.DealerCode,
+            x.BankCodeMD,
+            x.Status,
+            x.RemarkDlr,
+            x.RemarkBank,
+            x.CreateBy,
+            x.ApproveBy,
+            x.FinishBy,
+            x.CancelBy,
+            x.RejectBy,
+            x.CreatedAt,
+            x.ApproveAt,
+            x.FinishAt,
+            x.CancelAt,
+            x.RejectAt,
+            x.LogLUDateTime,
+            x.LogLUBy,
+            contractStatus = ctr?.Status,
+            contractBankCodeMD = ctr?.BankCodeMD
+        };
+    }
+
+    public async Task<object?> CancelBankMDTransitionAsync(string cancelBankMDNo, string action, CancelBankMDTransitionDto? dto)
+    {
+        var no = cancelBankMDNo.Trim().ToUpperInvariant();
+        var x = await db.CancelBankMDs.FirstOrDefaultAsync(e => e.OrgId == Org && e.CancelBankMDNo == no);
+        if (x is null) return null;
+
+        var now = DateTime.Now;
+        var by = dto?.By?.Trim();
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                // Chỉ duyệt được khi đang Pending (DMS40_DlrCtr_CancelBankMD_Approve).
+                if (x.Status != "P") return null;
+                x.Status = "A";
+                x.ApproveBy = by;
+                x.ApproveAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) x.RemarkBank = dto.Note.Trim();
+                break;
+
+            case "finish":
+                // Chỉ hoàn tất được khi đã Approved (DMS40_DlrCtr_CancelBankMD_Finish).
+                if (x.Status != "A") return null;
+                x.Status = "F";
+                x.FinishBy = by;
+                x.FinishAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) x.RemarkDlr = dto.Note.Trim();
+                // Gỡ ràng buộc ngân hàng thanh toán trên hợp đồng (BankCodeMD = null).
+                var ctr = await db.DealerContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == x.DlrCtrNo);
+                if (ctr is not null) ctr.BankCodeMD = null;
+                break;
+
+            case "reject":
+                // Chỉ từ chối được khi đã Approved (DMS40_DlrCtr_CancelBankMD_Reject).
+                if (x.Status != "A") return null;
+                x.Status = "R";
+                x.RejectBy = by;
+                x.RejectAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) x.RemarkDlr = dto.Note.Trim();
+                break;
+
+            case "cancel":
+                // Chỉ hủy được khi đang Pending (DMS40_DlrCtr_CancelBankMD_Cancel).
+                if (x.Status != "P") return null;
+                x.Status = "C";
+                x.CancelBy = by;
+                x.CancelAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note)) x.RemarkBank = dto.Note.Trim();
+                break;
+
+            default:
+                return null;
+        }
+
+        x.LogLUDateTime = now;
+        x.LogLUBy = by;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            x.CancelBankMDNo,
+            x.DlrCtrNo,
+            x.DealerCode,
+            x.BankCodeMD,
+            status = x.Status,
+            x.ApproveAt,
+            x.FinishAt,
+            x.CancelAt,
+            x.RejectAt
+        };
     }
 }

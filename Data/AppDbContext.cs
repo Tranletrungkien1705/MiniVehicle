@@ -180,6 +180,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<FnExpCalcLine> FnExpCalcLines => Set<FnExpCalcLine>();
     public DbSet<DealerContractForm> DealerContractForms => Set<DealerContractForm>();
     public DbSet<DealerContractFormTerm> DealerContractFormTerms => Set<DealerContractFormTerm>();
+    public DbSet<CancelBankMD> CancelBankMDs => Set<CancelBankMD>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -427,5 +428,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<DealerContractFormTerm>().HasIndex(x => new { x.OrgId, x.DealerCode, x.ContractFNo }).IsUnique();
         b.Entity<DealerContractFormTerm>().HasIndex(x => new { x.OrgId, x.DealerCode });
         b.Entity<DealerContractFormTerm>().HasIndex(x => new { x.OrgId, x.ContractFNo });
+        b.Entity<CancelBankMD>().HasIndex(x => new { x.OrgId, x.CancelBankMDNo }).IsUnique();
+        b.Entity<CancelBankMD>().HasIndex(x => new { x.OrgId, x.DlrCtrNo });
+        b.Entity<CancelBankMD>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<CancelBankMD>().HasIndex(x => new { x.OrgId, x.Status });
     }
 }
