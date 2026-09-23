@@ -157,6 +157,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<HtmvPdi> HtmvPdis => Set<HtmvPdi>();
     public DbSet<HtmvPdiDtl> HtmvPdiDtls => Set<HtmvPdiDtl>();
     public DbSet<StoragePdiVin> StoragePdiVins => Set<StoragePdiVin>();
+    public DbSet<DealerContractCancelMinutes> DealerContractCancelMinutes => Set<DealerContractCancelMinutes>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -332,5 +333,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<HtmvPdiDtl>().HasIndex(x => new { x.OrgId, x.PDIDtlStatus });
         b.Entity<StoragePdiVin>().HasIndex(x => new { x.OrgId, x.VIN }).IsUnique();
         b.Entity<StoragePdiVin>().HasIndex(x => new { x.OrgId, x.PDIStorageStatus });
+        b.Entity<DealerContractCancelMinutes>().HasIndex(x => new { x.OrgId, x.CancelMinutesNo }).IsUnique();
+        b.Entity<DealerContractCancelMinutes>().HasIndex(x => new { x.OrgId, x.DlrCtrNo });
+        b.Entity<DealerContractCancelMinutes>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<DealerContractCancelMinutes>().HasIndex(x => new { x.OrgId, x.CancelMinutesStatus });
     }
 }

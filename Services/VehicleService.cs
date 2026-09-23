@@ -1630,6 +1630,10 @@ public record HtmvPdiUpdateLineDto(string? FlagRepair = null, string? RepairRema
 public record StoragePdiVinInputDto(string VIN, string? ModelCode = null, string? SpecCode = null, string? ColorCode = null, string? OrderNoMMS = null, string? OrderNoMMSDelivery = null, string? EngineNo = null, string? KeyNo = null, string? AVNSerialNo = null, string? BatteryNo = null, string? PDIStorageStatus = null, string? Remark = null);
 public record SaveStoragePdiVinDto(List<StoragePdiVinInputDto> Items, bool IsDelete = false);
 
+// ===== Biên bản hủy hợp đồng đại lý (DMS40.DMS40_DlrCtr_CancelMinutes) =====
+public record CreateDealerContractCancelMinutesDto(string DlrCtrNo, string? CancelMinutesNo = null, string? FilePath = null, string? Remark = null);
+public record DealerContractCancelMinutesTransitionDto(string? Remark = null, string? By = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2363,6 +2367,13 @@ public interface IVehicleService
     Task<object> ListStoragePdiVinsAsync(string? vin, string? modelCode, string? pdiStorageStatus, bool? activeOnly);
     Task<object> SaveStoragePdiVinsAsync(SaveStoragePdiVinDto dto);
     Task<object?> GetVehicleHtmvPdiInfoAsync(string vin);
+
+    // ===== Biên bản hủy hợp đồng đại lý (DMS40.DMS40_DlrCtr_CancelMinutes) =====
+    Task<object> CreateDealerContractCancelMinutesAsync(CreateDealerContractCancelMinutesDto dto);
+    Task<object> ListDealerContractCancelMinutesAsync(string? status, string? dlrCtrNo, string? dealer, string? cancelMinutesNo);
+    Task<object?> GetDealerContractCancelMinutesAsync(string cancelMinutesNo);
+    Task<object?> DealerContractCancelMinutesTransitionAsync(string cancelMinutesNo, string action, DealerContractCancelMinutesTransitionDto? dto);
+    Task<object?> GetVehicleDealerContractCancelMinutesInfoAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -41960,6 +41971,262 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 l.PDIDate,
                 l.ApprovedBy,
                 l.ApprovedAt
+            }).ToList()
+        };
+    }
+
+    // ===== Biên bản hủy hợp đồng đại lý (DMS40.DMS40_DlrCtr_CancelMinutes) =====
+    public async Task<object> CreateDealerContractCancelMinutesAsync(CreateDealerContractCancelMinutesDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DlrCtrNo))
+            throw new InvalidOperationException("Cần mã hợp đồng đại lý DlrCtrNo.");
+        var dlrCtrNo = dto.DlrCtrNo.Trim().ToUpperInvariant();
+
+        // Hợp đồng phải tồn tại và đã ký (Approved/Completed) mới được lập biên bản hủy.
+        var contract = await db.DealerContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == dlrCtrNo);
+        if (contract is null)
+            throw new InvalidOperationException($"Không tìm thấy hợp đồng đại lý {dlrCtrNo}.");
+        if (contract.Status is not ("Approved" or "Completed"))
+            throw new InvalidOperationException($"Hợp đồng {dlrCtrNo} chưa ở trạng thái đã ký (Approved/Completed), không thể lập biên bản hủy.");
+
+        // Mỗi hợp đồng chỉ có 1 biên bản hủy chưa bị hủy (CancelMinutesStatus != C).
+        var existing = await db.DealerContractCancelMinutes
+            .FirstOrDefaultAsync(m => m.OrgId == Org && m.DlrCtrNo == dlrCtrNo && m.CancelMinutesStatus != "C");
+        if (existing is not null)
+            throw new InvalidOperationException($"Hợp đồng {dlrCtrNo} đã có biên bản hủy {existing.CancelMinutesNo} chưa bị hủy.");
+
+        var cancelMinutesNo = string.IsNullOrWhiteSpace(dto.CancelMinutesNo)
+            ? "CCM" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.CancelMinutesNo.Trim().ToUpperInvariant();
+        if (await db.DealerContractCancelMinutes.AnyAsync(m => m.OrgId == Org && m.CancelMinutesNo == cancelMinutesNo))
+            throw new InvalidOperationException($"Mã biên bản hủy {cancelMinutesNo} đã tồn tại.");
+
+        var minutes = new DealerContractCancelMinutes
+        {
+            OrgId = Org,
+            CancelMinutesNo = cancelMinutesNo,
+            DlrCtrNo = dlrCtrNo,
+            DealerCode = contract.DealerCode,
+            FilePath = dto.FilePath?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            DlrSignCcMnStatus = "P",
+            HTCSignCcMnStatus = "P",
+            CancelMinutesStatus = "NS",
+            CreatedAt = DateTime.Now
+        };
+        db.DealerContractCancelMinutes.Add(minutes);
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            minutes.CancelMinutesNo,
+            minutes.DlrCtrNo,
+            minutes.DealerCode,
+            minutes.DlrSignCcMnStatus,
+            minutes.HTCSignCcMnStatus,
+            minutes.CancelMinutesStatus,
+            minutes.Remark
+        };
+    }
+
+    public async Task<object> ListDealerContractCancelMinutesAsync(string? status, string? dlrCtrNo, string? dealer, string? cancelMinutesNo)
+    {
+        var q = db.DealerContractCancelMinutes.Where(m => m.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(m => m.CancelMinutesStatus == status);
+        if (!string.IsNullOrWhiteSpace(dlrCtrNo)) { var c = dlrCtrNo.Trim().ToUpperInvariant(); q = q.Where(m => m.DlrCtrNo == c); }
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim().ToUpperInvariant(); q = q.Where(m => m.DealerCode == d); }
+        if (!string.IsNullOrWhiteSpace(cancelMinutesNo)) { var n = cancelMinutesNo.Trim().ToUpperInvariant(); q = q.Where(m => m.CancelMinutesNo == n); }
+
+        var items = await q.OrderByDescending(m => m.Id).Take(500).Select(m => new
+        {
+            m.CancelMinutesNo,
+            m.DlrCtrNo,
+            m.DealerCode,
+            m.DlrSignCcMnStatus,
+            m.HTCSignCcMnStatus,
+            m.CancelMinutesStatus,
+            m.DlrApprBy,
+            m.DlrApprAt,
+            m.HTCAppr1By,
+            m.HTCAppr1At,
+            m.HTCAppr2By,
+            m.HTCAppr2At,
+            m.Remark,
+            m.CreatedAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetDealerContractCancelMinutesAsync(string cancelMinutesNo)
+    {
+        cancelMinutesNo = cancelMinutesNo.Trim().ToUpperInvariant();
+        var m = await db.DealerContractCancelMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.CancelMinutesNo == cancelMinutesNo);
+        if (m is null) return null;
+
+        var contract = await db.DealerContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == m.DlrCtrNo);
+        var lines = await db.DealerContractLines.Where(l => l.OrgId == Org && l.ContractNo == m.DlrCtrNo).ToListAsync();
+
+        return new
+        {
+            m.CancelMinutesNo,
+            m.DlrCtrNo,
+            m.DealerCode,
+            m.FilePath,
+            m.Remark,
+            m.DlrSignCcMnStatus,
+            m.HTCSignCcMnStatus,
+            m.CancelMinutesStatus,
+            m.CreatedBy,
+            m.CreatedAt,
+            m.DlrApprBy,
+            m.DlrApprAt,
+            m.HTCAppr1By,
+            m.HTCAppr1At,
+            m.HTCAppr2By,
+            m.HTCAppr2At,
+            m.RejectBy,
+            m.RejectAt,
+            m.CancelBy,
+            m.CancelAt,
+            contract = contract is null ? null : new
+            {
+                contract.ContractNo,
+                contract.DealerCode,
+                contract.Status,
+                contract.TotalQuantity,
+                contract.FinalAmount,
+                contract.DepositAmount
+            },
+            contractLines = lines.Select(l => new { l.Vin, l.Model, l.SpecCode, l.Color, l.UnitPrice, l.Discount, l.ActualPrice, l.Status }).ToList()
+        };
+    }
+
+    public async Task<object?> DealerContractCancelMinutesTransitionAsync(string cancelMinutesNo, string action, DealerContractCancelMinutesTransitionDto? dto)
+    {
+        cancelMinutesNo = cancelMinutesNo.Trim().ToUpperInvariant();
+        var m = await db.DealerContractCancelMinutes.FirstOrDefaultAsync(x => x.OrgId == Org && x.CancelMinutesNo == cancelMinutesNo);
+        if (m is null) return null;
+
+        var now = DateTime.Now;
+        var by = string.IsNullOrWhiteSpace(dto?.By) ? null : dto!.By!.Trim();
+        var remark = string.IsNullOrWhiteSpace(dto?.Remark) ? null : dto!.Remark!.Trim();
+
+        switch (action)
+        {
+            // Đại lý ký duyệt biên bản: DlrSign P → A (chỉ khi HTC còn P, biên bản chưa ký)
+            case "dlr-approve":
+            case "dlrapprove":
+            case "dlr-sign":
+                if (m.DlrSignCcMnStatus != "P" || m.HTCSignCcMnStatus != "P" || m.CancelMinutesStatus != "NS") return null;
+                m.DlrSignCcMnStatus = "A";
+                m.DlrApprBy = by;
+                m.DlrApprAt = now;
+                break;
+
+            // Hãng duyệt cấp 1: HTCSign P → A1 (sau khi Đại lý đã ký A)
+            case "htc-approve1":
+            case "htcappr1":
+                if (m.DlrSignCcMnStatus != "A" || m.HTCSignCcMnStatus != "P" || m.CancelMinutesStatus != "NS") return null;
+                m.HTCSignCcMnStatus = "A1";
+                m.HTCAppr1By = by;
+                m.HTCAppr1At = now;
+                break;
+
+            // Hãng duyệt cấp 2 (chốt): HTCSign A1 → A2, biên bản NS → S, hủy hợp đồng đại lý
+            case "htc-approve2":
+            case "htcappr2":
+            case "approve":
+                if (m.DlrSignCcMnStatus != "A" || m.HTCSignCcMnStatus != "A1" || m.CancelMinutesStatus != "NS") return null;
+                m.HTCSignCcMnStatus = "A2";
+                m.HTCAppr2By = by;
+                m.HTCAppr2At = now;
+                m.CancelMinutesStatus = "S";
+                // Hủy hợp đồng đại lý liên quan (DMS40_CT_DealerContract.DlrCtrStatus = Cancel)
+                var contract = await db.DealerContracts.FirstOrDefaultAsync(c => c.OrgId == Org && c.ContractNo == m.DlrCtrNo);
+                if (contract is not null)
+                {
+                    contract.Status = "Cancelled";
+                    contract.CancelledAt = now;
+                }
+                break;
+
+            // Từ chối biên bản hủy
+            case "reject":
+                if (m.CancelMinutesStatus != "NS") return null;
+                m.RejectBy = by;
+                m.RejectAt = now;
+                m.CancelMinutesStatus = "C";
+                break;
+
+            // Hủy biên bản hủy
+            case "cancel":
+                if (m.CancelMinutesStatus == "C") return null;
+                m.CancelBy = by;
+                m.CancelAt = now;
+                m.CancelMinutesStatus = "C";
+                break;
+
+            default:
+                return null;
+        }
+
+        if (remark is not null) m.Remark = remark;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            m.CancelMinutesNo,
+            m.DlrCtrNo,
+            m.DlrSignCcMnStatus,
+            m.HTCSignCcMnStatus,
+            m.CancelMinutesStatus,
+            m.DlrApprBy,
+            m.DlrApprAt,
+            m.HTCAppr1By,
+            m.HTCAppr1At,
+            m.HTCAppr2By,
+            m.HTCAppr2At,
+            m.RejectBy,
+            m.RejectAt,
+            m.CancelBy,
+            m.CancelAt,
+            m.Remark
+        };
+    }
+
+    public async Task<object?> GetVehicleDealerContractCancelMinutesInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null) return null;
+
+        // Tìm các hợp đồng đại lý có chứa VIN này, rồi lấy biên bản hủy tương ứng.
+        var contractNos = await db.DealerContractLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .Select(l => l.ContractNo).Distinct().ToListAsync();
+
+        var minutes = await db.DealerContractCancelMinutes
+            .Where(m => m.OrgId == Org && contractNos.Contains(m.DlrCtrNo))
+            .OrderByDescending(m => m.Id).ToListAsync();
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            status = vehicle.Status.ToString(),
+            contractNos,
+            cancelMinutes = minutes.Select(m => new
+            {
+                m.CancelMinutesNo,
+                m.DlrCtrNo,
+                m.DealerCode,
+                m.DlrSignCcMnStatus,
+                m.HTCSignCcMnStatus,
+                m.CancelMinutesStatus,
+                m.DlrApprAt,
+                m.HTCAppr2At,
+                m.Remark
             }).ToList()
         };
     }

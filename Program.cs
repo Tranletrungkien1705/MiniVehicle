@@ -6026,6 +6026,38 @@ app.MapGet("/api/vehicles/{vin}/htmv-pdi", async (string vin, IVehicleService sv
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Biên bản hủy hợp đồng đại lý (DMS40.DMS40_DlrCtr_CancelMinutes) ----
+app.MapPost("/api/dealer-contract-cancel-minutes", async (CreateDealerContractCancelMinutesDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DlrCtrNo))
+        return Results.BadRequest(new { error = "Cần mã hợp đồng đại lý DlrCtrNo." });
+    try { return Results.Ok(await svc.CreateDealerContractCancelMinutesAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/dealer-contract-cancel-minutes", async (IVehicleService svc, string? status, string? dlrCtrNo, string? dealer, string? cancelMinutesNo) =>
+    Results.Ok(await svc.ListDealerContractCancelMinutesAsync(status, dlrCtrNo, dealer, cancelMinutesNo))).RequireAuthorization();
+
+app.MapGet("/api/dealer-contract-cancel-minutes/{cancelMinutesNo}", async (string cancelMinutesNo, IVehicleService svc) =>
+{
+    var r = await svc.GetDealerContractCancelMinutesAsync(cancelMinutesNo);
+    return r is null ? Results.NotFound(new { cancelMinutesNo, error = "Không tìm thấy biên bản hủy hợp đồng đại lý." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/dealer-contract-cancel-minutes/{cancelMinutesNo}/{action}", async (string cancelMinutesNo, string action, DealerContractCancelMinutesTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("dlr-approve" or "dlrapprove" or "dlr-sign" or "htc-approve1" or "htcappr1" or "htc-approve2" or "htcappr2" or "approve" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = dlr-approve|htc-approve1|htc-approve2|reject|cancel" });
+    var r = await svc.DealerContractCancelMinutesTransitionAsync(cancelMinutesNo, action, dto);
+    return r is null ? Results.NotFound(new { cancelMinutesNo, error = "Không thấy biên bản hủy hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/dealer-contract-cancel-minutes", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleDealerContractCancelMinutesInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

@@ -7584,3 +7584,29 @@ public sealed class StoragePdiVin
     public string? Remark { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
+/// <summary>Biên bản hủy hợp đồng mua bán xe của Đại lý (DMS40.DMS40_DlrCtr_CancelMinutes / DMS40_DlrCtr_CancelMinutes): biên bản xác nhận hủy hợp đồng bán buôn đã ký giữa Hãng OEM và Đại lý, có 2 chữ ký số độc lập (Đại lý ký DlrSignCcMnStatus và Hãng ký HTCSignCcMnStatus) và trạng thái biên bản CancelMinutesStatus (NS → S).</summary>
+public sealed class DealerContractCancelMinutes
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string CancelMinutesNo { get; set; } = "";      // Mã biên bản hủy hợp đồng (CCM...)
+    public string DlrCtrNo { get; set; } = "";             // Hợp đồng đại lý bị hủy (DMS40_CT_DealerContract.DlrCtrNo)
+    public string DealerCode { get; set; } = "";           // Đại lý ký biên bản hủy
+    public string? FilePath { get; set; }                  // Đường dẫn file biên bản scan/ký số
+    public string? Remark { get; set; }                    // Ghi chú / lý do hủy hợp đồng
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? DlrApprBy { get; set; }                 // Người đại diện Đại lý ký duyệt
+    public DateTime? DlrApprAt { get; set; }
+    public string? HTCAppr1By { get; set; }                // Người duyệt cấp 1 phía Hãng OEM
+    public DateTime? HTCAppr1At { get; set; }
+    public string? HTCAppr2By { get; set; }                // Người duyệt cấp 2 phía Hãng OEM (chốt hủy hợp đồng)
+    public DateTime? HTCAppr2At { get; set; }
+    public string? RejectBy { get; set; }
+    public DateTime? RejectAt { get; set; }
+    public string? CancelBy { get; set; }
+    public DateTime? CancelAt { get; set; }
+    public string DlrSignCcMnStatus { get; set; } = "P";   // Trạng thái ký của Đại lý (TConst.DlrSignCcMnStatus): P (Pending) → A (Approved) / C (Cancel)
+    public string HTCSignCcMnStatus { get; set; } = "P";   // Trạng thái ký của Hãng (TConst.HTCSignCcMnStatus): P → A1 (Approved1) → A2 (Approved2) / C
+    public string CancelMinutesStatus { get; set; } = "NS"; // Trạng thái biên bản (TConst.CancelMinutesStatus): NS (NotSign) → S (Signed) / AJ (Adjusted) / C (Cancel)
+}
