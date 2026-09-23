@@ -151,6 +151,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<DocRequestListLine> DocRequestListLines => Set<DocRequestListLine>();
     public DbSet<AccessoryContract> AccessoryContracts => Set<AccessoryContract>();
     public DbSet<AccessoryContractLine> AccessoryContractLines => Set<AccessoryContractLine>();
+    public DbSet<SalesProcess> SalesProcesses => Set<SalesProcess>();
+    public DbSet<SalesProcessLine> SalesProcessLines => Set<SalesProcessLine>();
+    public DbSet<SalesProcessKpi> SalesProcessKpis => Set<SalesProcessKpi>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -311,5 +314,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<AccessoryContract>().HasIndex(x => new { x.OrgId, x.DealerCode });
         b.Entity<AccessoryContract>().HasIndex(x => new { x.OrgId, x.Status });
         b.Entity<AccessoryContractLine>().HasIndex(x => new { x.OrgId, x.DlrContractPartNo, x.PartCode });
+        b.Entity<SalesProcess>().HasIndex(x => new { x.OrgId, x.SalesID }).IsUnique();
+        b.Entity<SalesProcess>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<SalesProcess>().HasIndex(x => new { x.OrgId, x.SPStatus });
+        b.Entity<SalesProcess>().HasIndex(x => new { x.OrgId, x.CustomerCode });
+        b.Entity<SalesProcessLine>().HasIndex(x => new { x.OrgId, x.SalesID });
+        b.Entity<SalesProcessLine>().HasIndex(x => new { x.OrgId, x.ModelCode });
+        b.Entity<SalesProcessKpi>().HasIndex(x => new { x.OrgId, x.SalesID });
+        b.Entity<SalesProcessKpi>().HasIndex(x => new { x.OrgId, x.KPICode });
     }
 }

@@ -7469,3 +7469,56 @@ public sealed class AccessoryContractLine
     public string Status { get; set; } = "Pending";         // Pending → Approved → Cancelled
     public string? Remark { get; set; }
 }
+
+/// <summary>Tiến trình bán hàng / Phễu bán hàng khách hàng (HCare.idocNet SP_SalesProcess): theo dõi hành trình khách hàng từ tham khảo → quan tâm → đàm phán → lái thử → ký hợp đồng, kèm cấp phê duyệt (SPLevel) và ngân sách dự kiến.</summary>
+public sealed class SalesProcess
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SalesID { get; set; } = "";              // Mã tiến trình bán hàng (SP...)
+    public string? CustomerCode { get; set; }              // Mã khách hàng (Dls_DealerCustomer)
+    public string? CustomerTypeCode { get; set; }          // Loại khách hàng (Cá nhân / Doanh nghiệp)
+    public string DealerCode { get; set; } = "";           // Đại lý phụ trách (suy ra từ nhân sự sở hữu)
+    public string? UserCodeOwner { get; set; }             // Mã nhân sự TVBH sở hữu tiến trình
+    public string? CampaignCode { get; set; }              // Mã chiến dịch marketing liên quan (Mkt_Campaign)
+    public decimal BudgetVal { get; set; } = 0;            // Ngân sách dự kiến khách hàng dành cho xe (VNĐ)
+    public string CarModelType { get; set; } = "";         // Loại dòng xe khách quan tâm (Sedan, SUV, MPV, Commercial, EV...)
+    public DateTime? ContractExpectedDate { get; set; }    // Ngày dự kiến ký hợp đồng (bắt buộc khi SPLevel 3/4/5)
+    public string SPLevelCode { get; set; } = "0";         // Cấp phê duyệt tiến trình (0..5)
+    public string SPLevelStatus { get; set; } = "P";       // Trạng thái cấp phê duyệt: P (Pending) / A (Approved)
+    public DateTime? SPLevelDTime { get; set; }            // Thời điểm phê duyệt cấp
+    public string? SPLevelBy { get; set; }                 // Người phê duyệt cấp
+    public string SPStatus { get; set; } = "THAMKHAO";     // Trạng thái phễu: THAMKHAO → QUANTAM → DAMPHAN → LAITHU → KYHOPDONG (hoặc HUY)
+    public string? Remark { get; set; }                    // Ghi chú tiến trình
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe quan tâm trong tiến trình bán hàng (HCare.idocNet SP_SalesProcessDtl): dòng model/phiên bản/màu và số lượng khách dự kiến mua.</summary>
+public sealed class SalesProcessLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long SalesProcessId { get; set; }
+    public string SalesID { get; set; } = "";
+    public string ModelCode { get; set; } = "";            // Dòng xe (SantaFe, Tucson, Accent, Creta...)
+    public string? ColorCode { get; set; }                 // Màu xe
+    public string? SpecCode { get; set; }                  // Phiên bản xe
+    public int Qty { get; set; } = 1;                      // Số lượng xe khách dự kiến mua
+    public string SPStatusDtl { get; set; } = "THAMKHAO";  // Trạng thái phễu của dòng xe
+    public string? Remark { get; set; }
+}
+
+/// <summary>Chỉ số KPI gắn với tiến trình bán hàng (HCare.idocNet SP_SalesProcessPKI): đánh dấu tiến trình đóng góp cho các chỉ tiêu KPI bán hàng.</summary>
+public sealed class SalesProcessKpi
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long SalesProcessId { get; set; }
+    public string SalesID { get; set; } = "";
+    public string KPICode { get; set; } = "";              // Mã chỉ tiêu KPI (NEWCTM, NEWPK, NEWISR, NEWNH, NEWDRT...)
+    public DateTime? CreatedDate { get; set; }             // Ngày ghi nhận KPI
+    public string? Remark { get; set; }
+}

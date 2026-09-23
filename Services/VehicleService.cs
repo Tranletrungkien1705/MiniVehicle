@@ -1613,6 +1613,13 @@ public record DocRequestListItemInputDto(string Vin, string? DealerCode = null, 
 public record CreateDocRequestListDto(string? DRListCode, string? TypeCRR, string? DealerCode, string? Remark, List<DocRequestListItemInputDto> Items);
 public record DocRequestListTransitionDto(string? Note, string? Actor);
 
+// ===== Tiến trình bán hàng / Phễu bán hàng khách hàng (HCare.idocNet SP_SalesProcess) =====
+public record SalesProcessItemInputDto(string ModelCode, string? ColorCode = null, string? SpecCode = null, int Qty = 1, string? Remark = null);
+public record SalesProcessKpiInputDto(string KPICode, DateTime? CreatedDate = null, string? Remark = null);
+public record CreateSalesProcessDto(string? SalesID, string? CustomerCode, string? CustomerTypeCode, string? CampaignCode, decimal BudgetVal, string CarModelType, DateTime? ContractExpectedDate, string? SPLevelCode, string? SPStatus, string? Remark, string? UserCodeOwner, List<SalesProcessItemInputDto> Items, List<SalesProcessKpiInputDto>? Kpis = null);
+public record SalesProcessTransitionDto(string? SPStatus = null, string? SPLevelCode = null, string? Note = null, string? User = null);
+public record UpdateSalesProcessLineDto(int? Qty = null, string? ColorCode = null, string? SpecCode = null, string? SPStatusDtl = null, string? Remark = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2326,6 +2333,15 @@ public interface IVehicleService
     Task<object?> DocRequestListTransitionAsync(string drListCode, string action, DocRequestListTransitionDto? dto);
     Task<object?> DocRequestListLineTransitionAsync(string drListCode, string vin, string action, DocRequestListTransitionDto? dto);
     Task<object?> GetVehicleDocRequestListInfoAsync(string vin);
+
+    // ===== Tiến trình bán hàng / Phễu bán hàng khách hàng (HCare.idocNet SP_SalesProcess) =====
+    Task<object> CreateSalesProcessAsync(CreateSalesProcessDto dto);
+    Task<object> ListSalesProcessesAsync(string? status, string? dealer, string? customer, string? salesId, string? model, string? userCodeOwner);
+    Task<object?> GetSalesProcessAsync(string salesId);
+    Task<object?> SalesProcessTransitionAsync(string salesId, string action, SalesProcessTransitionDto? dto);
+    Task<object?> UpdateSalesProcessLineAsync(string salesId, string modelCode, UpdateSalesProcessLineDto dto);
+    Task<object?> GetVehicleSalesProcessInfoAsync(string vin);
+    Task<object> GetSalesProcessSummaryAsync(string? dealerCode);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -41151,6 +41167,360 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             v.DealerCode,
             TotalDocReqLists = lines.Select(l => l.DRListCode).Distinct().Count(),
             Lines = lines
+        };
+    }
+
+    // ===== Tiến trình bán hàng / Phễu bán hàng khách hàng (HCare.idocNet SP_SalesProcess) =====
+    private static readonly string[] SpStatuses = { "THAMKHAO", "QUANTAM", "DAMPHAN", "LAITHU", "KYHOPDONG", "HUY" };
+
+    public async Task<object> CreateSalesProcessAsync(CreateSalesProcessDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.CarModelType))
+            throw new InvalidOperationException("Cần loại dòng xe khách quan tâm (CarModelType).");
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần ít nhất 1 dòng xe quan tâm trong tiến trình bán hàng.");
+
+        var distinctItems = dto.Items
+            .Where(i => !string.IsNullOrWhiteSpace(i.ModelCode))
+            .GroupBy(i => i.ModelCode.Trim().ToUpperInvariant())
+            .Select(g => g.First())
+            .ToList();
+        if (distinctItems.Count == 0)
+            throw new InvalidOperationException("Danh sách dòng xe (ModelCode) hợp lệ không được rỗng.");
+
+        var status = string.IsNullOrWhiteSpace(dto.SPStatus) ? "THAMKHAO" : dto.SPStatus.Trim().ToUpperInvariant();
+        if (!SpStatuses.Contains(status))
+            throw new InvalidOperationException($"Trạng thái phễu không hợp lệ: {status}.");
+        if (status == "HUY")
+            throw new InvalidOperationException("Không thể tạo tiến trình bán hàng ở trạng thái HUY (Hủy).");
+
+        var level = string.IsNullOrWhiteSpace(dto.SPLevelCode) ? "0" : dto.SPLevelCode.Trim();
+        // Cấp 3/4/5 bắt buộc có ngày dự kiến ký hợp đồng và ngân sách > 0 (theo SP_SalesProcess_Add).
+        if (level is "3" or "4" or "5")
+        {
+            if (dto.ContractExpectedDate is null)
+                throw new InvalidOperationException("Cấp phê duyệt 3/4/5 yêu cầu ngày dự kiến ký hợp đồng (ContractExpectedDate).");
+            if (dto.BudgetVal <= 0)
+                throw new InvalidOperationException("Cấp phê duyệt 3/4/5 yêu cầu ngân sách dự kiến (BudgetVal) > 0.");
+        }
+
+        var salesId = string.IsNullOrWhiteSpace(dto.SalesID)
+            ? "SP" + DateTime.Now.ToString("yyMMddHHmmss")
+            : dto.SalesID!.Trim().ToUpperInvariant();
+
+        if (await db.SalesProcesses.AnyAsync(s => s.OrgId == Org && s.SalesID == salesId))
+            throw new InvalidOperationException($"Mã tiến trình bán hàng {salesId} đã tồn tại.");
+
+        var sp = new SalesProcess
+        {
+            OrgId = Org,
+            SalesID = salesId,
+            CustomerCode = dto.CustomerCode?.Trim(),
+            CustomerTypeCode = dto.CustomerTypeCode?.Trim(),
+            DealerCode = "",
+            UserCodeOwner = dto.UserCodeOwner?.Trim(),
+            CampaignCode = dto.CampaignCode?.Trim(),
+            BudgetVal = dto.BudgetVal,
+            CarModelType = dto.CarModelType.Trim().ToUpperInvariant(),
+            ContractExpectedDate = dto.ContractExpectedDate,
+            SPLevelCode = level,
+            SPLevelStatus = "P",
+            SPStatus = status,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.UserCodeOwner?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.SalesProcesses.Add(sp);
+        await db.SaveChangesAsync();
+
+        foreach (var item in distinctItems)
+        {
+            db.SalesProcessLines.Add(new SalesProcessLine
+            {
+                OrgId = Org,
+                SalesProcessId = sp.Id,
+                SalesID = salesId,
+                ModelCode = item.ModelCode.Trim().ToUpperInvariant(),
+                ColorCode = item.ColorCode?.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                Qty = item.Qty <= 0 ? 1 : item.Qty,
+                SPStatusDtl = status,
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        if (dto.Kpis is not null)
+        {
+            foreach (var k in dto.Kpis.Where(k => !string.IsNullOrWhiteSpace(k.KPICode)))
+            {
+                db.SalesProcessKpis.Add(new SalesProcessKpi
+                {
+                    OrgId = Org,
+                    SalesProcessId = sp.Id,
+                    SalesID = salesId,
+                    KPICode = k.KPICode.Trim().ToUpperInvariant(),
+                    CreatedDate = k.CreatedDate ?? DateTime.Now,
+                    Remark = k.Remark?.Trim()
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            sp.SalesID,
+            sp.CustomerCode,
+            sp.CarModelType,
+            sp.BudgetVal,
+            sp.ContractExpectedDate,
+            sp.SPLevelCode,
+            sp.SPLevelStatus,
+            sp.SPStatus,
+            linesCount = distinctItems.Count,
+            kpiCount = dto.Kpis?.Count ?? 0
+        };
+    }
+
+    public async Task<object> ListSalesProcessesAsync(string? status, string? dealer, string? customer, string? salesId, string? model, string? userCodeOwner)
+    {
+        var q = db.SalesProcesses.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) { var st = status.Trim().ToUpperInvariant(); q = q.Where(s => s.SPStatus == st); }
+        if (!string.IsNullOrWhiteSpace(dealer)) { var d = dealer.Trim().ToUpperInvariant(); q = q.Where(s => s.DealerCode == d); }
+        if (!string.IsNullOrWhiteSpace(customer)) { var c = customer.Trim(); q = q.Where(s => s.CustomerCode != null && s.CustomerCode.Contains(c)); }
+        if (!string.IsNullOrWhiteSpace(salesId)) { var sid = salesId.Trim().ToUpperInvariant(); q = q.Where(s => s.SalesID.Contains(sid)); }
+        if (!string.IsNullOrWhiteSpace(userCodeOwner)) { var u = userCodeOwner.Trim(); q = q.Where(s => s.UserCodeOwner == u); }
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var m = model.Trim().ToUpperInvariant();
+            var matched = await db.SalesProcessLines.Where(l => l.OrgId == Org && l.ModelCode == m).Select(l => l.SalesID).Distinct().ToListAsync();
+            q = q.Where(s => matched.Contains(s.SalesID));
+        }
+
+        var items = await q.OrderByDescending(s => s.Id).Take(500).Select(s => new
+        {
+            s.SalesID,
+            s.CustomerCode,
+            s.CustomerTypeCode,
+            s.DealerCode,
+            s.UserCodeOwner,
+            s.CampaignCode,
+            s.BudgetVal,
+            s.CarModelType,
+            s.ContractExpectedDate,
+            s.SPLevelCode,
+            s.SPLevelStatus,
+            s.SPStatus,
+            s.Remark,
+            s.CreatedBy,
+            s.CreatedAt,
+            lineCount = db.SalesProcessLines.Count(l => l.OrgId == Org && l.SalesProcessId == s.Id)
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetSalesProcessAsync(string salesId)
+    {
+        salesId = salesId.Trim().ToUpperInvariant();
+        var sp = await db.SalesProcesses.FirstOrDefaultAsync(s => s.OrgId == Org && s.SalesID == salesId);
+        if (sp is null) return null;
+
+        var lines = await db.SalesProcessLines.Where(l => l.OrgId == Org && l.SalesProcessId == sp.Id).ToListAsync();
+        var kpis = await db.SalesProcessKpis.Where(k => k.OrgId == Org && k.SalesProcessId == sp.Id).ToListAsync();
+
+        return new
+        {
+            sp.SalesID,
+            sp.CustomerCode,
+            sp.CustomerTypeCode,
+            sp.DealerCode,
+            sp.UserCodeOwner,
+            sp.CampaignCode,
+            sp.BudgetVal,
+            sp.CarModelType,
+            sp.ContractExpectedDate,
+            sp.SPLevelCode,
+            sp.SPLevelStatus,
+            sp.SPLevelDTime,
+            sp.SPLevelBy,
+            sp.SPStatus,
+            sp.Remark,
+            sp.CreatedBy,
+            sp.CreatedAt,
+            sp.UpdatedAt,
+            sp.UpdatedBy,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.ModelCode,
+                l.ColorCode,
+                l.SpecCode,
+                l.Qty,
+                l.SPStatusDtl,
+                l.Remark
+            }).ToList(),
+            kpis = kpis.Select(k => new { k.Id, k.KPICode, k.CreatedDate, k.Remark }).ToList()
+        };
+    }
+
+    public async Task<object?> SalesProcessTransitionAsync(string salesId, string action, SalesProcessTransitionDto? dto)
+    {
+        salesId = salesId.Trim().ToUpperInvariant();
+        var sp = await db.SalesProcesses.FirstOrDefaultAsync(s => s.OrgId == Org && s.SalesID == salesId);
+        if (sp is null) return null;
+
+        var now = DateTime.Now;
+        var lines = await db.SalesProcessLines.Where(l => l.OrgId == Org && l.SalesProcessId == sp.Id).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "advance":
+            case "movestatus":
+                // Chuyển trạng thái phễu sang bước kế tiếp (hoặc theo dto.SPStatus chỉ định).
+                if (sp.SPStatus == "HUY") return null;
+                var target = string.IsNullOrWhiteSpace(dto?.SPStatus)
+                    ? NextSpStatus(sp.SPStatus)
+                    : dto!.SPStatus!.Trim().ToUpperInvariant();
+                if (target is null || !SpStatuses.Contains(target))
+                    return null;
+                sp.SPStatus = target;
+                foreach (var l in lines) l.SPStatusDtl = target;
+                break;
+
+            case "approvelevel":
+            case "approve":
+                // Phê duyệt cấp tiến trình (SPLevelStatus P → A).
+                if (sp.SPStatus == "HUY") return null;
+                if (!string.IsNullOrWhiteSpace(dto?.SPLevelCode)) sp.SPLevelCode = dto!.SPLevelCode!.Trim();
+                sp.SPLevelStatus = "A";
+                sp.SPLevelDTime = now;
+                sp.SPLevelBy = dto?.User?.Trim() ?? "SalesManager";
+                break;
+
+            case "cancel":
+                if (sp.SPStatus == "HUY") return null;
+                sp.SPStatus = "HUY";
+                foreach (var l in lines) l.SPStatusDtl = "HUY";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    sp.Remark = string.IsNullOrWhiteSpace(sp.Remark) ? dto.Note : $"{sp.Remark} | Hủy: {dto.Note}";
+                break;
+
+            default:
+                return null;
+        }
+
+        sp.UpdatedAt = now;
+        sp.UpdatedBy = dto?.User?.Trim();
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            sp.SalesID,
+            sp.SPStatus,
+            sp.SPLevelCode,
+            sp.SPLevelStatus,
+            sp.SPLevelDTime,
+            sp.SPLevelBy,
+            sp.UpdatedAt
+        };
+    }
+
+    private static string? NextSpStatus(string current) => current switch
+    {
+        "THAMKHAO" => "QUANTAM",
+        "QUANTAM" => "DAMPHAN",
+        "DAMPHAN" => "LAITHU",
+        "LAITHU" => "KYHOPDONG",
+        _ => null
+    };
+
+    public async Task<object?> UpdateSalesProcessLineAsync(string salesId, string modelCode, UpdateSalesProcessLineDto dto)
+    {
+        salesId = salesId.Trim().ToUpperInvariant();
+        modelCode = modelCode.Trim().ToUpperInvariant();
+
+        var sp = await db.SalesProcesses.FirstOrDefaultAsync(s => s.OrgId == Org && s.SalesID == salesId);
+        if (sp is null || sp.SPStatus == "HUY") return null;
+
+        var line = await db.SalesProcessLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.SalesProcessId == sp.Id && l.ModelCode == modelCode);
+        if (line is null) return null;
+
+        if (dto.Qty.HasValue && dto.Qty.Value > 0) line.Qty = dto.Qty.Value;
+        if (!string.IsNullOrWhiteSpace(dto.ColorCode)) line.ColorCode = dto.ColorCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SpecCode)) line.SpecCode = dto.SpecCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SPStatusDtl)) line.SPStatusDtl = dto.SPStatusDtl.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) line.Remark = dto.Remark.Trim();
+
+        sp.UpdatedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            sp.SalesID,
+            line.ModelCode,
+            line.ColorCode,
+            line.SpecCode,
+            line.Qty,
+            line.SPStatusDtl,
+            line.Remark
+        };
+    }
+
+    public async Task<object?> GetVehicleSalesProcessInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+        // Tiến trình bán hàng gắn theo dòng xe (Model) của VIN.
+        var lines = await db.SalesProcessLines.Where(l => l.OrgId == Org && l.ModelCode == v.Model.ToUpper()).ToListAsync();
+        var salesIds = lines.Select(l => l.SalesID).Distinct().ToList();
+        var sps = await db.SalesProcesses.Where(s => s.OrgId == Org && salesIds.Contains(s.SalesID)).OrderByDescending(s => s.Id).ToListAsync();
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.DealerCode,
+            TotalSalesProcesses = sps.Count,
+            Items = sps.Select(s => new
+            {
+                s.SalesID,
+                s.CustomerCode,
+                s.CarModelType,
+                s.BudgetVal,
+                s.SPStatus,
+                s.SPLevelCode,
+                s.SPLevelStatus,
+                s.ContractExpectedDate
+            }).ToList()
+        };
+    }
+
+    public async Task<object> GetSalesProcessSummaryAsync(string? dealerCode)
+    {
+        var q = db.SalesProcesses.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode)) { var d = dealerCode.Trim().ToUpperInvariant(); q = q.Where(s => s.DealerCode == d); }
+        var all = await q.ToListAsync();
+
+        var byStatus = all.GroupBy(s => s.SPStatus)
+            .Select(g => new { status = g.Key, count = g.Count(), budget = g.Sum(x => x.BudgetVal) })
+            .OrderByDescending(x => x.count).ToList();
+
+        var total = all.Count;
+        var won = all.Count(s => s.SPStatus == "KYHOPDONG");
+        var cancelled = all.Count(s => s.SPStatus == "HUY");
+        var active = total - won - cancelled;
+        var conversionRate = total == 0 ? 0 : Math.Round((decimal)won / total * 100, 2);
+
+        return new
+        {
+            total,
+            active,
+            won,
+            cancelled,
+            conversionRatePercent = conversionRate,
+            totalBudget = all.Sum(s => s.BudgetVal),
+            byStatus
         };
     }
 }

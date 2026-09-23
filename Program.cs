@@ -5931,6 +5931,47 @@ app.MapGet("/api/vehicles/{vin}/doc-request-lists", async (string vin, IVehicleS
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Tiến trình bán hàng / Phễu bán hàng khách hàng (HCare.idocNet SP_SalesProcess) ----
+app.MapPost("/api/sales-processes", async (CreateSalesProcessDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.CarModelType) || dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần CarModelType và danh sách Items dòng xe quan tâm." });
+    try { return Results.Ok(await svc.CreateSalesProcessAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/sales-processes", async (IVehicleService svc, string? status, string? dealer, string? customer, string? salesId, string? model, string? userCodeOwner) =>
+    Results.Ok(await svc.ListSalesProcessesAsync(status, dealer, customer, salesId, model, userCodeOwner))).RequireAuthorization();
+
+app.MapGet("/api/sales-processes/summary", async (IVehicleService svc, string? dealer) =>
+    Results.Ok(await svc.GetSalesProcessSummaryAsync(dealer))).RequireAuthorization();
+
+app.MapGet("/api/sales-processes/{salesId}", async (string salesId, IVehicleService svc) =>
+{
+    var r = await svc.GetSalesProcessAsync(salesId);
+    return r is null ? Results.NotFound(new { salesId, error = "Không tìm thấy tiến trình bán hàng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-processes/{salesId}/{action}", async (string salesId, string action, SalesProcessTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("advance" or "movestatus" or "approvelevel" or "approve" or "cancel"))
+        return Results.BadRequest(new { error = "action = advance|movestatus|approvelevel|approve|cancel" });
+    var r = await svc.SalesProcessTransitionAsync(salesId, action, dto);
+    return r is null ? Results.NotFound(new { salesId, error = "Không thấy tiến trình hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-processes/{salesId}/lines/{modelCode}/update", async (string salesId, string modelCode, UpdateSalesProcessLineDto dto, IVehicleService svc) =>
+{
+    var r = await svc.UpdateSalesProcessLineAsync(salesId, modelCode, dto);
+    return r is null ? Results.NotFound(new { salesId, modelCode, error = "Không tìm thấy dòng xe hoặc tiến trình đã hủy." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/sales-processes", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleSalesProcessInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
