@@ -146,6 +146,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<SalesTargetKpi> SalesTargetKpis => Set<SalesTargetKpi>();
     public DbSet<SalesTargetKpiLine> SalesTargetKpiLines => Set<SalesTargetKpiLine>();
     public DbSet<SalesKpiDailyLog> SalesKpiDailyLogs => Set<SalesKpiDailyLog>();
+    public DbSet<SalesManViolation> SalesManViolations => Set<SalesManViolation>();
+    public DbSet<DocRequestList> DocRequestLists => Set<DocRequestList>();
+    public DbSet<DocRequestListLine> DocRequestListLines => Set<DocRequestListLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -293,5 +296,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<SalesTargetKpiLine>().HasIndex(x => new { x.OrgId, x.Model });
         b.Entity<SalesKpiDailyLog>().HasIndex(x => new { x.OrgId, x.TargetCode });
         b.Entity<SalesKpiDailyLog>().HasIndex(x => new { x.OrgId, x.LinkedVin });
+        b.Entity<SalesManViolation>().HasIndex(x => new { x.OrgId, x.SMCode, x.ViolateNumber }).IsUnique();
+        b.Entity<SalesManViolation>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<SalesManViolation>().HasIndex(x => new { x.OrgId, x.ViolateTypeId });
+        b.Entity<SalesManViolation>().HasIndex(x => new { x.OrgId, x.SMHyundaiCode });
+        b.Entity<DocRequestList>().HasIndex(x => new { x.OrgId, x.DRListCode }).IsUnique();
+        b.Entity<DocRequestList>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<DocRequestList>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<DocRequestListLine>().HasIndex(x => new { x.OrgId, x.DRListCode, x.Vin });
+        b.Entity<DocRequestListLine>().HasIndex(x => new { x.OrgId, x.Vin });
     }
 }

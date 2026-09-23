@@ -1570,6 +1570,44 @@ public record CancelCustomerCareDto(
     string? Note = null
 );
 
+// ===== Vi phạm chế tài nhân sự TVBH (BizHTC.WH / HR_SalesManViolate) =====
+public record CreateSalesManViolationDto(
+    string SMCode,
+    string DealerCode,
+    string ViolateTypeId,
+    DateTime ViolateDateStart,
+    DateTime? ViolateDateEnd = null,
+    string? Remark = null,
+    string? SMHyundaiCode = null,
+    string? SMName = null,
+    DateTime? SMDateOfBirth = null,
+    string? IdentityCardNo = null,
+    string? SMPhoneNo = null,
+    string? SMType = null,
+    string? SMStatus = null,
+    string? CreatedBy = null
+);
+
+public record UpdateSalesManViolationDto(
+    string? ViolateTypeId = null,
+    DateTime? ViolateDateStart = null,
+    DateTime? ViolateDateEnd = null,
+    string? Remark = null,
+    string? SMName = null,
+    DateTime? SMDateOfBirth = null,
+    string? IdentityCardNo = null,
+    string? SMPhoneNo = null,
+    string? SMType = null,
+    string? SMStatus = null,
+    bool? FlagActive = null,
+    string? User = null
+);
+
+// ===== Đề nghị giao tài liệu xe (BizHTC.WH.Car_DocReqList / Car_DocReqDtl) =====
+public record DocRequestListItemInputDto(string Vin, string? DealerCode = null, string? Remark = null);
+public record CreateDocRequestListDto(string? DRListCode, string? TypeCRR, string? DealerCode, string? Remark, List<DocRequestListItemInputDto> Items);
+public record DocRequestListTransitionDto(string? Note, string? Actor);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2261,6 +2299,23 @@ public interface IVehicleService
     Task<SalesLeaderboardDto> GetSalesLeaderboardAsync(string? periodMonth, string? dealerCode);
     Task<VehicleSalesKpiInfoDto?> GetVehicleSalesKpiInfoAsync(string vin);
     Task<object?> GetVehicleSalesKpiHistoryAsync(string vin);
+
+    // ===== Vi phạm chế tài nhân sự TVBH (BizHTC.WH / HR_SalesManViolate) =====
+    Task<object> CreateSalesManViolationAsync(CreateSalesManViolationDto dto);
+    Task<object> ListSalesManViolationsAsync(string? dealer, string? smCode, string? violateTypeId, int? violateNumber, DateTime? dateEndFrom, DateTime? dateEndTo, bool? activeOnly);
+    Task<object?> GetSalesManViolationAsync(string smCode, int violateNumber);
+    Task<object?> UpdateSalesManViolationAsync(string smCode, int violateNumber, UpdateSalesManViolationDto dto);
+    Task<object?> DeleteSalesManViolationAsync(string smCode, int violateNumber);
+    Task<object?> GetSalesManViolationHistoryAsync(string smCode);
+    Task<object> GetSalesManViolationSummaryAsync(string? dealerCode);
+
+    // ===== Đề nghị giao tài liệu xe (BizHTC.WH.Car_DocReqList / Car_DocReqDtl) =====
+    Task<object> CreateDocRequestListAsync(CreateDocRequestListDto dto);
+    Task<object> ListDocRequestListsAsync(string? status, string? dealer, string? vin, string? typeCRR);
+    Task<object?> GetDocRequestListAsync(string drListCode);
+    Task<object?> DocRequestListTransitionAsync(string drListCode, string action, DocRequestListTransitionDto? dto);
+    Task<object?> DocRequestListLineTransitionAsync(string drListCode, string vin, string action, DocRequestListTransitionDto? dto);
+    Task<object?> GetVehicleDocRequestListInfoAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -40372,7 +40427,469 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             logs
         };
     }
+
+    // ===== Vi phạm chế tài nhân sự TVBH (BizHTC.WH / HR_SalesManViolate) =====
+
+    public async Task<object> CreateSalesManViolationAsync(CreateSalesManViolationDto dto)
+    {
+        var smCode = dto.SMCode.Trim().ToUpperInvariant();
+        var dealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        var violateTypeId = (dto.ViolateTypeId ?? "TT").Trim().ToUpperInvariant();
+        if (violateTypeId is not ("TT" or "VV"))
+            throw new InvalidOperationException("Loại chế tài không hợp lệ (chỉ nhận TT = Tạm thời hoặc VV = Vĩnh viễn).");
+
+        // Lần vi phạm gần nhất của nhân sự (theo SMCode)
+        var last = await db.SalesManViolations
+            .Where(v => v.OrgId == Org && v.SMCode == smCode)
+            .OrderByDescending(v => v.ViolateNumber)
+            .FirstOrDefaultAsync();
+
+        int violateNumber = 1;
+        if (last != null)
+        {
+            if (last.ViolateTypeId == "VV")
+                throw new InvalidOperationException($"Nhân sự {smCode} đã vi phạm chế tài Vĩnh viễn, không thể tạo thêm vi phạm.");
+            violateNumber = last.ViolateNumber + 1;
+        }
+
+        if (violateTypeId == "TT")
+        {
+            if (dto.ViolateDateEnd is null)
+                throw new InvalidOperationException("Chế tài Tạm thời bắt buộc phải có ngày kết thúc (ViolateDateEnd).");
+            if (dto.ViolateDateEnd.Value <= DateTime.Now)
+                throw new InvalidOperationException("Ngày kết thúc chế tài phải lớn hơn ngày hôm nay.");
+            if (last?.ViolateDateEnd != null && dto.ViolateDateStart <= last.ViolateDateEnd.Value)
+                throw new InvalidOperationException("Ngày bắt đầu phải lớn hơn ngày kết thúc vi phạm chế tài gần nhất.");
+        }
+
+        var entity = new SalesManViolation
+        {
+            OrgId = Org,
+            SMCode = smCode,
+            ViolateNumber = violateNumber,
+            DealerCode = dealerCode,
+            ViolateDateStart = dto.ViolateDateStart,
+            ViolateDateEnd = violateTypeId == "TT" ? dto.ViolateDateEnd : null,
+            ViolateTypeId = violateTypeId,
+            SMHyundaiCode = dto.SMHyundaiCode?.Trim(),
+            SMName = dto.SMName?.Trim(),
+            SMDateOfBirth = dto.SMDateOfBirth,
+            IdentityCardNo = dto.IdentityCardNo?.Trim(),
+            SMPhoneNo = dto.SMPhoneNo?.Trim(),
+            SMType = dto.SMType?.Trim(),
+            SMStatus = dto.SMStatus?.Trim(),
+            FlagActive = true,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.SalesManViolations.Add(entity);
+        await db.SaveChangesAsync();
+        return entity;
+    }
+
+    public async Task<object> ListSalesManViolationsAsync(string? dealer, string? smCode, string? violateTypeId, int? violateNumber, DateTime? dateEndFrom, DateTime? dateEndTo, bool? activeOnly)
+    {
+        var q = db.SalesManViolations.Where(v => v.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(v => v.DealerCode == dealer.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(smCode)) q = q.Where(v => v.SMCode == smCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(violateTypeId)) q = q.Where(v => v.ViolateTypeId == violateTypeId.Trim().ToUpperInvariant());
+        if (violateNumber.HasValue) q = q.Where(v => v.ViolateNumber == violateNumber.Value);
+        if (dateEndFrom.HasValue) q = q.Where(v => v.ViolateDateEnd != null && v.ViolateDateEnd >= dateEndFrom.Value);
+        if (dateEndTo.HasValue) q = q.Where(v => v.ViolateDateEnd != null && v.ViolateDateEnd <= dateEndTo.Value);
+        if (activeOnly == true) q = q.Where(v => v.FlagActive);
+
+        var items = await q.OrderByDescending(v => v.CreatedAt).ThenByDescending(v => v.ViolateNumber).Take(500).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetSalesManViolationAsync(string smCode, int violateNumber)
+    {
+        smCode = smCode.Trim().ToUpperInvariant();
+        return await db.SalesManViolations.FirstOrDefaultAsync(v => v.OrgId == Org && v.SMCode == smCode && v.ViolateNumber == violateNumber);
+    }
+
+    public async Task<object?> UpdateSalesManViolationAsync(string smCode, int violateNumber, UpdateSalesManViolationDto dto)
+    {
+        smCode = smCode.Trim().ToUpperInvariant();
+        var entity = await db.SalesManViolations.FirstOrDefaultAsync(v => v.OrgId == Org && v.SMCode == smCode && v.ViolateNumber == violateNumber);
+        if (entity is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.ViolateTypeId))
+        {
+            var vt = dto.ViolateTypeId.Trim().ToUpperInvariant();
+            if (vt is not ("TT" or "VV"))
+                throw new InvalidOperationException("Loại chế tài không hợp lệ (chỉ nhận TT hoặc VV).");
+            entity.ViolateTypeId = vt;
+        }
+        if (dto.ViolateDateStart.HasValue) entity.ViolateDateStart = dto.ViolateDateStart.Value;
+        if (dto.ViolateDateEnd.HasValue) entity.ViolateDateEnd = dto.ViolateDateEnd.Value;
+        if (entity.ViolateTypeId == "TT")
+        {
+            if (entity.ViolateDateEnd is null)
+                throw new InvalidOperationException("Chế tài Tạm thời bắt buộc phải có ngày kết thúc (ViolateDateEnd).");
+            if (entity.ViolateDateEnd.Value <= DateTime.Now)
+                throw new InvalidOperationException("Ngày kết thúc chế tài phải lớn hơn ngày hôm nay.");
+        }
+        else
+        {
+            entity.ViolateDateEnd = null;
+        }
+        if (dto.Remark != null) entity.Remark = dto.Remark.Trim();
+        if (dto.SMName != null) entity.SMName = dto.SMName.Trim();
+        if (dto.SMDateOfBirth.HasValue) entity.SMDateOfBirth = dto.SMDateOfBirth.Value;
+        if (dto.IdentityCardNo != null) entity.IdentityCardNo = dto.IdentityCardNo.Trim();
+        if (dto.SMPhoneNo != null) entity.SMPhoneNo = dto.SMPhoneNo.Trim();
+        if (dto.SMType != null) entity.SMType = dto.SMType.Trim();
+        if (dto.SMStatus != null) entity.SMStatus = dto.SMStatus.Trim();
+        if (dto.FlagActive.HasValue) entity.FlagActive = dto.FlagActive.Value;
+        entity.UpdateDTime = DateTime.Now;
+        entity.UpdateBy = dto.User?.Trim();
+
+        await db.SaveChangesAsync();
+        return entity;
+    }
+
+    public async Task<object?> DeleteSalesManViolationAsync(string smCode, int violateNumber)
+    {
+        smCode = smCode.Trim().ToUpperInvariant();
+        var entity = await db.SalesManViolations.FirstOrDefaultAsync(v => v.OrgId == Org && v.SMCode == smCode && v.ViolateNumber == violateNumber);
+        if (entity is null) return null;
+
+        var isLatest = !await db.SalesManViolations.AnyAsync(v => v.OrgId == Org && v.SMCode == smCode && v.ViolateNumber > violateNumber);
+        if (!isLatest)
+            throw new InvalidOperationException("Chỉ có thể xóa lần vi phạm gần nhất của nhân sự để bảo toàn thứ tự chế tài.");
+
+        db.SalesManViolations.Remove(entity);
+        await db.SaveChangesAsync();
+        return new { success = true, smCode, violateNumber, message = "Đã xóa bản ghi vi phạm chế tài." };
+    }
+
+    public async Task<object?> GetSalesManViolationHistoryAsync(string smCode)
+    {
+        smCode = smCode.Trim().ToUpperInvariant();
+        var items = await db.SalesManViolations
+            .Where(v => v.OrgId == Org && v.SMCode == smCode)
+            .OrderBy(v => v.ViolateNumber)
+            .ToListAsync();
+        if (items.Count == 0) return null;
+
+        var latest = items[^1];
+        return new
+        {
+            smCode,
+            smName = latest.SMName,
+            dealerCode = latest.DealerCode,
+            totalViolations = items.Count,
+            isPermanentBanned = items.Any(v => v.ViolateTypeId == "VV"),
+            latestViolateTypeId = latest.ViolateTypeId,
+            latestViolateDateEnd = latest.ViolateDateEnd,
+            history = items
+        };
+    }
+
+    public async Task<object> GetSalesManViolationSummaryAsync(string? dealerCode)
+    {
+        var q = db.SalesManViolations.Where(v => v.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode)) q = q.Where(v => v.DealerCode == dealerCode.Trim().ToUpperInvariant());
+
+        var all = await q.ToListAsync();
+        var byDealer = all.GroupBy(v => v.DealerCode).Select(g => new
+        {
+            dealerCode = g.Key,
+            totalViolations = g.Count(),
+            temporaryCount = g.Count(v => v.ViolateTypeId == "TT"),
+            permanentCount = g.Count(v => v.ViolateTypeId == "VV"),
+            distinctStaff = g.Select(v => v.SMCode).Distinct().Count()
+        }).OrderByDescending(x => x.totalViolations).ToList();
+
+        return new
+        {
+            totalViolations = all.Count,
+            temporaryCount = all.Count(v => v.ViolateTypeId == "TT"),
+            permanentCount = all.Count(v => v.ViolateTypeId == "VV"),
+            distinctStaff = all.Select(v => v.SMCode).Distinct().Count(),
+            byDealer
+        };
+    }
+
+    // ===== Đề nghị giao tài liệu xe (BizHTC.WH.Car_DocReqList / Car_DocReqDtl) =====
+
+    private static readonly string[] DocReqListStatuses = { "Pending", "Approved1", "Approved2", "Finished", "Rejected", "Cancelled" };
+
+    public async Task<object> CreateDocRequestListAsync(CreateDocRequestListDto dto)
+    {
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Cần danh sách VIN trong phiếu đề nghị giao tài liệu.");
+
+        var typeCRR = (dto.TypeCRR ?? "NORMAL").Trim().ToUpperInvariant();
+        if (typeCRR is not ("NORMAL" or "SPECIAL" or "DEALER" or "DEALERTCG"))
+            throw new InvalidOperationException("Loại đề nghị không hợp lệ (NORMAL, SPECIAL, DEALER, DEALERTCG).");
+
+        var code = string.IsNullOrWhiteSpace(dto.DRListCode)
+            ? $"DRL{DateTime.Now:yyyyMMddHHmmss}"
+            : dto.DRListCode.Trim().ToUpperInvariant();
+        if (await db.DocRequestLists.AnyAsync(x => x.OrgId == Org && x.DRListCode == code))
+            throw new InvalidOperationException($"Mã phiếu đề nghị {code} đã tồn tại.");
+
+        var list = new DocRequestList
+        {
+            OrgId = Org,
+            DRListCode = code,
+            TypeCRR = typeCRR,
+            DealerCode = dto.DealerCode?.Trim().ToUpperInvariant(),
+            Status = "Pending",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.DealerCode?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.DocRequestLists.Add(list);
+        await db.SaveChangesAsync();
+
+        int idx = 1;
+        foreach (var item in dto.Items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Vin)) continue;
+            var vin = item.Vin.Trim().ToUpperInvariant();
+            var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+            db.DocRequestListLines.Add(new DocRequestListLine
+            {
+                OrgId = Org,
+                DocRequestListId = list.Id,
+                DRListCode = list.DRListCode,
+                LineIndex = idx++,
+                Vin = vin,
+                Model = v?.Model,
+                EngineNo = v?.EngineNo,
+                Color = v?.Color,
+                DealerCode = item.DealerCode?.Trim().ToUpperInvariant() ?? list.DealerCode,
+                Status = "Pending",
+                Remark = item.Remark?.Trim()
+            });
+            Log(vin, "DocReqListCreated", $"DRListCode={list.DRListCode}");
+        }
+        await db.SaveChangesAsync();
+        return await GetDocRequestListAsync(list.DRListCode) ?? list;
+    }
+
+    public async Task<object> ListDocRequestListsAsync(string? status, string? dealer, string? vin, string? typeCRR)
+    {
+        var q = db.DocRequestLists.Where(x => x.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(x => x.DealerCode == dealer.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(typeCRR)) q = q.Where(x => x.TypeCRR == typeCRR.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            var codes = await db.DocRequestListLines.Where(l => l.OrgId == Org && l.Vin == v).Select(l => l.DRListCode).Distinct().ToListAsync();
+            q = q.Where(x => codes.Contains(x.DRListCode));
+        }
+
+        var lists = await q.OrderByDescending(x => x.CreatedAt).Take(500).ToListAsync();
+        var codes2 = lists.Select(x => x.DRListCode).ToList();
+        var lines = await db.DocRequestListLines.Where(l => l.OrgId == Org && codes2.Contains(l.DRListCode)).ToListAsync();
+
+        var items = lists.Select(x => new
+        {
+            x.Id,
+            x.DRListCode,
+            x.TypeCRR,
+            x.DealerCode,
+            x.Status,
+            x.Remark,
+            x.CreatedBy,
+            x.CreatedAt,
+            x.ApprovedBy1,
+            x.ApprovedAt1,
+            x.ApprovedBy2,
+            x.ApprovedAt2,
+            x.CancelledBy,
+            x.CancelledAt,
+            x.CancelReason,
+            TotalLines = lines.Count(l => l.DRListCode == x.DRListCode),
+            FinishedLines = lines.Count(l => l.DRListCode == x.DRListCode && l.Status == "Finished")
+        }).ToList();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetDocRequestListAsync(string drListCode)
+    {
+        drListCode = drListCode.Trim().ToUpperInvariant();
+        var list = await db.DocRequestLists.FirstOrDefaultAsync(x => x.OrgId == Org && x.DRListCode == drListCode);
+        if (list is null) return null;
+        var lines = await db.DocRequestListLines.Where(l => l.OrgId == Org && l.DRListCode == drListCode).OrderBy(l => l.LineIndex).ToListAsync();
+        return new
+        {
+            list.Id,
+            list.DRListCode,
+            list.TypeCRR,
+            list.DealerCode,
+            list.Status,
+            list.Remark,
+            list.CreatedBy,
+            list.CreatedAt,
+            list.ApprovedBy1,
+            list.ApprovedAt1,
+            list.ApprovedBy2,
+            list.ApprovedAt2,
+            list.CancelledBy,
+            list.CancelledAt,
+            list.CancelReason,
+            TotalLines = lines.Count,
+            FinishedLines = lines.Count(l => l.Status == "Finished"),
+            Lines = lines
+        };
+    }
+
+    // Duyệt cấp 1 (list-level): Pending → Approved1 (NORMAL/DEALER) hoặc Approved2 (SPECIAL/DEALERTCG duyệt 1 cấp).
+    public async Task<object?> DocRequestListTransitionAsync(string drListCode, string action, DocRequestListTransitionDto? dto)
+    {
+        drListCode = drListCode.Trim().ToUpperInvariant();
+        var list = await db.DocRequestLists.FirstOrDefaultAsync(x => x.OrgId == Org && x.DRListCode == drListCode);
+        if (list is null) return null;
+
+        var act = action.Trim().ToLowerInvariant();
+        var actor = dto?.Actor?.Trim() ?? "HTC";
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "approve1" or "approve":
+                if (list.Status != "Pending")
+                    throw new InvalidOperationException($"Chỉ duyệt cấp 1 khi phiếu ở trạng thái Pending (hiện tại: {list.Status}).");
+                list.ApprovedBy1 = actor;
+                list.ApprovedAt1 = now;
+                list.Status = list.TypeCRR is "SPECIAL" or "DEALERTCG" ? "Approved2" : "Approved1";
+                if (list.Status == "Approved2") { list.ApprovedBy2 = actor; list.ApprovedAt2 = now; }
+                break;
+
+            case "cancel":
+                if (list.Status is "Finished" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể hủy phiếu ở trạng thái {list.Status}.");
+                list.Status = "Cancelled";
+                list.CancelledBy = actor;
+                list.CancelledAt = now;
+                list.CancelReason = dto?.Note?.Trim();
+                var allLines = await db.DocRequestListLines.Where(l => l.OrgId == Org && l.DRListCode == drListCode).ToListAsync();
+                foreach (var l in allLines.Where(l => l.Status is not ("Finished" or "Cancelled")))
+                {
+                    l.Status = "Cancelled";
+                    l.CancelledBy = actor;
+                    l.CancelledAt = now;
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không hợp lệ cho phiếu đề nghị (approve1|cancel).");
+        }
+
+        if (dto?.Note != null && act != "cancel") list.Remark = (list.Remark + " | " + dto.Note).Trim(' ', '|');
+        await db.SaveChangesAsync();
+        return await GetDocRequestListAsync(drListCode);
+    }
+
+    // Duyệt cấp 2 / hủy / từ chối theo từng dòng VIN, sau đó tính lại trạng thái phiếu.
+    public async Task<object?> DocRequestListLineTransitionAsync(string drListCode, string vin, string action, DocRequestListTransitionDto? dto)
+    {
+        drListCode = drListCode.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+        var list = await db.DocRequestLists.FirstOrDefaultAsync(x => x.OrgId == Org && x.DRListCode == drListCode);
+        if (list is null) return null;
+        var line = await db.DocRequestListLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.DRListCode == drListCode && l.Vin == vin);
+        if (line is null) return null;
+
+        var act = action.Trim().ToLowerInvariant();
+        var actor = dto?.Actor?.Trim() ?? "HTC";
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "approve2" or "approve":
+                if (line.Status is not ("Pending" or "Approved1"))
+                    throw new InvalidOperationException($"Chỉ duyệt cấp 2 khi dòng ở trạng thái Pending/Approved1 (hiện tại: {line.Status}).");
+                line.Status = "Approved2";
+                line.ApprovedBy2 = actor;
+                line.ApprovedAt2 = now;
+                break;
+
+            case "finish" or "complete":
+                if (line.Status != "Approved2")
+                    throw new InvalidOperationException($"Chỉ hoàn tất giao tài liệu khi dòng đã duyệt cấp 2 (hiện tại: {line.Status}).");
+                line.Status = "Finished";
+                break;
+
+            case "reject":
+                if (line.Status is "Finished" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể từ chối dòng ở trạng thái {line.Status}.");
+                line.Status = "Rejected";
+                line.RejectedBy = actor;
+                line.RejectedAt = now;
+                line.Remark = dto?.Note?.Trim() ?? line.Remark;
+                break;
+
+            case "cancel":
+                if (line.Status is "Finished" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể hủy dòng ở trạng thái {line.Status}.");
+                line.Status = "Cancelled";
+                line.CancelledBy = actor;
+                line.CancelledAt = now;
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không hợp lệ cho dòng (approve2|finish|reject|cancel).");
+        }
+
+        await db.SaveChangesAsync();
+        await RecomputeDocRequestListStatusAsync(list);
+        return await GetDocRequestListAsync(drListCode);
+    }
+
+    // Tính lại trạng thái phiếu theo trạng thái các dòng (giống logic nguồn Car_DocReqList).
+    private async Task RecomputeDocRequestListStatusAsync(DocRequestList list)
+    {
+        var lines = await db.DocRequestListLines.Where(l => l.OrgId == Org && l.DRListCode == list.DRListCode).ToListAsync();
+        if (lines.Count == 0) return;
+
+        var total = lines.Count;
+        var pending = lines.Count(l => l.Status == "Pending");
+        var a1 = lines.Count(l => l.Status == "Approved1");
+        var a2 = lines.Count(l => l.Status == "Approved2");
+        var finished = lines.Count(l => l.Status == "Finished");
+        var cancelled = lines.Count(l => l.Status == "Cancelled");
+        var rejected = lines.Count(l => l.Status == "Rejected");
+
+        string newStatus;
+        if (pending == total) newStatus = "Pending";
+        else if (a1 > 0) newStatus = "Approved1";
+        else if (finished + cancelled == total && finished > 0) newStatus = "Finished";
+        else if (cancelled == total) newStatus = "Cancelled";
+        else if (rejected > 0 && finished + cancelled + rejected == total) newStatus = "Rejected";
+        else if (a2 > 0) newStatus = "Approved2";
+        else newStatus = list.Status;
+
+        if (newStatus != list.Status)
+        {
+            list.Status = newStatus;
+            await db.SaveChangesAsync();
+        }
+    }
+
+    public async Task<object?> GetVehicleDocRequestListInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+        var lines = await db.DocRequestListLines.Where(l => l.OrgId == Org && l.Vin == vin).OrderByDescending(l => l.Id).ToListAsync();
+        return new
+        {
+            v.Vin,
+            v.Model,
+            v.EngineNo,
+            v.Color,
+            v.DealerCode,
+            TotalDocReqLists = lines.Select(l => l.DRListCode).Distinct().Count(),
+            Lines = lines
+        };
+    }
 }
-
-
-

@@ -5849,6 +5849,54 @@ app.MapGet("/api/vehicles/{vin}/sales-kpi-history", async (string vin, IVehicleS
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Đề nghị giao tài liệu xe theo lô (BizHTC.WH.Car_DocReqList / Car_DocReqDtl) ----
+app.MapPost("/api/doc-request-lists", async (CreateDocRequestListDto dto, IVehicleService svc) =>
+{
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách VIN trong phiếu đề nghị giao tài liệu." });
+    try { return Results.Ok(await svc.CreateDocRequestListAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/doc-request-lists", async (IVehicleService svc, string? status, string? dealer, string? vin, string? typeCRR) =>
+    Results.Ok(await svc.ListDocRequestListsAsync(status, dealer, vin, typeCRR))).RequireAuthorization();
+
+app.MapGet("/api/doc-request-lists/{drListCode}", async (string drListCode, IVehicleService svc) =>
+{
+    var r = await svc.GetDocRequestListAsync(drListCode);
+    return r is null ? Results.NotFound(new { drListCode, error = "Không tìm thấy phiếu đề nghị giao tài liệu." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/doc-request-lists/{drListCode}/{action}", async (string drListCode, string action, DocRequestListTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve1" or "approve" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve1|approve|cancel" });
+    try
+    {
+        var r = await svc.DocRequestListTransitionAsync(drListCode, action, dto);
+        return r is null ? Results.NotFound(new { drListCode, error = "Không tìm thấy phiếu đề nghị hoặc sai trạng thái." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/doc-request-lists/{drListCode}/lines/{vin}/{action}", async (string drListCode, string vin, string action, DocRequestListTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve2" or "approve" or "finish" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve2|approve|finish|complete|reject|cancel" });
+    try
+    {
+        var r = await svc.DocRequestListLineTransitionAsync(drListCode, vin, action, dto);
+        return r is null ? Results.NotFound(new { drListCode, vin, error = "Không tìm thấy phiếu/dòng hoặc sai trạng thái." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/doc-request-lists", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleDocRequestListInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

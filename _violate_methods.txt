@@ -1,0 +1,186 @@
+
+    // ===== Vi phạm chế tài nhân sự TVBH (BizHTC.WH / HR_SalesManViolate) =====
+
+    public async Task<object> CreateSalesManViolationAsync(CreateSalesManViolationDto dto)
+    {
+        var smCode = dto.SMCode.Trim().ToUpperInvariant();
+        var dealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        var violateTypeId = (dto.ViolateTypeId ?? "TT").Trim().ToUpperInvariant();
+        if (violateTypeId is not ("TT" or "VV"))
+            throw new InvalidOperationException("Loại chế tài không hợp lệ (chỉ nhận TT = Tạm thời hoặc VV = Vĩnh viễn).");
+
+        // Lần vi phạm gần nhất của nhân sự (theo SMCode)
+        var last = await db.SalesManViolations
+            .Where(v => v.OrgId == Org && v.SMCode == smCode)
+            .OrderByDescending(v => v.ViolateNumber)
+            .FirstOrDefaultAsync();
+
+        int violateNumber = 1;
+        if (last != null)
+        {
+            if (last.ViolateTypeId == "VV")
+                throw new InvalidOperationException($"Nhân sự {smCode} đã vi phạm chế tài Vĩnh viễn, không thể tạo thêm vi phạm.");
+            violateNumber = last.ViolateNumber + 1;
+        }
+
+        if (violateTypeId == "TT")
+        {
+            if (dto.ViolateDateEnd is null)
+                throw new InvalidOperationException("Chế tài Tạm thời bắt buộc phải có ngày kết thúc (ViolateDateEnd).");
+            if (dto.ViolateDateEnd.Value <= DateTime.Now)
+                throw new InvalidOperationException("Ngày kết thúc chế tài phải lớn hơn ngày hôm nay.");
+            if (last?.ViolateDateEnd != null && dto.ViolateDateStart <= last.ViolateDateEnd.Value)
+                throw new InvalidOperationException("Ngày bắt đầu phải lớn hơn ngày kết thúc vi phạm chế tài gần nhất.");
+        }
+
+        var entity = new SalesManViolation
+        {
+            OrgId = Org,
+            SMCode = smCode,
+            ViolateNumber = violateNumber,
+            DealerCode = dealerCode,
+            ViolateDateStart = dto.ViolateDateStart,
+            ViolateDateEnd = violateTypeId == "TT" ? dto.ViolateDateEnd : null,
+            ViolateTypeId = violateTypeId,
+            SMHyundaiCode = dto.SMHyundaiCode?.Trim(),
+            SMName = dto.SMName?.Trim(),
+            SMDateOfBirth = dto.SMDateOfBirth,
+            IdentityCardNo = dto.IdentityCardNo?.Trim(),
+            SMPhoneNo = dto.SMPhoneNo?.Trim(),
+            SMType = dto.SMType?.Trim(),
+            SMStatus = dto.SMStatus?.Trim(),
+            FlagActive = true,
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+        db.SalesManViolations.Add(entity);
+        await db.SaveChangesAsync();
+        return entity;
+    }
+
+    public async Task<object> ListSalesManViolationsAsync(string? dealer, string? smCode, string? violateTypeId, int? violateNumber, DateTime? dateEndFrom, DateTime? dateEndTo, bool? activeOnly)
+    {
+        var q = db.SalesManViolations.Where(v => v.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(v => v.DealerCode == dealer.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(smCode)) q = q.Where(v => v.SMCode == smCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(violateTypeId)) q = q.Where(v => v.ViolateTypeId == violateTypeId.Trim().ToUpperInvariant());
+        if (violateNumber.HasValue) q = q.Where(v => v.ViolateNumber == violateNumber.Value);
+        if (dateEndFrom.HasValue) q = q.Where(v => v.ViolateDateEnd != null && v.ViolateDateEnd >= dateEndFrom.Value);
+        if (dateEndTo.HasValue) q = q.Where(v => v.ViolateDateEnd != null && v.ViolateDateEnd <= dateEndTo.Value);
+        if (activeOnly == true) q = q.Where(v => v.FlagActive);
+
+        var items = await q.OrderByDescending(v => v.CreatedAt).ThenByDescending(v => v.ViolateNumber).Take(500).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetSalesManViolationAsync(string smCode, int violateNumber)
+    {
+        smCode = smCode.Trim().ToUpperInvariant();
+        return await db.SalesManViolations.FirstOrDefaultAsync(v => v.OrgId == Org && v.SMCode == smCode && v.ViolateNumber == violateNumber);
+    }
+
+    public async Task<object?> UpdateSalesManViolationAsync(string smCode, int violateNumber, UpdateSalesManViolationDto dto)
+    {
+        smCode = smCode.Trim().ToUpperInvariant();
+        var entity = await db.SalesManViolations.FirstOrDefaultAsync(v => v.OrgId == Org && v.SMCode == smCode && v.ViolateNumber == violateNumber);
+        if (entity is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.ViolateTypeId))
+        {
+            var vt = dto.ViolateTypeId.Trim().ToUpperInvariant();
+            if (vt is not ("TT" or "VV"))
+                throw new InvalidOperationException("Loại chế tài không hợp lệ (chỉ nhận TT hoặc VV).");
+            entity.ViolateTypeId = vt;
+        }
+        if (dto.ViolateDateStart.HasValue) entity.ViolateDateStart = dto.ViolateDateStart.Value;
+        if (dto.ViolateDateEnd.HasValue) entity.ViolateDateEnd = dto.ViolateDateEnd.Value;
+        if (entity.ViolateTypeId == "TT")
+        {
+            if (entity.ViolateDateEnd is null)
+                throw new InvalidOperationException("Chế tài Tạm thời bắt buộc phải có ngày kết thúc (ViolateDateEnd).");
+            if (entity.ViolateDateEnd.Value <= DateTime.Now)
+                throw new InvalidOperationException("Ngày kết thúc chế tài phải lớn hơn ngày hôm nay.");
+        }
+        else
+        {
+            entity.ViolateDateEnd = null;
+        }
+        if (dto.Remark != null) entity.Remark = dto.Remark.Trim();
+        if (dto.SMName != null) entity.SMName = dto.SMName.Trim();
+        if (dto.SMDateOfBirth.HasValue) entity.SMDateOfBirth = dto.SMDateOfBirth.Value;
+        if (dto.IdentityCardNo != null) entity.IdentityCardNo = dto.IdentityCardNo.Trim();
+        if (dto.SMPhoneNo != null) entity.SMPhoneNo = dto.SMPhoneNo.Trim();
+        if (dto.SMType != null) entity.SMType = dto.SMType.Trim();
+        if (dto.SMStatus != null) entity.SMStatus = dto.SMStatus.Trim();
+        if (dto.FlagActive.HasValue) entity.FlagActive = dto.FlagActive.Value;
+        entity.UpdateDTime = DateTime.Now;
+        entity.UpdateBy = dto.User?.Trim();
+
+        await db.SaveChangesAsync();
+        return entity;
+    }
+
+    public async Task<object?> DeleteSalesManViolationAsync(string smCode, int violateNumber)
+    {
+        smCode = smCode.Trim().ToUpperInvariant();
+        var entity = await db.SalesManViolations.FirstOrDefaultAsync(v => v.OrgId == Org && v.SMCode == smCode && v.ViolateNumber == violateNumber);
+        if (entity is null) return null;
+
+        var isLatest = !await db.SalesManViolations.AnyAsync(v => v.OrgId == Org && v.SMCode == smCode && v.ViolateNumber > violateNumber);
+        if (!isLatest)
+            throw new InvalidOperationException("Chỉ có thể xóa lần vi phạm gần nhất của nhân sự để bảo toàn thứ tự chế tài.");
+
+        db.SalesManViolations.Remove(entity);
+        await db.SaveChangesAsync();
+        return new { success = true, smCode, violateNumber, message = "Đã xóa bản ghi vi phạm chế tài." };
+    }
+
+    public async Task<object?> GetSalesManViolationHistoryAsync(string smCode)
+    {
+        smCode = smCode.Trim().ToUpperInvariant();
+        var items = await db.SalesManViolations
+            .Where(v => v.OrgId == Org && v.SMCode == smCode)
+            .OrderBy(v => v.ViolateNumber)
+            .ToListAsync();
+        if (items.Count == 0) return null;
+
+        var latest = items[^1];
+        return new
+        {
+            smCode,
+            smName = latest.SMName,
+            dealerCode = latest.DealerCode,
+            totalViolations = items.Count,
+            isPermanentBanned = items.Any(v => v.ViolateTypeId == "VV"),
+            latestViolateTypeId = latest.ViolateTypeId,
+            latestViolateDateEnd = latest.ViolateDateEnd,
+            history = items
+        };
+    }
+
+    public async Task<object> GetSalesManViolationSummaryAsync(string? dealerCode)
+    {
+        var q = db.SalesManViolations.Where(v => v.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode)) q = q.Where(v => v.DealerCode == dealerCode.Trim().ToUpperInvariant());
+
+        var all = await q.ToListAsync();
+        var byDealer = all.GroupBy(v => v.DealerCode).Select(g => new
+        {
+            dealerCode = g.Key,
+            totalViolations = g.Count(),
+            temporaryCount = g.Count(v => v.ViolateTypeId == "TT"),
+            permanentCount = g.Count(v => v.ViolateTypeId == "VV"),
+            distinctStaff = g.Select(v => v.SMCode).Distinct().Count()
+        }).OrderByDescending(x => x.totalViolations).ToList();
+
+        return new
+        {
+            totalViolations = all.Count,
+            temporaryCount = all.Count(v => v.ViolateTypeId == "TT"),
+            permanentCount = all.Count(v => v.ViolateTypeId == "VV"),
+            distinctStaff = all.Select(v => v.SMCode).Distinct().Count(),
+            byDealer
+        };
+    }
+}

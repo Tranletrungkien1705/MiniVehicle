@@ -7354,3 +7354,75 @@ public sealed record VehicleSalesKpiInfoDto(
 
 
 
+
+/// <summary>Vi phạm chế tài nhân sự TVBH (BizHTC.WH / HR_SalesManViolate): ghi nhận vi phạm của nhân viên bán hàng đại lý, chế tài Tạm thời (TT) hoặc Vĩnh viễn (VV).</summary>
+public sealed class SalesManViolation
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SMCode { get; set; } = "";              // Mã nhân viên bán hàng (TVBH)
+    public int ViolateNumber { get; set; } = 1;           // Số thứ tự lần vi phạm của nhân sự (tăng dần)
+    public string DealerCode { get; set; } = "";          // Đại lý quản lý nhân sự
+    public DateTime ViolateDateStart { get; set; }        // Ngày bắt đầu hiệu lực chế tài
+    public DateTime? ViolateDateEnd { get; set; }         // Ngày kết thúc chế tài (bắt buộc với loại Tạm thời)
+    public string ViolateTypeId { get; set; } = "TT";     // Loại chế tài: TT (Tạm thời), VV (Vĩnh viễn)
+    public string? SMHyundaiCode { get; set; }            // Mã nhân sự Hyundai (SMHyundaiCode)
+    public string? SMName { get; set; }                   // Tên nhân sự
+    public DateTime? SMDateOfBirth { get; set; }          // Ngày sinh nhân sự
+    public string? IdentityCardNo { get; set; }           // Số CCCD/Hộ chiếu
+    public string? SMPhoneNo { get; set; }                // SĐT nhân sự
+    public string? SMType { get; set; }                   // Loại nhân sự (TVBH, CVDV, KTV...)
+    public string? SMStatus { get; set; }                 // Trạng thái làm việc (CHINGTHUC, THUVIEC, CTVIEN, NGHIVIEC)
+    public bool FlagActive { get; set; } = true;          // Còn hiệu lực
+    public string? Remark { get; set; }                   // Ghi chú lý do vi phạm
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? UpdateDTime { get; set; }
+    public string? UpdateBy { get; set; }
+}
+
+/// <summary>Đề nghị giao tài liệu xe (BizHTC.WH.Car_DocReqList / Car_DocReqList): phiếu đề nghị giao hồ sơ gốc (COC/hóa đơn/đăng ký) cho đại lý theo lô nhiều VIN, phê duyệt 2 cấp (Pending → Approved1 → Approved2 → Finished hoặc Rejected/Cancelled).</summary>
+public sealed class DocRequestList
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string DRListCode { get; set; } = "";          // Mã phiếu đề nghị giao tài liệu (DRL...)
+    public string TypeCRR { get; set; } = "NORMAL";       // Loại đề nghị: NORMAL (Thường), SPECIAL (Đặc biệt), DEALER (Đại lý tạo), DEALERTCG (Đại lý TCG)
+    public string? DealerCode { get; set; }               // Đại lý nhận tài liệu
+    public string Status { get; set; } = "Pending";       // Pending → Approved1 → Approved2 → Finished (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú đề nghị
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy1 { get; set; }              // Người duyệt cấp 1
+    public DateTime? ApprovedAt1 { get; set; }
+    public string? ApprovedBy2 { get; set; }              // Người duyệt cấp 2
+    public DateTime? ApprovedAt2 { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe trong phiếu đề nghị giao tài liệu (BizHTC.WH.Car_DocReqDtl / Car_DocReqDtl): từng VIN kèm trạng thái duyệt riêng (Pending → Approved1 → Approved2 → Finished hoặc Rejected/Cancelled).</summary>
+public sealed class DocRequestListLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long DocRequestListId { get; set; }
+    public string DRListCode { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public string Vin { get; set; } = "";
+    public string? Model { get; set; }
+    public string? EngineNo { get; set; }
+    public string? Color { get; set; }
+    public string? DealerCode { get; set; }
+    public string Status { get; set; } = "Pending";       // Pending → Approved1 → Approved2 → Finished (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+    public string? ApprovedBy1 { get; set; }
+    public DateTime? ApprovedAt1 { get; set; }
+    public string? ApprovedBy2 { get; set; }
+    public DateTime? ApprovedAt2 { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
