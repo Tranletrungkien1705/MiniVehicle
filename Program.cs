@@ -6491,6 +6491,52 @@ app.MapPost("/api/cancel-bank-mds/{cancelBankMDNo}/{action}", async (string canc
     return r is null ? Results.NotFound(new { cancelBankMDNo, error = "Không thấy biên bản hoặc sai trạng thái cho action." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Lịch làm việc / Phân công việc nhân sự Đại lý (HCare.idocNet.Biz.Wk_UserSchedule) ----
+// Nhân sự đăng ký lịch làm việc theo khung thời gian hiệu lực, gắn KPI/thương vụ/khách hàng. Luồng: P → A → F.
+app.MapPost("/api/user-schedules", async (CreateUserScheduleDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.UserCodeOwner))
+        return Results.BadRequest(new { error = "Cần UserCodeOwner (nhân sự sở hữu lịch)." });
+    try { return Results.Ok(await svc.CreateUserScheduleAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/user-schedules", async (IVehicleService svc, string? status, string? userCodeOwner, string? levelType, string? kpiKeyword, DateTime? fromDate, DateTime? toDate) =>
+    Results.Ok(await svc.ListUserSchedulesAsync(status, userCodeOwner, levelType, kpiKeyword, fromDate, toDate))).RequireAuthorization();
+
+app.MapGet("/api/user-schedules/summary", async (IVehicleService svc, string? userCodeOwner) =>
+    Results.Ok(await svc.GetUserScheduleSummaryAsync(userCodeOwner))).RequireAuthorization();
+
+app.MapGet("/api/user-schedules/{schCode}", async (string schCode, IVehicleService svc) =>
+{
+    var r = await svc.GetUserScheduleAsync(schCode);
+    return r is null ? Results.NotFound(new { schCode, error = "Không tìm thấy lịch làm việc." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/user-schedules/{schCode}", async (string schCode, UpdateUserScheduleDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateUserScheduleAsync(schCode, dto);
+        return r is null ? Results.NotFound(new { schCode, error = "Không thấy lịch làm việc hoặc lịch không còn ở trạng thái Pending." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/user-schedules/{schCode}", async (string schCode, IVehicleService svc) =>
+{
+    var r = await svc.DeleteUserScheduleAsync(schCode);
+    return r is null ? Results.NotFound(new { schCode, error = "Không thấy lịch làm việc hoặc lịch không còn ở trạng thái Pending." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/user-schedules/{schCode}/{action}", async (string schCode, string action, UserScheduleTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "finish" or "reject"))
+        return Results.BadRequest(new { error = "action = approve|finish|reject" });
+    var r = await svc.UserScheduleTransitionAsync(schCode, action, dto);
+    return r is null ? Results.NotFound(new { schCode, error = "Không thấy lịch làm việc hoặc sai trạng thái cho action." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 app.Run();
 
 record ImportVehicleRowDto(string? VIN, string? ModelCode, string? SpecCode, string? ColorCode, string? EngineNo, int? ProductionYearActual, string? StorageCodeCurrent);

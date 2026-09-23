@@ -181,6 +181,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<DealerContractForm> DealerContractForms => Set<DealerContractForm>();
     public DbSet<DealerContractFormTerm> DealerContractFormTerms => Set<DealerContractFormTerm>();
     public DbSet<CancelBankMD> CancelBankMDs => Set<CancelBankMD>();
+    public DbSet<UserSchedule> UserSchedules => Set<UserSchedule>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -432,5 +433,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<CancelBankMD>().HasIndex(x => new { x.OrgId, x.DlrCtrNo });
         b.Entity<CancelBankMD>().HasIndex(x => new { x.OrgId, x.DealerCode });
         b.Entity<CancelBankMD>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<UserSchedule>().HasIndex(x => new { x.OrgId, x.SchCode }).IsUnique();
+        b.Entity<UserSchedule>().HasIndex(x => new { x.OrgId, x.UserCodeOwner });
+        b.Entity<UserSchedule>().HasIndex(x => new { x.OrgId, x.USStatus });
+        b.Entity<UserSchedule>().HasIndex(x => new { x.OrgId, x.LevelType });
     }
 }

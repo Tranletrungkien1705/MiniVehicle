@@ -1804,6 +1804,39 @@ public record SaveDealerContractFormTermDto(
 public record CreateCancelBankMDDto(string DlrCtrNo, string? CancelBankMDNo = null, string? RemarkDlr = null, string? By = null);
 public record CancelBankMDTransitionDto(string? Note = null, string? By = null);
 
+// ---- Lịch làm việc / Phân công việc nhân sự Đại lý (HCare.idocNet.Biz.Wk_UserSchedule) ----
+public record CreateUserScheduleDto(
+    string UserCodeOwner,
+    string? SchCode = null,
+    string? KPIPlusCode = null,
+    string? KPIPlusName = null,
+    string? SalesID = null,
+    string? SchLocation = null,
+    DateTime? EffDTimeStart = null,
+    DateTime? EffDTimeEnd = null,
+    string? RankingType = null,
+    string? LevelType = null,
+    string? CustomerCode = null,
+    string? Remark = null,
+    string? FileName = null,
+    string? FilePath = null,
+    string? By = null);
+public record UpdateUserScheduleDto(
+    string? KPIPlusCode = null,
+    string? KPIPlusName = null,
+    string? SalesID = null,
+    string? SchLocation = null,
+    DateTime? EffDTimeStart = null,
+    DateTime? EffDTimeEnd = null,
+    string? RankingType = null,
+    string? LevelType = null,
+    string? CustomerCode = null,
+    string? Remark = null,
+    string? FileName = null,
+    string? FilePath = null,
+    string? By = null);
+public record UserScheduleTransitionDto(string? Note = null, string? By = null);
+
 public interface IVehicleService
 {
     Task<object> RegisterAsync(RegisterVehicleDto dto);
@@ -2634,6 +2667,15 @@ public interface IVehicleService
     Task<object> ListCancelBankMDsAsync(string? status, string? dealer, string? dlrCtrNo, string? bankCodeMD);
     Task<object?> GetCancelBankMDAsync(string cancelBankMDNo);
     Task<object?> CancelBankMDTransitionAsync(string cancelBankMDNo, string action, CancelBankMDTransitionDto? dto);
+
+    // ===== Lịch làm việc / Phân công việc nhân sự Đại lý (Wk_UserSchedule) =====
+    Task<object> CreateUserScheduleAsync(CreateUserScheduleDto dto);
+    Task<object> ListUserSchedulesAsync(string? status, string? userCodeOwner, string? levelType, string? kpiKeyword, DateTime? fromDate, DateTime? toDate);
+    Task<object?> GetUserScheduleAsync(string schCode);
+    Task<object?> UpdateUserScheduleAsync(string schCode, UpdateUserScheduleDto dto);
+    Task<object?> DeleteUserScheduleAsync(string schCode);
+    Task<object?> UserScheduleTransitionAsync(string schCode, string action, UserScheduleTransitionDto? dto);
+    Task<object> GetUserScheduleSummaryAsync(string? userCodeOwner);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -45174,6 +45216,234 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             x.FinishAt,
             x.CancelAt,
             x.RejectAt
+        };
+    }
+
+    // ===== Lịch làm việc / Phân công việc nhân sự Đại lý (HCare.idocNet.Biz.Wk_UserSchedule) =====
+    // Wk_UserSchedule: nhân sự đăng ký lịch làm việc theo khung thời gian hiệu lực, gắn KPI/thương vụ/khách hàng.
+    // Luồng trạng thái: P (Pending) → A (Approved) → F (Finished).
+    public async Task<object> CreateUserScheduleAsync(CreateUserScheduleDto dto)
+    {
+        var owner = dto.UserCodeOwner.Trim();
+        if (string.IsNullOrWhiteSpace(owner))
+            throw new InvalidOperationException("Cần UserCodeOwner (nhân sự sở hữu lịch).");
+
+        var schCode = string.IsNullOrWhiteSpace(dto.SchCode)
+            ? $"SCH-{DateTime.Now:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}"
+            : dto.SchCode.Trim().ToUpperInvariant();
+
+        if (await db.UserSchedules.AnyAsync(s => s.OrgId == Org && s.SchCode == schCode))
+            throw new InvalidOperationException($"Mã công việc {schCode} đã tồn tại.");
+
+        if (dto.EffDTimeStart is not null && dto.EffDTimeEnd is not null && dto.EffDTimeStart > dto.EffDTimeEnd)
+            throw new InvalidOperationException("Thời điểm bắt đầu hiệu lực phải <= thời điểm kết thúc.");
+
+        var now = DateTime.Now;
+        var e = new UserSchedule
+        {
+            OrgId = Org,
+            SchCode = schCode,
+            UserCodeOwner = owner,
+            KPIPlusCode = dto.KPIPlusCode?.Trim(),
+            KPIPlusName = dto.KPIPlusName?.Trim(),
+            SalesID = dto.SalesID?.Trim(),
+            SchLocation = dto.SchLocation?.Trim(),
+            EffDTimeStart = dto.EffDTimeStart,
+            EffDTimeEnd = dto.EffDTimeEnd,
+            RankingType = dto.RankingType?.Trim(),
+            LevelType = dto.LevelType?.Trim(),
+            CustomerCode = dto.CustomerCode?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            FileName = dto.FileName?.Trim(),
+            FilePath = dto.FilePath?.Trim(),
+            USStatus = "P",
+            CreateBy = dto.By?.Trim(),
+            CreatedAt = now,
+            LUDTime = now,
+            LUBy = dto.By?.Trim(),
+            LogLUDateTime = now,
+            LogLUBy = dto.By?.Trim()
+        };
+        db.UserSchedules.Add(e);
+        await db.SaveChangesAsync();
+        return new { e.Id, e.SchCode, e.UserCodeOwner, status = e.USStatus };
+    }
+
+    public async Task<object> ListUserSchedulesAsync(string? status, string? userCodeOwner, string? levelType, string? kpiKeyword, DateTime? fromDate, DateTime? toDate)
+    {
+        var q = db.UserSchedules.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(s => s.USStatus == status.Trim());
+        if (!string.IsNullOrWhiteSpace(userCodeOwner)) q = q.Where(s => s.UserCodeOwner == userCodeOwner.Trim());
+        if (!string.IsNullOrWhiteSpace(levelType)) q = q.Where(s => s.LevelType == levelType.Trim());
+        if (!string.IsNullOrWhiteSpace(kpiKeyword))
+        {
+            var kw = kpiKeyword.Trim();
+            q = q.Where(s => (s.KPIPlusName != null && s.KPIPlusName.Contains(kw)) || (s.KPIPlusCode != null && s.KPIPlusCode.Contains(kw)));
+        }
+        if (fromDate is not null) q = q.Where(s => s.EffDTimeStart != null && s.EffDTimeStart >= fromDate);
+        if (toDate is not null) q = q.Where(s => s.EffDTimeStart != null && s.EffDTimeStart <= toDate);
+
+        var list = await q.OrderByDescending(s => s.CreatedAt).ToListAsync();
+        return list.Select(x => new
+        {
+            x.Id,
+            x.SchCode,
+            x.UserCodeOwner,
+            x.KPIPlusCode,
+            x.KPIPlusName,
+            x.SalesID,
+            x.SchLocation,
+            x.EffDTimeStart,
+            x.EffDTimeEnd,
+            x.RankingType,
+            x.LevelType,
+            x.CustomerCode,
+            x.Remark,
+            x.USStatus,
+            x.FileName,
+            x.FilePath,
+            x.CreateBy,
+            x.CreatedAt,
+            x.LUDTime,
+            x.LUBy
+        });
+    }
+
+    public async Task<object?> GetUserScheduleAsync(string schCode)
+    {
+        var code = schCode.Trim().ToUpperInvariant();
+        var x = await db.UserSchedules.FirstOrDefaultAsync(s => s.OrgId == Org && s.SchCode == code);
+        if (x is null) return null;
+        return new
+        {
+            x.Id,
+            x.SchCode,
+            x.UserCodeOwner,
+            x.KPIPlusCode,
+            x.KPIPlusName,
+            x.SalesID,
+            x.SchLocation,
+            x.EffDTimeStart,
+            x.EffDTimeEnd,
+            x.RankingType,
+            x.LevelType,
+            x.CustomerCode,
+            x.Remark,
+            x.USStatus,
+            x.FileName,
+            x.FilePath,
+            x.CreateBy,
+            x.CreatedAt,
+            x.LUDTime,
+            x.LUBy,
+            x.LogLUDateTime,
+            x.LogLUBy
+        };
+    }
+
+    public async Task<object?> UpdateUserScheduleAsync(string schCode, UpdateUserScheduleDto dto)
+    {
+        var code = schCode.Trim().ToUpperInvariant();
+        var x = await db.UserSchedules.FirstOrDefaultAsync(s => s.OrgId == Org && s.SchCode == code);
+        if (x is null) return null;
+        // Chỉ cho sửa khi lịch còn Pending (Wk_UserSchedule_Update kiểm tra USStatus = Pending).
+        if (x.USStatus != "P") return null;
+
+        if (dto.EffDTimeStart is not null && dto.EffDTimeEnd is not null && dto.EffDTimeStart > dto.EffDTimeEnd)
+            throw new InvalidOperationException("Thời điểm bắt đầu hiệu lực phải <= thời điểm kết thúc.");
+
+        if (dto.KPIPlusCode is not null) x.KPIPlusCode = dto.KPIPlusCode.Trim();
+        if (dto.KPIPlusName is not null) x.KPIPlusName = dto.KPIPlusName.Trim();
+        if (dto.SalesID is not null) x.SalesID = dto.SalesID.Trim();
+        if (dto.SchLocation is not null) x.SchLocation = dto.SchLocation.Trim();
+        if (dto.EffDTimeStart is not null) x.EffDTimeStart = dto.EffDTimeStart;
+        if (dto.EffDTimeEnd is not null) x.EffDTimeEnd = dto.EffDTimeEnd;
+        if (dto.RankingType is not null) x.RankingType = dto.RankingType.Trim();
+        if (dto.LevelType is not null) x.LevelType = dto.LevelType.Trim();
+        if (dto.CustomerCode is not null) x.CustomerCode = dto.CustomerCode.Trim();
+        if (dto.Remark is not null) x.Remark = dto.Remark.Trim();
+        if (dto.FileName is not null) x.FileName = dto.FileName.Trim();
+        if (dto.FilePath is not null) x.FilePath = dto.FilePath.Trim();
+
+        var now = DateTime.Now;
+        x.LUDTime = now;
+        x.LUBy = dto.By?.Trim();
+        x.LogLUDateTime = now;
+        x.LogLUBy = dto.By?.Trim();
+        await db.SaveChangesAsync();
+        return new { x.SchCode, x.UserCodeOwner, status = x.USStatus, x.LUDTime, x.LUBy };
+    }
+
+    public async Task<object?> DeleteUserScheduleAsync(string schCode)
+    {
+        var code = schCode.Trim().ToUpperInvariant();
+        var x = await db.UserSchedules.FirstOrDefaultAsync(s => s.OrgId == Org && s.SchCode == code);
+        if (x is null) return null;
+        // Chỉ cho xóa khi lịch còn Pending (Wk_UserSchedule_Delete kiểm tra USStatus = Pending).
+        if (x.USStatus != "P") return null;
+        db.UserSchedules.Remove(x);
+        await db.SaveChangesAsync();
+        return new { x.SchCode, deleted = true };
+    }
+
+    public async Task<object?> UserScheduleTransitionAsync(string schCode, string action, UserScheduleTransitionDto? dto)
+    {
+        var code = schCode.Trim().ToUpperInvariant();
+        var x = await db.UserSchedules.FirstOrDefaultAsync(s => s.OrgId == Org && s.SchCode == code);
+        if (x is null) return null;
+
+        var now = DateTime.Now;
+        var by = dto?.By?.Trim();
+        switch (action.ToLowerInvariant())
+        {
+            case "approve":
+                // Duyệt lịch: P → A.
+                if (x.USStatus != "P") return null;
+                x.USStatus = "A";
+                break;
+
+            case "finish":
+                // Hoàn tất lịch: A → F (yêu cầu đã có thời điểm kết thúc hiệu lực).
+                if (x.USStatus != "A") return null;
+                if (x.EffDTimeEnd is null) return null;
+                x.USStatus = "F";
+                break;
+
+            case "reject":
+                // Từ chối lịch: A → P (trả về chờ xử lý lại).
+                if (x.USStatus != "A") return null;
+                x.USStatus = "P";
+                break;
+
+            default:
+                return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note)) x.Remark = dto.Note.Trim();
+        x.LUDTime = now;
+        x.LUBy = by;
+        x.LogLUDateTime = now;
+        x.LogLUBy = by;
+        await db.SaveChangesAsync();
+        return new { x.SchCode, x.UserCodeOwner, status = x.USStatus, x.LUDTime, x.LUBy };
+    }
+
+    public async Task<object> GetUserScheduleSummaryAsync(string? userCodeOwner)
+    {
+        var q = db.UserSchedules.Where(s => s.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(userCodeOwner)) q = q.Where(s => s.UserCodeOwner == userCodeOwner.Trim());
+
+        var list = await q.ToListAsync();
+        return new
+        {
+            total = list.Count,
+            pending = list.Count(s => s.USStatus == "P"),
+            approved = list.Count(s => s.USStatus == "A"),
+            finished = list.Count(s => s.USStatus == "F"),
+            byLevel = list.GroupBy(s => s.LevelType ?? "(none)")
+                .Select(g => new { levelType = g.Key, count = g.Count() }),
+            byRanking = list.GroupBy(s => s.RankingType ?? "(none)")
+                .Select(g => new { rankingType = g.Key, count = g.Count() })
         };
     }
 }

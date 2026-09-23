@@ -8144,3 +8144,34 @@ public sealed class CancelBankMD
     public DateTime? LogLUDateTime { get; set; }           // Thời điểm cập nhật gần nhất (LogLUDateTime)
     public string? LogLUBy { get; set; }                   // Người cập nhật gần nhất (LogLUBy)
 }
+
+/// <summary>Lịch làm việc / Phân công việc nhân sự Đại lý (HCare.idocNet.Biz.Wk_UserSchedule): nhân sự (TVBH/CVDV)
+/// đăng ký lịch làm việc theo khung thời gian hiệu lực (EffDTimeStart → EffDTimeEnd), gắn với chỉ tiêu KPI (KPIPlusCode),
+/// thương vụ bán hàng (SalesID), khách hàng (CustomerCode), địa điểm làm việc (SchLocation), xếp hạng (RankingType)
+/// và cấp độ (LevelType). Luồng trạng thái: P (Pending) → A (Approved) → F (Finished).</summary>
+public sealed class UserSchedule
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SchCode { get; set; } = "";              // Mã công việc / lịch làm việc (SchCode)
+    public string UserCodeOwner { get; set; } = "";        // Nhân sự sở hữu lịch (UserCodeOwner)
+    public string? KPIPlusCode { get; set; }               // Mã chỉ tiêu KPI gắn với lịch (KPIPlusCode)
+    public string? KPIPlusName { get; set; }               // Tên chỉ tiêu KPI (KPIPlusName)
+    public string? SalesID { get; set; }                   // Mã thương vụ bán hàng liên quan (SalesID)
+    public string? SchLocation { get; set; }               // Địa điểm làm việc (SchLocation)
+    public DateTime? EffDTimeStart { get; set; }           // Thời điểm bắt đầu hiệu lực (EffDTimeStart)
+    public DateTime? EffDTimeEnd { get; set; }             // Thời điểm kết thúc hiệu lực (EffDTimeEnd)
+    public string? RankingType { get; set; }               // Xếp hạng: GOOD / LOW / NOTGOOD (RankingType)
+    public string? LevelType { get; set; }                 // Cấp độ: HIGH / MEDIUM / LOW (LevelType)
+    public string? CustomerCode { get; set; }              // Mã khách hàng liên quan (CustomerCode)
+    public string? Remark { get; set; }                    // Ghi chú (Remark)
+    public string USStatus { get; set; } = "P";            // P (Pending) → A (Approved) → F (Finished)
+    public string? FileName { get; set; }                  // Tên tệp đính kèm (FileName)
+    public string? FilePath { get; set; }                  // Đường dẫn tệp đính kèm (FilePath)
+    public string? CreateBy { get; set; }                  // Người tạo (CreateBy)
+    public DateTime CreatedAt { get; set; } = DateTime.Now; // Ngày tạo (CreateDTime)
+    public DateTime? LUDTime { get; set; }                 // Thời điểm cập nhật gần nhất (LUDTime)
+    public string? LUBy { get; set; }                      // Người cập nhật gần nhất (LUBy)
+    public DateTime? LogLUDateTime { get; set; }           // Thời điểm ghi log cập nhật (LogLUDateTime)
+    public string? LogLUBy { get; set; }                   // Người ghi log cập nhật (LogLUBy)
+}
