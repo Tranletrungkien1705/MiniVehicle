@@ -5640,6 +5640,215 @@ app.MapGet("/api/vehicles/{vin}/marketing-fees", async (string vin, IVehicleServ
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Quản lý Chỉ tiêu Bán hàng & KPI Doanh số Xe Ô tô Đại lý & TVBH (BizHTC.MasterData & DMS.NP.Biz / SP_KPIMonth & Mst_SMKPI) =====
+
+app.MapGet("/api/sales-kpi/indicators", async (IVehicleService svc, string? category, bool? activeOnly) =>
+    Results.Ok(await svc.ListSalesKpiIndicatorsAsync(category, activeOnly))).RequireAuthorization();
+
+app.MapGet("/api/sales-kpi/indicators/{kpiCode}", async (string kpiCode, IVehicleService svc) =>
+{
+    var r = await svc.GetSalesKpiIndicatorAsync(kpiCode);
+    return r is null ? Results.NotFound(new { kpiCode, error = "Không tìm thấy chỉ số KPI." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-kpi/indicators", async (CreateSalesKpiIndicatorDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.KPICode) || string.IsNullOrWhiteSpace(dto.KPIName))
+        return Results.BadRequest(new { error = "Cần mã chỉ số KPICode và tên chỉ số KPIName." });
+    try { return Results.Ok(await svc.CreateSalesKpiIndicatorAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/sales-kpi/indicators/{kpiCode}", async (string kpiCode, UpdateSalesKpiIndicatorDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesKpiIndicatorAsync(kpiCode, dto);
+        return r is null ? Results.NotFound(new { kpiCode, error = "Không tìm thấy chỉ số KPI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/sales-kpi/indicators/{kpiCode}", async (string kpiCode, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.DeleteSalesKpiIndicatorAsync(kpiCode);
+        return r is null ? Results.NotFound(new { kpiCode, error = "Không tìm thấy chỉ số KPI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-target-kpis", async (CreateSalesTargetKpiDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.PeriodMonth) || string.IsNullOrWhiteSpace(dto.DealerCode))
+        return Results.BadRequest(new { error = "Cần tháng áp dụng PeriodMonth (YYYY-MM) và mã đại lý DealerCode." });
+    try { return Results.Ok(await svc.CreateSalesTargetKpiAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/sales-target-kpis", async (IVehicleService svc, string? status, string? dealer, string? userCode, string? month, string? quarter, int? year, string? q) =>
+    Results.Ok(await svc.ListSalesTargetKpisAsync(status, dealer, userCode, month, quarter, year, q))).RequireAuthorization();
+
+app.MapGet("/api/sales-target-kpis/summary", async (IVehicleService svc, string? periodMonth, string? dealerCode, int? periodYear) =>
+    Results.Ok(await svc.GetSalesKpiSummaryAsync(periodMonth, dealerCode, periodYear))).RequireAuthorization();
+
+app.MapGet("/api/reports/sales-target-kpis/summary", async (IVehicleService svc, string? periodMonth, string? dealerCode, int? periodYear) =>
+    Results.Ok(await svc.GetSalesKpiSummaryAsync(periodMonth, dealerCode, periodYear))).RequireAuthorization();
+
+app.MapGet("/api/sales-target-kpis/leaderboard", async (IVehicleService svc, string? periodMonth, string? dealerCode) =>
+    Results.Ok(await svc.GetSalesLeaderboardAsync(periodMonth, dealerCode))).RequireAuthorization();
+
+app.MapGet("/api/sales-target-kpis/{targetCode}", async (string targetCode, IVehicleService svc) =>
+{
+    var r = await svc.GetSalesTargetKpiAsync(targetCode);
+    return r is null ? Results.NotFound(new { targetCode, error = "Không tìm thấy kế hoạch chỉ tiêu KPI." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/sales-target-kpis/{targetCode}", async (string targetCode, UpdateSalesTargetKpiHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesTargetKpiHeaderAsync(targetCode, dto);
+        return r is null ? Results.NotFound(new { targetCode, error = "Không tìm thấy kế hoạch chỉ tiêu hoặc kế hoạch đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-target-kpis/{targetCode}/update", async (string targetCode, UpdateSalesTargetKpiHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesTargetKpiHeaderAsync(targetCode, dto);
+        return r is null ? Results.NotFound(new { targetCode, error = "Không tìm thấy kế hoạch chỉ tiêu hoặc kế hoạch đã chốt/hủy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-target-kpis/{targetCode}/{action}", async (string targetCode, string action, SalesTargetKpiTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "evaluate" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|evaluate|cancel" });
+    try
+    {
+        var r = await svc.SalesTargetKpiTransitionAsync(targetCode, action, dto);
+        return r is null ? Results.NotFound(new { targetCode, error = "Không tìm thấy kế hoạch chỉ tiêu hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-target-kpis/{targetCode}/evaluate", async (string targetCode, EvaluateSalesTargetKpiDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.EvaluateSalesTargetKpiAsync(targetCode, dto);
+        return r is null ? Results.NotFound(new { targetCode, error = "Không tìm thấy kế hoạch chỉ tiêu KPI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-target-kpis/{targetCode}/sync-actuals", async (string targetCode, string? actor, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.SyncSalesTargetKpiActualsAsync(targetCode, actor);
+        return r is null ? Results.NotFound(new { targetCode, error = "Không tìm thấy kế hoạch chỉ tiêu KPI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/sales-target-kpis/{targetCode}", async (string targetCode, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveSalesTargetKpiAsync(targetCode);
+        return r is null ? Results.NotFound(new { targetCode, error = "Không tìm thấy kế hoạch chỉ tiêu hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-target-kpis/{targetCode}/lines", async (string targetCode, List<SalesTargetKpiLineInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách dòng model xe." });
+    try
+    {
+        var r = await svc.AddSalesTargetKpiLinesAsync(targetCode, items);
+        return r is null ? Results.NotFound(new { targetCode, error = "Không tìm thấy kế hoạch chỉ tiêu." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/sales-target-kpis/{targetCode}/lines/{lineIndex:int}", async (string targetCode, int lineIndex, UpdateSalesTargetKpiLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesTargetKpiLineAsync(targetCode, lineIndex, dto);
+        return r is null ? Results.NotFound(new { targetCode, lineIndex, error = "Không tìm thấy dòng chỉ tiêu." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-target-kpis/{targetCode}/lines/{lineIndex:int}/update", async (string targetCode, int lineIndex, UpdateSalesTargetKpiLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesTargetKpiLineAsync(targetCode, lineIndex, dto);
+        return r is null ? Results.NotFound(new { targetCode, lineIndex, error = "Không tìm thấy dòng chỉ tiêu." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/sales-target-kpis/{targetCode}/lines/{lineIndex:int}", async (string targetCode, int lineIndex, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveSalesTargetKpiLineAsync(targetCode, lineIndex);
+        return r is null ? Results.NotFound(new { targetCode, lineIndex, error = "Không tìm thấy dòng chỉ tiêu." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/sales-target-kpis/{targetCode}/daily-logs", async (string targetCode, List<SalesKpiDailyLogInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách nhật ký tiến độ bán hàng." });
+    try
+    {
+        var r = await svc.AddSalesKpiDailyLogsAsync(targetCode, items);
+        return r is null ? Results.NotFound(new { targetCode, error = "Không tìm thấy kế hoạch chỉ tiêu." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/sales-target-kpis/{targetCode}/daily-logs/{lineIndex:int}", async (string targetCode, int lineIndex, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveSalesKpiDailyLogAsync(targetCode, lineIndex);
+        return r is null ? Results.NotFound(new { targetCode, lineIndex, error = "Không tìm thấy nhật ký tiến độ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/sales-kpi-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleSalesKpiInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/sales-kpis", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleSalesKpiHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/sales-kpi-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleSalesKpiHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

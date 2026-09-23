@@ -142,6 +142,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<MarketingFeeSettlement> MarketingFeeSettlements => Set<MarketingFeeSettlement>();
     public DbSet<MarketingFeeDetail> MarketingFeeDetails => Set<MarketingFeeDetail>();
     public DbSet<MarketingFeeDetailAttach> MarketingFeeDetailAttaches => Set<MarketingFeeDetailAttach>();
+    public DbSet<SalesKpiIndicator> SalesKpiIndicators => Set<SalesKpiIndicator>();
+    public DbSet<SalesTargetKpi> SalesTargetKpis => Set<SalesTargetKpi>();
+    public DbSet<SalesTargetKpiLine> SalesTargetKpiLines => Set<SalesTargetKpiLine>();
+    public DbSet<SalesKpiDailyLog> SalesKpiDailyLogs => Set<SalesKpiDailyLog>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -278,5 +282,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<MarketingFeeDetail>().HasIndex(x => new { x.OrgId, x.Vin });
         b.Entity<MarketingFeeDetailAttach>().HasIndex(x => new { x.OrgId, x.AttachCode }).IsUnique();
         b.Entity<MarketingFeeDetailAttach>().HasIndex(x => new { x.OrgId, x.MKTFeeCode });
+        b.Entity<SalesKpiIndicator>().HasIndex(x => new { x.OrgId, x.KPICode }).IsUnique();
+        b.Entity<SalesKpiIndicator>().HasIndex(x => new { x.OrgId, x.KPICategory });
+        b.Entity<SalesTargetKpi>().HasIndex(x => new { x.OrgId, x.TargetCode }).IsUnique();
+        b.Entity<SalesTargetKpi>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<SalesTargetKpi>().HasIndex(x => new { x.OrgId, x.UserCode });
+        b.Entity<SalesTargetKpi>().HasIndex(x => new { x.OrgId, x.PeriodMonth });
+        b.Entity<SalesTargetKpi>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<SalesTargetKpiLine>().HasIndex(x => new { x.OrgId, x.TargetCode });
+        b.Entity<SalesTargetKpiLine>().HasIndex(x => new { x.OrgId, x.Model });
+        b.Entity<SalesKpiDailyLog>().HasIndex(x => new { x.OrgId, x.TargetCode });
+        b.Entity<SalesKpiDailyLog>().HasIndex(x => new { x.OrgId, x.LinkedVin });
     }
 }

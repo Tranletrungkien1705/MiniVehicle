@@ -2236,6 +2236,31 @@ public interface IVehicleService
     Task<MarketingFeeSummaryDto> GetMarketingFeeSummaryAsync(string? campaignMonth, string? dealerCode);
     Task<VehicleMarketingFeeInfoDto?> GetVehicleMarketingFeeInfoAsync(string vin);
     Task<object?> GetVehicleMarketingFeeHistoryAsync(string vin);
+
+    // ===== Quản lý Chỉ tiêu Bán hàng & KPI Doanh số Xe Ô tô Đại lý & TVBH (BizHTC.MasterData & DMS.NP.Biz / SP_KPIMonth & Mst_SMKPI) =====
+    Task<object> CreateSalesKpiIndicatorAsync(CreateSalesKpiIndicatorDto dto);
+    Task<object> ListSalesKpiIndicatorsAsync(string? category, bool? activeOnly);
+    Task<object?> GetSalesKpiIndicatorAsync(string kpiCode);
+    Task<object?> UpdateSalesKpiIndicatorAsync(string kpiCode, UpdateSalesKpiIndicatorDto dto);
+    Task<object?> DeleteSalesKpiIndicatorAsync(string kpiCode);
+
+    Task<object> CreateSalesTargetKpiAsync(CreateSalesTargetKpiDto dto);
+    Task<object> ListSalesTargetKpisAsync(string? status, string? dealer, string? userCode, string? month, string? quarter, int? year, string? q);
+    Task<object?> GetSalesTargetKpiAsync(string targetCode);
+    Task<object?> UpdateSalesTargetKpiHeaderAsync(string targetCode, UpdateSalesTargetKpiHeaderDto dto);
+    Task<object?> SalesTargetKpiTransitionAsync(string targetCode, string action, SalesTargetKpiTransitionDto? dto);
+    Task<object?> EvaluateSalesTargetKpiAsync(string targetCode, EvaluateSalesTargetKpiDto dto);
+    Task<object?> SyncSalesTargetKpiActualsAsync(string targetCode, string? actor);
+    Task<object?> AddSalesTargetKpiLinesAsync(string targetCode, List<SalesTargetKpiLineInputDto> items);
+    Task<object?> UpdateSalesTargetKpiLineAsync(string targetCode, int lineIndex, UpdateSalesTargetKpiLineDto dto);
+    Task<object?> RemoveSalesTargetKpiLineAsync(string targetCode, int lineIndex);
+    Task<object?> AddSalesKpiDailyLogsAsync(string targetCode, List<SalesKpiDailyLogInputDto> items);
+    Task<object?> RemoveSalesKpiDailyLogAsync(string targetCode, int lineIndex);
+    Task<object?> RemoveSalesTargetKpiAsync(string targetCode);
+    Task<SalesKpiSummaryDto> GetSalesKpiSummaryAsync(string? periodMonth, string? dealerCode, int? periodYear);
+    Task<SalesLeaderboardDto> GetSalesLeaderboardAsync(string? periodMonth, string? dealerCode);
+    Task<VehicleSalesKpiInfoDto?> GetVehicleSalesKpiInfoAsync(string vin);
+    Task<object?> GetVehicleSalesKpiHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -39436,6 +39461,915 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             totalSupportedAmount = veh.MktFeeSupportedAmount,
             historyCount = history.Count,
             history
+        };
+    }
+
+    // ===== Quản lý Chỉ tiêu Bán hàng & KPI Doanh số Xe Ô tô Đại lý & TVBH (BizHTC.MasterData & DMS.NP.Biz / SP_KPIMonth & Mst_SMKPI) =====
+
+    public async Task<object> CreateSalesKpiIndicatorAsync(CreateSalesKpiIndicatorDto dto)
+    {
+        var kpiCode = dto.KPICode.Trim().ToUpperInvariant();
+        var exists = await db.SalesKpiIndicators.AnyAsync(k => k.OrgId == Org && k.KPICode == kpiCode);
+        if (exists)
+            throw new InvalidOperationException($"Chỉ số KPI '{kpiCode}' đã tồn tại trong hệ thống.");
+
+        var indicator = new SalesKpiIndicator
+        {
+            OrgId = Org,
+            KPICode = kpiCode,
+            KPIName = dto.KPIName.Trim(),
+            KPICategory = !string.IsNullOrWhiteSpace(dto.KPICategory) ? dto.KPICategory.Trim() : "SalesVolume",
+            Unit = !string.IsNullOrWhiteSpace(dto.Unit) ? dto.Unit.Trim() : "Xe",
+            Weight = dto.Weight ?? 10.0m,
+            TargetDefault = dto.TargetDefault ?? 10.0m,
+            FlagActive = dto.FlagActive ?? true,
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.SalesKpiIndicators.Add(indicator);
+        await db.SaveChangesAsync();
+        return indicator;
+    }
+
+    public async Task<object> ListSalesKpiIndicatorsAsync(string? category, bool? activeOnly)
+    {
+        var query = db.SalesKpiIndicators.Where(k => k.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(category))
+            query = query.Where(k => k.KPICategory == category.Trim());
+        if (activeOnly.HasValue && activeOnly.Value)
+            query = query.Where(k => k.FlagActive);
+
+        var items = await query.OrderBy(k => k.KPICategory).ThenBy(k => k.KPICode).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetSalesKpiIndicatorAsync(string kpiCode)
+    {
+        kpiCode = kpiCode.Trim().ToUpperInvariant();
+        return await db.SalesKpiIndicators.FirstOrDefaultAsync(k => k.OrgId == Org && k.KPICode == kpiCode);
+    }
+
+    public async Task<object?> UpdateSalesKpiIndicatorAsync(string kpiCode, UpdateSalesKpiIndicatorDto dto)
+    {
+        kpiCode = kpiCode.Trim().ToUpperInvariant();
+        var indicator = await db.SalesKpiIndicators.FirstOrDefaultAsync(k => k.OrgId == Org && k.KPICode == kpiCode);
+        if (indicator is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.KPIName)) indicator.KPIName = dto.KPIName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.KPICategory)) indicator.KPICategory = dto.KPICategory.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Unit)) indicator.Unit = dto.Unit.Trim();
+        if (dto.Weight.HasValue && dto.Weight.Value >= 0) indicator.Weight = dto.Weight.Value;
+        if (dto.TargetDefault.HasValue && dto.TargetDefault.Value >= 0) indicator.TargetDefault = dto.TargetDefault.Value;
+        if (dto.FlagActive.HasValue) indicator.FlagActive = dto.FlagActive.Value;
+        if (dto.Remark != null) indicator.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return indicator;
+    }
+
+    public async Task<object?> DeleteSalesKpiIndicatorAsync(string kpiCode)
+    {
+        kpiCode = kpiCode.Trim().ToUpperInvariant();
+        var indicator = await db.SalesKpiIndicators.FirstOrDefaultAsync(k => k.OrgId == Org && k.KPICode == kpiCode);
+        if (indicator is null) return null;
+
+        var inUse = await db.SalesKpiDailyLogs.AnyAsync(l => l.OrgId == Org && l.KPICode == kpiCode);
+        if (inUse)
+            throw new InvalidOperationException($"Chỉ số KPI '{kpiCode}' đang được sử dụng trong nhật ký tiến độ bán hàng, không thể xóa.");
+
+        db.SalesKpiIndicators.Remove(indicator);
+        await db.SaveChangesAsync();
+        return new { success = true, kpiCode, message = "Đã xóa chỉ số KPI thành công." };
+    }
+
+    public async Task<object> CreateSalesTargetKpiAsync(CreateSalesTargetKpiDto dto)
+    {
+        var periodMonth = dto.PeriodMonth.Trim();
+        var dealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        var userCode = !string.IsNullOrWhiteSpace(dto.UserCode) ? dto.UserCode.Trim().ToUpperInvariant() : "ALL";
+
+        var targetCode = !string.IsNullOrWhiteSpace(dto.TargetCode)
+            ? dto.TargetCode.Trim().ToUpperInvariant()
+            : $"KPI-{periodMonth}-{dealerCode}-{(await db.SalesTargetKpis.CountAsync(k => k.OrgId == Org && k.PeriodMonth == periodMonth) + 1):D4}";
+
+        var exists = await db.SalesTargetKpis.AnyAsync(k => k.OrgId == Org && k.TargetCode == targetCode);
+        if (exists)
+            throw new InvalidOperationException($"Kế hoạch chỉ tiêu KPI '{targetCode}' đã tồn tại.");
+
+        int year = dto.PeriodYear ?? (int.TryParse(periodMonth.Split('-')[0], out var y) ? y : DateTime.Now.Year);
+        int monthNum = int.TryParse(periodMonth.Split('-')[1], out var m) ? m : DateTime.Now.Month;
+        string quarter = dto.PeriodQuarter ?? $"Q{((monthNum - 1) / 3 + 1)}";
+
+        var kpi = new SalesTargetKpi
+        {
+            OrgId = Org,
+            TargetCode = targetCode,
+            TargetCodeUser = dto.TargetCodeUser?.Trim(),
+            PeriodMonth = periodMonth,
+            PeriodQuarter = quarter,
+            PeriodYear = year,
+            DealerCode = dealerCode,
+            DealerName = dto.DealerName?.Trim() ?? dealerCode,
+            UserCode = userCode,
+            UserName = dto.UserName?.Trim() ?? (userCode == "ALL" ? "Toàn Đại Lý" : userCode),
+            Position = !string.IsNullOrWhiteSpace(dto.Position) ? dto.Position.Trim() : (userCode == "ALL" ? "DealerOverall" : "SalesConsultant"),
+            TargetCarCount = dto.TargetCarCount ?? (dto.Lines?.Sum(l => l.TargetQty) ?? 0),
+            ActualCarCount = 0,
+            CarCompletionRate = 0,
+            TargetRevenue = dto.TargetRevenue ?? (dto.Lines?.Sum(l => l.TargetRevenue ?? 0) ?? 0),
+            ActualRevenue = 0,
+            RevenueCompletionRate = 0,
+            TargetTestDriveCount = dto.TargetTestDriveCount ?? 0,
+            ActualTestDriveCount = 0,
+            TargetContractCount = dto.TargetContractCount ?? 0,
+            ActualContractCount = 0,
+            TargetInsuranceCount = dto.TargetInsuranceCount ?? 0,
+            ActualInsuranceCount = 0,
+            TargetAccessoriesRevenue = dto.TargetAccessoriesRevenue ?? 0,
+            ActualAccessoriesRevenue = 0,
+            OverallScore = 0,
+            KpiGrade = "Pending",
+            BonusRate = dto.BonusRate ?? 0,
+            BonusAmount = 0,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "SalesAdmin",
+            CreatedAt = DateTime.Now
+        };
+
+        db.SalesTargetKpis.Add(kpi);
+        await db.SaveChangesAsync();
+
+        if (dto.Lines != null && dto.Lines.Count > 0)
+        {
+            int lineIdx = 1;
+            foreach (var item in dto.Lines)
+            {
+                var line = new SalesTargetKpiLine
+                {
+                    OrgId = Org,
+                    SalesTargetKpiId = kpi.Id,
+                    TargetCode = kpi.TargetCode,
+                    LineIndex = lineIdx++,
+                    Model = item.Model.Trim(),
+                    SpecCode = item.SpecCode?.Trim(),
+                    TargetQty = Math.Max(1, item.TargetQty),
+                    ActualQty = 0,
+                    CompletionRate = 0,
+                    TargetRevenue = item.TargetRevenue ?? 0,
+                    ActualRevenue = 0,
+                    CommissionPerCar = item.CommissionPerCar ?? 3000000m,
+                    BonusAmount = 0,
+                    Status = "Pending",
+                    Remark = item.Remark?.Trim()
+                };
+                db.SalesTargetKpiLines.Add(line);
+            }
+            kpi.TargetCarCount = dto.Lines.Sum(l => l.TargetQty);
+            if (dto.TargetRevenue == null || dto.TargetRevenue == 0)
+                kpi.TargetRevenue = dto.Lines.Sum(l => l.TargetRevenue ?? 0);
+        }
+
+        if (dto.DailyLogs != null && dto.DailyLogs.Count > 0)
+        {
+            int logIdx = 1;
+            foreach (var log in dto.DailyLogs)
+            {
+                var dailyLog = new SalesKpiDailyLog
+                {
+                    OrgId = Org,
+                    SalesTargetKpiId = kpi.Id,
+                    TargetCode = kpi.TargetCode,
+                    LineIndex = logIdx++,
+                    LogDate = log.LogDate ?? DateTime.Now,
+                    KPICode = log.KPICode.Trim().ToUpperInvariant(),
+                    KPIName = !string.IsNullOrWhiteSpace(log.KPIName) ? log.KPIName.Trim() : log.KPICode.Trim(),
+                    TargetDailyQty = log.TargetDailyQty ?? 1,
+                    ActualDailyQty = log.ActualDailyQty,
+                    LinkedVin = log.LinkedVin?.Trim().ToUpperInvariant(),
+                    LinkedRefNo = log.LinkedRefNo?.Trim(),
+                    Notes = log.Notes ?? "",
+                    CreatedBy = dto.CreatedBy?.Trim() ?? "SalesConsultant",
+                    CreatedAt = DateTime.Now
+                };
+                db.SalesKpiDailyLogs.Add(dailyLog);
+
+                if (!string.IsNullOrWhiteSpace(dailyLog.LinkedVin))
+                {
+                    var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == dailyLog.LinkedVin);
+                    if (veh != null)
+                    {
+                        veh.LastSalesKpiNo = kpi.TargetCode;
+                        veh.LastSalesKpiDate = dailyLog.LogDate;
+                        veh.SalesKpiCount++;
+                        Log(veh.Vin, "SalesKpiAssigned", $"{kpi.TargetCode} Ghi nhận tiến độ bán hàng '{dailyLog.KPIName}': {dailyLog.Notes}");
+                    }
+                }
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return (await GetSalesTargetKpiAsync(kpi.TargetCode))!;
+    }
+
+    public async Task<object> ListSalesTargetKpisAsync(string? status, string? dealer, string? userCode, string? month, string? quarter, int? year, string? q)
+    {
+        var query = db.SalesTargetKpis.Where(k => k.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(k => k.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(dealer))
+            query = query.Where(k => k.DealerCode == dealer.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(userCode))
+            query = query.Where(k => k.UserCode == userCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(month))
+            query = query.Where(k => k.PeriodMonth == month.Trim());
+        if (!string.IsNullOrWhiteSpace(quarter))
+            query = query.Where(k => k.PeriodQuarter == quarter.Trim());
+        if (year.HasValue && year.Value > 0)
+            query = query.Where(k => k.PeriodYear == year.Value);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var search = q.Trim().ToUpperInvariant();
+            query = query.Where(k => k.TargetCode.Contains(search) || (k.TargetCodeUser != null && k.TargetCodeUser.Contains(search)) || (k.DealerName != null && k.DealerName.ToUpper().Contains(search)) || (k.UserName != null && k.UserName.ToUpper().Contains(search)));
+        }
+
+        var items = await query.OrderByDescending(k => k.CreatedAt).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetSalesTargetKpiAsync(string targetCode)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null) return null;
+
+        var lines = await db.SalesTargetKpiLines
+            .Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id)
+            .OrderBy(l => l.LineIndex)
+            .ToListAsync();
+
+        var dailyLogs = await db.SalesKpiDailyLogs
+            .Where(d => d.OrgId == Org && d.SalesTargetKpiId == kpi.Id)
+            .OrderByDescending(d => d.LogDate)
+            .ToListAsync();
+
+        return new
+        {
+            targetKpi = kpi,
+            lines,
+            dailyLogs
+        };
+    }
+
+    public async Task<object?> UpdateSalesTargetKpiHeaderAsync(string targetCode, UpdateSalesTargetKpiHeaderDto dto)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null || kpi.Status is "Evaluated" or "Cancelled") return null;
+
+        if (dto.TargetCodeUser != null) kpi.TargetCodeUser = dto.TargetCodeUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PeriodQuarter)) kpi.PeriodQuarter = dto.PeriodQuarter.Trim();
+        if (dto.PeriodYear.HasValue && dto.PeriodYear.Value > 0) kpi.PeriodYear = dto.PeriodYear.Value;
+        if (dto.DealerName != null) kpi.DealerName = dto.DealerName.Trim();
+        if (dto.UserName != null) kpi.UserName = dto.UserName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Position)) kpi.Position = dto.Position.Trim();
+        if (dto.TargetCarCount.HasValue && dto.TargetCarCount.Value >= 0) kpi.TargetCarCount = dto.TargetCarCount.Value;
+        if (dto.TargetRevenue.HasValue && dto.TargetRevenue.Value >= 0) kpi.TargetRevenue = dto.TargetRevenue.Value;
+        if (dto.TargetTestDriveCount.HasValue && dto.TargetTestDriveCount.Value >= 0) kpi.TargetTestDriveCount = dto.TargetTestDriveCount.Value;
+        if (dto.TargetContractCount.HasValue && dto.TargetContractCount.Value >= 0) kpi.TargetContractCount = dto.TargetContractCount.Value;
+        if (dto.TargetInsuranceCount.HasValue && dto.TargetInsuranceCount.Value >= 0) kpi.TargetInsuranceCount = dto.TargetInsuranceCount.Value;
+        if (dto.TargetAccessoriesRevenue.HasValue && dto.TargetAccessoriesRevenue.Value >= 0) kpi.TargetAccessoriesRevenue = dto.TargetAccessoriesRevenue.Value;
+        if (dto.BonusRate.HasValue && dto.BonusRate.Value >= 0) kpi.BonusRate = dto.BonusRate.Value;
+        if (dto.Remark != null) kpi.Remark = dto.Remark.Trim();
+
+        kpi.CarCompletionRate = kpi.TargetCarCount > 0 ? Math.Round((decimal)kpi.ActualCarCount / kpi.TargetCarCount * 100m, 1) : 0;
+        kpi.RevenueCompletionRate = kpi.TargetRevenue > 0 ? Math.Round(kpi.ActualRevenue / kpi.TargetRevenue * 100m, 1) : 0;
+
+        await db.SaveChangesAsync();
+        return kpi;
+    }
+
+    public async Task<object?> SalesTargetKpiTransitionAsync(string targetCode, string action, SalesTargetKpiTransitionDto? dto)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        action = action.Trim().ToLowerInvariant();
+
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "SalesManager";
+
+        var lines = await db.SalesTargetKpiLines.Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id).ToListAsync();
+
+        switch (action)
+        {
+            case "submit":
+                if (kpi.Status is not "Draft") return null;
+                kpi.Status = "Submitted";
+                break;
+
+            case "approve":
+                if (kpi.Status is not ("Draft" or "Submitted")) return null;
+                kpi.Status = "Approved";
+                kpi.ApprovedBy = actor;
+                kpi.ApprovedAt = now;
+                foreach (var l in lines) l.Status = "Approved";
+                break;
+
+            case "evaluate":
+                if (kpi.Status is not "Approved") return null;
+                kpi.Status = "Evaluated";
+                kpi.EvaluatedBy = actor;
+                kpi.EvaluatedAt = now;
+                foreach (var l in lines) l.Status = "Evaluated";
+                break;
+
+            case "cancel":
+                if (kpi.Status is "Evaluated") return null;
+                kpi.Status = "Cancelled";
+                kpi.CancelledBy = actor;
+                kpi.CancelledAt = now;
+                kpi.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hủy kế hoạch chỉ tiêu KPI";
+                foreach (var l in lines) l.Status = "Cancelled";
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ. Hỗ trợ: submit, approve, evaluate, cancel.");
+        }
+
+        if (dto?.Note != null) kpi.Remark = (kpi.Remark + " | " + dto.Note).Trim(' ', '|');
+        await db.SaveChangesAsync();
+
+        return await GetSalesTargetKpiAsync(kpi.TargetCode);
+    }
+
+    public async Task<object?> EvaluateSalesTargetKpiAsync(string targetCode, EvaluateSalesTargetKpiDto dto)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null) return null;
+
+        var lines = await db.SalesTargetKpiLines.Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id).ToListAsync();
+
+        decimal carRate = kpi.TargetCarCount > 0 ? (decimal)kpi.ActualCarCount / kpi.TargetCarCount * 100m : 0m;
+        decimal revRate = kpi.TargetRevenue > 0 ? kpi.ActualRevenue / kpi.TargetRevenue * 100m : 0m;
+        decimal score = dto.OverallScore ?? Math.Round(carRate * 0.5m + revRate * 0.5m, 1);
+
+        string grade = !string.IsNullOrWhiteSpace(dto.KpiGrade) ? dto.KpiGrade.Trim() : (
+            score >= 110 ? "Excellent" :
+            score >= 100 ? "Good" :
+            score >= 80 ? "Pass" : "Underperformed"
+        );
+
+        decimal bonusRate = dto.BonusRate ?? kpi.BonusRate;
+        decimal bonusAmount = dto.BonusAmount ?? (
+            bonusRate > 0
+                ? Math.Round(kpi.ActualRevenue * (bonusRate / 100m), 0)
+                : lines.Sum(l => l.BonusAmount)
+        );
+
+        kpi.OverallScore = score;
+        kpi.KpiGrade = grade;
+        kpi.BonusRate = bonusRate;
+        kpi.BonusAmount = bonusAmount;
+        kpi.Status = "Evaluated";
+        kpi.EvaluatedBy = dto.EvaluatedBy?.Trim() ?? "SalesDirector";
+        kpi.EvaluatedAt = DateTime.Now;
+
+        if (dto.Note != null) kpi.Remark = (kpi.Remark + " | Đánh giá: " + dto.Note).Trim(' ', '|');
+
+        foreach (var l in lines) l.Status = "Evaluated";
+
+        await db.SaveChangesAsync();
+        return await GetSalesTargetKpiAsync(kpi.TargetCode);
+    }
+
+    public async Task<object?> SyncSalesTargetKpiActualsAsync(string targetCode, string? actor)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null) return null;
+
+        var dealsQuery = db.DealerDeals.Where(d => d.OrgId == Org && d.DealerCode == kpi.DealerCode && d.Status != "Cancelled" && d.Status != "Rejected");
+        if (kpi.UserCode != "ALL")
+            dealsQuery = dealsQuery.Where(d => d.SalesManCode == kpi.UserCode);
+
+        var allDeals = await dealsQuery.ToListAsync();
+        var dealIds = allDeals.Select(d => d.Id).ToList();
+
+        var dealLines = await db.DealerDealLines
+            .Where(l => l.OrgId == Org && dealIds.Contains(l.DealerDealId))
+            .ToListAsync();
+
+        var lines = await db.SalesTargetKpiLines.Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id).ToListAsync();
+
+        int actualCars = dealLines.Count;
+        decimal actualRevenue = allDeals.Sum(d => d.FinalAmount > 0 ? d.FinalAmount : d.TotalAmount);
+        int actualContracts = allDeals.Count;
+
+        foreach (var line in lines)
+        {
+            var matchingLines = dealLines.Where(dl => dl.Model.Contains(line.Model, StringComparison.OrdinalIgnoreCase)).ToList();
+            line.ActualQty = matchingLines.Count;
+            line.CompletionRate = line.TargetQty > 0 ? Math.Round((decimal)line.ActualQty / line.TargetQty * 100m, 1) : 0;
+            line.ActualRevenue = matchingLines.Sum(m => m.Price > 0 ? m.Price : m.UnitPrice);
+            line.BonusAmount = line.ActualQty * line.CommissionPerCar;
+        }
+
+        var testDrivesQuery = db.CustomerTestDrives.Where(t => t.OrgId == Org && t.DealerCode == kpi.DealerCode && t.Status == "Completed");
+        if (kpi.UserCode != "ALL")
+            testDrivesQuery = testDrivesQuery.Where(t => t.SalesManCode == kpi.UserCode);
+
+        int actualTestDrives = await testDrivesQuery.CountAsync();
+
+        kpi.ActualCarCount = actualCars > 0 ? actualCars : lines.Sum(l => l.ActualQty);
+        kpi.ActualRevenue = actualRevenue > 0 ? actualRevenue : lines.Sum(l => l.ActualRevenue);
+        kpi.ActualContractCount = actualContracts;
+        kpi.ActualTestDriveCount = actualTestDrives;
+
+        kpi.CarCompletionRate = kpi.TargetCarCount > 0 ? Math.Round((decimal)kpi.ActualCarCount / kpi.TargetCarCount * 100m, 1) : 0;
+        kpi.RevenueCompletionRate = kpi.TargetRevenue > 0 ? Math.Round(kpi.ActualRevenue / kpi.TargetRevenue * 100m, 1) : 0;
+
+        if (kpi.BonusRate > 0)
+            kpi.BonusAmount = Math.Round(kpi.ActualRevenue * (kpi.BonusRate / 100m), 0);
+        else
+            kpi.BonusAmount = lines.Sum(l => l.BonusAmount);
+
+        kpi.OverallScore = Math.Round(kpi.CarCompletionRate * 0.5m + kpi.RevenueCompletionRate * 0.5m, 1);
+        if (kpi.Status == "Evaluated" || kpi.OverallScore > 0)
+        {
+            kpi.KpiGrade = kpi.OverallScore >= 110 ? "Excellent" :
+                           kpi.OverallScore >= 100 ? "Good" :
+                           kpi.OverallScore >= 80 ? "Pass" : "Underperformed";
+        }
+
+        await db.SaveChangesAsync();
+        return await GetSalesTargetKpiAsync(kpi.TargetCode);
+    }
+
+    public async Task<object?> AddSalesTargetKpiLinesAsync(string targetCode, List<SalesTargetKpiLineInputDto> items)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null || kpi.Status is "Evaluated" or "Cancelled") return null;
+
+        int maxIdx = await db.SalesTargetKpiLines.Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id).MaxAsync(l => (int?)l.LineIndex) ?? 0;
+
+        foreach (var item in items)
+        {
+            var line = new SalesTargetKpiLine
+            {
+                OrgId = Org,
+                SalesTargetKpiId = kpi.Id,
+                TargetCode = kpi.TargetCode,
+                LineIndex = ++maxIdx,
+                Model = item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                TargetQty = Math.Max(1, item.TargetQty),
+                ActualQty = 0,
+                CompletionRate = 0,
+                TargetRevenue = item.TargetRevenue ?? 0,
+                ActualRevenue = 0,
+                CommissionPerCar = item.CommissionPerCar ?? 3000000m,
+                BonusAmount = 0,
+                Status = kpi.Status == "Draft" ? "Pending" : kpi.Status,
+                Remark = item.Remark?.Trim()
+            };
+            db.SalesTargetKpiLines.Add(line);
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.SalesTargetKpiLines.Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id).ToListAsync();
+        kpi.TargetCarCount = allLines.Sum(l => l.TargetQty);
+        kpi.TargetRevenue = allLines.Sum(l => l.TargetRevenue);
+        kpi.CarCompletionRate = kpi.TargetCarCount > 0 ? Math.Round((decimal)kpi.ActualCarCount / kpi.TargetCarCount * 100m, 1) : 0;
+        kpi.RevenueCompletionRate = kpi.TargetRevenue > 0 ? Math.Round(kpi.ActualRevenue / kpi.TargetRevenue * 100m, 1) : 0;
+
+        await db.SaveChangesAsync();
+        return await GetSalesTargetKpiAsync(kpi.TargetCode);
+    }
+
+    public async Task<object?> UpdateSalesTargetKpiLineAsync(string targetCode, int lineIndex, UpdateSalesTargetKpiLineDto dto)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null || kpi.Status is "Evaluated" or "Cancelled") return null;
+
+        var line = await db.SalesTargetKpiLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id && l.LineIndex == lineIndex);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.Model)) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (dto.TargetQty.HasValue && dto.TargetQty.Value > 0) line.TargetQty = dto.TargetQty.Value;
+        if (dto.ActualQty.HasValue && dto.ActualQty.Value >= 0) line.ActualQty = dto.ActualQty.Value;
+        if (dto.TargetRevenue.HasValue && dto.TargetRevenue.Value >= 0) line.TargetRevenue = dto.TargetRevenue.Value;
+        if (dto.ActualRevenue.HasValue && dto.ActualRevenue.Value >= 0) line.ActualRevenue = dto.ActualRevenue.Value;
+        if (dto.CommissionPerCar.HasValue && dto.CommissionPerCar.Value >= 0) line.CommissionPerCar = dto.CommissionPerCar.Value;
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        line.CompletionRate = line.TargetQty > 0 ? Math.Round((decimal)line.ActualQty / line.TargetQty * 100m, 1) : 0;
+        line.BonusAmount = line.ActualQty * line.CommissionPerCar;
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.SalesTargetKpiLines.Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id).ToListAsync();
+        kpi.TargetCarCount = allLines.Sum(l => l.TargetQty);
+        kpi.ActualCarCount = allLines.Sum(l => l.ActualQty);
+        kpi.TargetRevenue = allLines.Sum(l => l.TargetRevenue);
+        kpi.ActualRevenue = allLines.Sum(l => l.ActualRevenue);
+        kpi.CarCompletionRate = kpi.TargetCarCount > 0 ? Math.Round((decimal)kpi.ActualCarCount / kpi.TargetCarCount * 100m, 1) : 0;
+        kpi.RevenueCompletionRate = kpi.TargetRevenue > 0 ? Math.Round(kpi.ActualRevenue / kpi.TargetRevenue * 100m, 1) : 0;
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> RemoveSalesTargetKpiLineAsync(string targetCode, int lineIndex)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null || kpi.Status is "Evaluated" or "Cancelled") return null;
+
+        var line = await db.SalesTargetKpiLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id && l.LineIndex == lineIndex);
+        if (line is null) return null;
+
+        db.SalesTargetKpiLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.SalesTargetKpiLines.Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id).ToListAsync();
+        kpi.TargetCarCount = allLines.Sum(l => l.TargetQty);
+        kpi.ActualCarCount = allLines.Sum(l => l.ActualQty);
+        kpi.TargetRevenue = allLines.Sum(l => l.TargetRevenue);
+        kpi.ActualRevenue = allLines.Sum(l => l.ActualRevenue);
+        kpi.CarCompletionRate = kpi.TargetCarCount > 0 ? Math.Round((decimal)kpi.ActualCarCount / kpi.TargetCarCount * 100m, 1) : 0;
+        kpi.RevenueCompletionRate = kpi.TargetRevenue > 0 ? Math.Round(kpi.ActualRevenue / kpi.TargetRevenue * 100m, 1) : 0;
+
+        await db.SaveChangesAsync();
+        return new { success = true, lineIndex, message = "Đã xóa dòng chỉ tiêu model xe thành công." };
+    }
+
+    public async Task<object?> AddSalesKpiDailyLogsAsync(string targetCode, List<SalesKpiDailyLogInputDto> items)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null || kpi.Status is "Cancelled") return null;
+
+        int maxIdx = await db.SalesKpiDailyLogs.Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id).MaxAsync(l => (int?)l.LineIndex) ?? 0;
+
+        var createdLogs = new List<SalesKpiDailyLog>();
+        foreach (var it in items)
+        {
+            var log = new SalesKpiDailyLog
+            {
+                OrgId = Org,
+                SalesTargetKpiId = kpi.Id,
+                TargetCode = kpi.TargetCode,
+                LineIndex = ++maxIdx,
+                LogDate = it.LogDate ?? DateTime.Now,
+                KPICode = it.KPICode.Trim().ToUpperInvariant(),
+                KPIName = !string.IsNullOrWhiteSpace(it.KPIName) ? it.KPIName.Trim() : it.KPICode.Trim(),
+                TargetDailyQty = it.TargetDailyQty ?? 1,
+                ActualDailyQty = it.ActualDailyQty,
+                LinkedVin = it.LinkedVin?.Trim().ToUpperInvariant(),
+                LinkedRefNo = it.LinkedRefNo?.Trim(),
+                Notes = it.Notes ?? "",
+                CreatedBy = kpi.UserName ?? "SalesConsultant",
+                CreatedAt = DateTime.Now
+            };
+
+            db.SalesKpiDailyLogs.Add(log);
+            createdLogs.Add(log);
+
+            if (!string.IsNullOrWhiteSpace(log.LinkedVin))
+            {
+                var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == log.LinkedVin);
+                if (veh != null)
+                {
+                    veh.LastSalesKpiNo = kpi.TargetCode;
+                    veh.LastSalesKpiDate = log.LogDate;
+                    veh.SalesKpiCount++;
+                    Log(veh.Vin, "SalesKpiDailyLogAdded", $"{kpi.TargetCode} Ghi nhận tiến độ bán hàng '{log.KPIName}': {log.Notes}");
+                }
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return new { success = true, addedCount = createdLogs.Count, dailyLogs = createdLogs };
+    }
+
+    public async Task<object?> RemoveSalesKpiDailyLogAsync(string targetCode, int lineIndex)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null || kpi.Status is "Cancelled") return null;
+
+        var log = await db.SalesKpiDailyLogs.FirstOrDefaultAsync(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id && l.LineIndex == lineIndex);
+        if (log is null) return null;
+
+        db.SalesKpiDailyLogs.Remove(log);
+        await db.SaveChangesAsync();
+        return new { success = true, lineIndex, message = "Đã xóa nhật ký tiến độ bán hàng thành công." };
+    }
+
+    public async Task<object?> RemoveSalesTargetKpiAsync(string targetCode)
+    {
+        targetCode = targetCode.Trim().ToUpperInvariant();
+        var kpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && (k.TargetCode == targetCode || k.TargetCodeUser == targetCode));
+        if (kpi is null) return null;
+
+        if (kpi.Status == "Evaluated")
+            throw new InvalidOperationException("Không thể xóa kế hoạch chỉ tiêu KPI đã nghiệm thu đánh giá kết quả.");
+
+        var lines = await db.SalesTargetKpiLines.Where(l => l.OrgId == Org && l.SalesTargetKpiId == kpi.Id).ToListAsync();
+        var dailyLogs = await db.SalesKpiDailyLogs.Where(d => d.OrgId == Org && d.SalesTargetKpiId == kpi.Id).ToListAsync();
+
+        db.SalesKpiDailyLogs.RemoveRange(dailyLogs);
+        db.SalesTargetKpiLines.RemoveRange(lines);
+        db.SalesTargetKpis.Remove(kpi);
+
+        await db.SaveChangesAsync();
+        return new { success = true, targetCode = kpi.TargetCode, message = "Đã xóa kế hoạch chỉ tiêu KPI thành công." };
+    }
+
+    public async Task<SalesKpiSummaryDto> GetSalesKpiSummaryAsync(string? periodMonth, string? dealerCode, int? periodYear)
+    {
+        var query = db.SalesTargetKpis.Where(k => k.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(periodMonth))
+            query = query.Where(k => k.PeriodMonth == periodMonth.Trim());
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+            query = query.Where(k => k.DealerCode == dealerCode.Trim().ToUpperInvariant());
+        if (periodYear.HasValue && periodYear.Value > 0)
+            query = query.Where(k => k.PeriodYear == periodYear.Value);
+
+        var plans = await query.ToListAsync();
+        var planIds = plans.Select(k => k.Id).ToList();
+
+        var lines = await db.SalesTargetKpiLines.Where(l => l.OrgId == Org && planIds.Contains(l.SalesTargetKpiId)).ToListAsync();
+
+        var totalPlans = plans.Count;
+        var totalDraft = plans.Count(k => k.Status == "Draft");
+        var totalSubmitted = plans.Count(k => k.Status == "Submitted");
+        var totalApproved = plans.Count(k => k.Status == "Approved");
+        var totalEvaluated = plans.Count(k => k.Status == "Evaluated");
+        var totalCancelled = plans.Count(k => k.Status == "Cancelled");
+
+        var totalTargetCarCount = plans.Sum(k => k.TargetCarCount);
+        var totalActualCarCount = plans.Sum(k => k.ActualCarCount);
+        var overallCarRate = totalTargetCarCount > 0 ? Math.Round((decimal)totalActualCarCount / totalTargetCarCount * 100m, 1) : 0m;
+
+        var totalTargetRevenue = plans.Sum(k => k.TargetRevenue);
+        var totalActualRevenue = plans.Sum(k => k.ActualRevenue);
+        var overallRevRate = totalTargetRevenue > 0 ? Math.Round(totalActualRevenue / totalTargetRevenue * 100m, 1) : 0m;
+
+        var totalTestDrives = plans.Sum(k => k.ActualTestDriveCount);
+        var totalContracts = plans.Sum(k => k.ActualContractCount);
+        var totalInsurances = plans.Sum(k => k.ActualInsuranceCount);
+        var totalAccessoriesRevenue = plans.Sum(k => k.ActualAccessoriesRevenue);
+        var totalBonusAmount = plans.Sum(k => k.BonusAmount);
+
+        var byDealer = plans.GroupBy(k => k.DealerCode).Select(g =>
+        {
+            var targetCars = g.Sum(k => k.TargetCarCount);
+            var actualCars = g.Sum(k => k.ActualCarCount);
+            var rate = targetCars > 0 ? Math.Round((decimal)actualCars / targetCars * 100m, 1) : 0m;
+            var targetRev = g.Sum(k => k.TargetRevenue);
+            var actualRev = g.Sum(k => k.ActualRevenue);
+            var bonus = g.Sum(k => k.BonusAmount);
+            return new SalesKpiDealerStatsDto(g.Key, g.First().DealerName ?? g.Key, g.Count(), targetCars, actualCars, rate, targetRev, actualRev, bonus);
+        }).OrderByDescending(d => d.ActualCars).ToList();
+
+        var byModel = lines.GroupBy(l => l.Model).Select(g =>
+        {
+            var target = g.Sum(l => l.TargetQty);
+            var actual = g.Sum(l => l.ActualQty);
+            var rate = target > 0 ? Math.Round((decimal)actual / target * 100m, 1) : 0m;
+            var actualRev = g.Sum(l => l.ActualRevenue);
+            var bonus = g.Sum(l => l.BonusAmount);
+            return new SalesKpiModelStatsDto(g.Key, target, actual, rate, actualRev, bonus);
+        }).OrderByDescending(m => m.ActualQty).ToList();
+
+        var byConsultant = plans.Where(k => k.UserCode != "ALL").GroupBy(k => k.UserCode).Select(g =>
+        {
+            var first = g.First();
+            var targetCars = g.Sum(k => k.TargetCarCount);
+            var actualCars = g.Sum(k => k.ActualCarCount);
+            var rate = targetCars > 0 ? Math.Round((decimal)actualCars / targetCars * 100m, 1) : 0m;
+            var avgScore = g.Average(k => k.OverallScore);
+            var bonus = g.Sum(k => k.BonusAmount);
+            return new SalesKpiConsultantStatsDto(g.Key, first.UserName ?? g.Key, first.DealerCode, first.Position, targetCars, actualCars, rate, Math.Round(avgScore, 1), first.KpiGrade, bonus);
+        }).OrderByDescending(c => c.ActualCars).ToList();
+
+        var byPeriodMonth = plans.GroupBy(k => k.PeriodMonth).Select(g =>
+        {
+            var targetCars = g.Sum(k => k.TargetCarCount);
+            var actualCars = g.Sum(k => k.ActualCarCount);
+            var rate = targetCars > 0 ? Math.Round((decimal)actualCars / targetCars * 100m, 1) : 0m;
+            var totalRev = g.Sum(k => k.ActualRevenue);
+            var bonus = g.Sum(k => k.BonusAmount);
+            return new SalesKpiMonthStatsDto(g.Key, g.Count(), targetCars, actualCars, rate, totalRev, bonus);
+        }).OrderByDescending(m => m.PeriodMonth).ToList();
+
+        return new SalesKpiSummaryDto(
+            totalPlans,
+            totalDraft,
+            totalSubmitted,
+            totalApproved,
+            totalEvaluated,
+            totalCancelled,
+            totalTargetCarCount,
+            totalActualCarCount,
+            overallCarRate,
+            totalTargetRevenue,
+            totalActualRevenue,
+            overallRevRate,
+            totalTestDrives,
+            totalContracts,
+            totalInsurances,
+            totalAccessoriesRevenue,
+            totalBonusAmount,
+            byDealer,
+            byModel,
+            byConsultant,
+            byPeriodMonth
+        );
+    }
+
+    public async Task<SalesLeaderboardDto> GetSalesLeaderboardAsync(string? periodMonth, string? dealerCode)
+    {
+        var query = db.SalesTargetKpis.Where(k => k.OrgId == Org && k.Status != "Cancelled");
+
+        if (!string.IsNullOrWhiteSpace(periodMonth))
+            query = query.Where(k => k.PeriodMonth == periodMonth.Trim());
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+            query = query.Where(k => k.DealerCode == dealerCode.Trim().ToUpperInvariant());
+
+        var plans = await query.ToListAsync();
+
+        var consultants = plans
+            .Where(k => k.UserCode != "ALL")
+            .GroupBy(k => k.UserCode)
+            .Select(g =>
+            {
+                var first = g.First();
+                var actualCars = g.Sum(k => k.ActualCarCount);
+                var targetCars = g.Sum(k => k.TargetCarCount);
+                var rate = targetCars > 0 ? Math.Round((decimal)actualCars / targetCars * 100m, 1) : 0m;
+                var actualRev = g.Sum(k => k.ActualRevenue);
+                var score = g.Average(k => k.OverallScore);
+                var bonus = g.Sum(k => k.BonusAmount);
+                return new
+                {
+                    UserCode = g.Key,
+                    UserName = first.UserName ?? g.Key,
+                    first.DealerCode,
+                    DealerName = first.DealerName ?? first.DealerCode,
+                    ActualCars = actualCars,
+                    TargetCars = targetCars,
+                    Rate = rate,
+                    ActualRevenue = actualRev,
+                    Score = Math.Round(score, 1),
+                    Grade = first.KpiGrade,
+                    Bonus = bonus
+                };
+            })
+            .OrderByDescending(c => c.ActualCars)
+            .ThenByDescending(c => c.ActualRevenue)
+            .ToList();
+
+        int rankC = 1;
+        var topConsultants = consultants.Select(c => new SalesLeaderboardRankDto(
+            rankC++,
+            c.UserCode,
+            c.UserName,
+            c.DealerCode,
+            c.DealerName,
+            c.ActualCars,
+            c.TargetCars,
+            c.Rate,
+            c.ActualRevenue,
+            c.Score,
+            c.Grade,
+            c.Bonus
+        )).ToList();
+
+        var dealers = plans
+            .GroupBy(k => k.DealerCode)
+            .Select(g =>
+            {
+                var first = g.First();
+                var actualCars = g.Sum(k => k.ActualCarCount);
+                var targetCars = g.Sum(k => k.TargetCarCount);
+                var rate = targetCars > 0 ? Math.Round((decimal)actualCars / targetCars * 100m, 1) : 0m;
+                var actualRev = g.Sum(k => k.ActualRevenue);
+                var bonus = g.Sum(k => k.BonusAmount);
+                return new
+                {
+                    DealerCode = g.Key,
+                    DealerName = first.DealerName ?? g.Key,
+                    ActualCars = actualCars,
+                    TargetCars = targetCars,
+                    Rate = rate,
+                    ActualRevenue = actualRev,
+                    Bonus = bonus
+                };
+            })
+            .OrderByDescending(d => d.ActualCars)
+            .ThenByDescending(d => d.ActualRevenue)
+            .ToList();
+
+        int rankD = 1;
+        var topDealers = dealers.Select(d => new SalesLeaderboardDealerRankDto(
+            rankD++,
+            d.DealerCode,
+            d.DealerName,
+            d.ActualCars,
+            d.TargetCars,
+            d.Rate,
+            d.ActualRevenue,
+            d.Bonus
+        )).ToList();
+
+        return new SalesLeaderboardDto(
+            periodMonth,
+            dealerCode,
+            DateTime.Now,
+            topConsultants,
+            topDealers
+        );
+    }
+
+    public async Task<VehicleSalesKpiInfoDto?> GetVehicleSalesKpiInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var relatedLogs = await db.SalesKpiDailyLogs
+            .Where(l => l.OrgId == Org && l.LinkedVin == vin)
+            .OrderByDescending(l => l.LogDate)
+            .ToListAsync();
+
+        SalesTargetKpi? targetKpi = null;
+        if (!string.IsNullOrWhiteSpace(veh.LastSalesKpiNo))
+        {
+            targetKpi = await db.SalesTargetKpis.FirstOrDefaultAsync(k => k.OrgId == Org && k.TargetCode == veh.LastSalesKpiNo);
+        }
+
+        return new VehicleSalesKpiInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.DealerCode,
+            veh.LastSalesKpiNo,
+            veh.LastSalesKpiDate,
+            veh.SalesKpiCount,
+            targetKpi,
+            relatedLogs
+        );
+    }
+
+    public async Task<object?> GetVehicleSalesKpiHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var logs = await db.SalesKpiDailyLogs
+            .Where(l => l.OrgId == Org && l.LinkedVin == vin)
+            .OrderByDescending(l => l.LogDate)
+            .Select(l => new
+            {
+                l.TargetCode,
+                l.LineIndex,
+                l.LogDate,
+                l.KPICode,
+                l.KPIName,
+                l.TargetDailyQty,
+                l.ActualDailyQty,
+                l.LinkedVin,
+                l.LinkedRefNo,
+                l.Notes,
+                l.CreatedBy
+            }).ToListAsync();
+
+        return new
+        {
+            vin,
+            model = veh.Model,
+            lastSalesKpiNo = veh.LastSalesKpiNo,
+            lastSalesKpiDate = veh.LastSalesKpiDate,
+            salesKpiCount = veh.SalesKpiCount,
+            historyCount = logs.Count,
+            logs
         };
     }
 }

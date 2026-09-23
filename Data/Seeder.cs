@@ -7057,6 +7057,575 @@ public static class Seeder
             }
         }
 
+        // ===== Quản lý Chỉ tiêu Bán hàng & KPI Doanh số Xe Ô tô (BizHTC.MasterData & DMS.NP.Biz / SP_KPIMonth, Mst_SMKPI / SalesTargetKpi) =====
+        if (!await db.SalesKpiIndicators.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            db.SalesKpiIndicators.AddRange(
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_CALL_LEADS",
+                    KPIName = "Số cuộc gọi tiếp cận khách hàng tiềm năng (Outbound Leads Call)",
+                    KPICategory = "Activity",
+                    Unit = "Cuộc",
+                    Weight = 10.0m,
+                    TargetDefault = 100,
+                    FlagActive = true,
+                    Remark = "Gọi điện chào giá, tư vấn khuyến mãi xe mới theo danh sách Leads",
+                    CreatedBy = "admin.htv"
+                },
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_SHOWROOM_VISIT",
+                    KPIName = "Số lượt tiếp đón khách hàng tham quan Showroom (Showroom Traffic)",
+                    KPICategory = "Activity",
+                    Unit = "Lượt",
+                    Weight = 15.0m,
+                    TargetDefault = 25,
+                    FlagActive = true,
+                    Remark = "Tiếp đón, ghi nhận thông tin và tư vấn trực tiếp tại Showroom",
+                    CreatedBy = "admin.htv"
+                },
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_TEST_DRIVE",
+                    KPIName = "Số lượt hướng dẫn khách hàng lái thử xe thực tế (Test Drive)",
+                    KPICategory = "Activity",
+                    Unit = "Lượt",
+                    Weight = 15.0m,
+                    TargetDefault = 15,
+                    FlagActive = true,
+                    Remark = "Tổ chức trải nghiệm lái thử xe Showroom / Roadshow / Home Drive",
+                    CreatedBy = "admin.htv"
+                },
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_QUOTATION",
+                    KPIName = "Số bảng báo giá & dự toán chi phí lăn bánh phát hành (Quotation Sent)",
+                    KPICategory = "Activity",
+                    Unit = "Báo giá",
+                    Weight = 10.0m,
+                    TargetDefault = 20,
+                    FlagActive = true,
+                    Remark = "Lập bảng giá chi tiết lăn bánh kèm phương án vay ngân hàng cho khách",
+                    CreatedBy = "admin.htv"
+                },
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_CONTRACT_SIGN",
+                    KPIName = "Số hợp đồng mua bán xe ký mới & nhận cọc (Contract Signed)",
+                    KPICategory = "SalesVolume",
+                    Unit = "Hợp đồng",
+                    Weight = 15.0m,
+                    TargetDefault = 8,
+                    FlagActive = true,
+                    Remark = "Ký kết hợp đồng bán lẻ và thu tiền đặt cọc theo quy định",
+                    CreatedBy = "admin.htv"
+                },
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_RETAIL_DELIVERY",
+                    KPIName = "Số lượng xe thực tế bàn giao cho khách hàng (Retail Delivery)",
+                    KPICategory = "SalesVolume",
+                    Unit = "Xe",
+                    Weight = 20.0m,
+                    TargetDefault = 6,
+                    FlagActive = true,
+                    Remark = "Hoàn tất thủ tục bàn giao xe mới, kích hoạt sổ bảo hành online SBH",
+                    CreatedBy = "admin.htv"
+                },
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_INSURANCE_SOLD",
+                    KPIName = "Số hợp đồng bảo hiểm vật chất thân vỏ bán kèm xe (Insurance Sold)",
+                    KPICategory = "Revenue",
+                    Unit = "Hợp đồng",
+                    Weight = 5.0m,
+                    TargetDefault = 5,
+                    FlagActive = true,
+                    Remark = "Bán bảo hiểm vật chất chính hãng liên kết Bảo Việt / PJICO / PTI",
+                    CreatedBy = "admin.htv"
+                },
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_ACCESSORIES_VAL",
+                    KPIName = "Tổng doanh số bán phụ kiện & gói làm đẹp xe (Accessories Revenue)",
+                    KPICategory = "Revenue",
+                    Unit = "VNĐ",
+                    Weight = 5.0m,
+                    TargetDefault = 35000000,
+                    FlagActive = true,
+                    Remark = "Doanh thu phụ kiện chính hãng: Phim cách nhiệt, Phủ ceramic, Camera hành trình, Thảm lót sàn",
+                    CreatedBy = "admin.htv"
+                },
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_FINANCE_LOAN",
+                    KPIName = "Số lượng hồ sơ vay vốn ngân hàng giải ngân thành công (Bank Loan)",
+                    KPICategory = "Revenue",
+                    Unit = "Hồ sơ",
+                    Weight = 5.0m,
+                    TargetDefault = 4,
+                    FlagActive = true,
+                    Remark = "Hỗ trợ thủ tục vay trả góp qua VCB, Techcombank, VPBank, Shinhan",
+                    CreatedBy = "admin.htv"
+                },
+                new SalesKpiIndicator
+                {
+                    OrgId = org,
+                    KPICode = "KPI_CSI_SCORE",
+                    KPIName = "Điểm đánh giá chỉ số hài lòng khách hàng SSI/CSI (Customer Satisfaction)",
+                    KPICategory = "Quality",
+                    Unit = "Điểm",
+                    Weight = 10.0m,
+                    TargetDefault = 4.8m,
+                    FlagActive = true,
+                    Remark = "Khảo sát sau giao xe ICIC đạt tối thiểu 4.8 / 5.0 sao",
+                    CreatedBy = "admin.htv"
+                }
+            );
+        }
+
+        if (!await db.SalesTargetKpis.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+
+            // Kế hoạch 1: Toàn đại lý Hà Nội 01 (DLR-HN01) Tháng 03/2026
+            var kpi1 = new SalesTargetKpi
+            {
+                OrgId = org,
+                TargetCode = "KPI-202603-HN01-0001",
+                TargetCodeUser = "CT-KPI/2026/03-HN01-ALL",
+                PeriodMonth = "2026-03",
+                PeriodQuarter = "Q1",
+                PeriodYear = 2026,
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01 - Cầu Giấy",
+                UserCode = "ALL",
+                UserName = "Toàn Đại Lý Hà Nội 01",
+                Position = "DealerOverall",
+                TargetCarCount = 20,
+                ActualCarCount = 18,
+                CarCompletionRate = 90.0m,
+                TargetRevenue = 13500000000m,
+                ActualRevenue = 12200000000m,
+                RevenueCompletionRate = 90.37m,
+                TargetTestDriveCount = 45,
+                ActualTestDriveCount = 42,
+                TargetContractCount = 22,
+                ActualContractCount = 20,
+                TargetInsuranceCount = 16,
+                ActualInsuranceCount = 15,
+                TargetAccessoriesRevenue = 150000000m,
+                ActualAccessoriesRevenue = 135000000m,
+                OverallScore = 91.5m,
+                KpiGrade = "Good",
+                BonusRate = 10.0m,
+                BonusAmount = 54000000m,
+                Status = "Approved",
+                Remark = "Kế hoạch chỉ tiêu doanh số bán hàng đại lý Hà Nội 01 tháng 03/2026, tập trung thúc đẩy SantaFe & Accent",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-25),
+                ApprovedBy = "Giám Đốc Bán Hàng OEM - Phạm Hoàng Long",
+                ApprovedAt = DateTime.Now.AddDays(-23)
+            };
+
+            // Kế hoạch 2: TVBH Trần Thị Tư Vấn (DLR-HN01) Tháng 03/2026 - Đã nghiệm thu Đạt Xuất sắc
+            var kpi2 = new SalesTargetKpi
+            {
+                OrgId = org,
+                TargetCode = "KPI-202603-HN01-0002",
+                TargetCodeUser = "CT-KPI/2026/03-HN01-TVBH01",
+                PeriodMonth = "2026-03",
+                PeriodQuarter = "Q1",
+                PeriodYear = 2026,
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01 - Cầu Giấy",
+                UserCode = "TVBH-HN01-01",
+                UserName = "Trần Thị Tư Vấn",
+                Position = "SalesConsultant",
+                TargetCarCount = 6,
+                ActualCarCount = 7,
+                CarCompletionRate = 116.67m,
+                TargetRevenue = 4200000000m,
+                ActualRevenue = 4850000000m,
+                RevenueCompletionRate = 115.48m,
+                TargetTestDriveCount = 15,
+                ActualTestDriveCount = 18,
+                TargetContractCount = 7,
+                ActualContractCount = 8,
+                TargetInsuranceCount = 5,
+                ActualInsuranceCount = 6,
+                TargetAccessoriesRevenue = 40000000m,
+                ActualAccessoriesRevenue = 45000000m,
+                OverallScore = 115.0m,
+                KpiGrade = "Excellent",
+                BonusRate = 20.0m,
+                BonusAmount = 25200000m,
+                Status = "Evaluated",
+                Remark = "Hoàn thành vượt 116% chỉ tiêu bán xe và 115% doanh thu, xếp loại Xuất sắc",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-25),
+                ApprovedBy = "Trưởng phòng KD - Nguyễn Hữu Thắng",
+                ApprovedAt = DateTime.Now.AddDays(-23),
+                EvaluatedBy = "Giám Đốc Đại Lý - Trần Văn Bình",
+                EvaluatedAt = DateTime.Now.AddDays(-2)
+            };
+
+            // Kế hoạch 3: TVBH Lê Văn Bán Hàng (DLR-HN01) Tháng 03/2026 - Đang thực hiện
+            var kpi3 = new SalesTargetKpi
+            {
+                OrgId = org,
+                TargetCode = "KPI-202603-HN01-0003",
+                TargetCodeUser = "CT-KPI/2026/03-HN01-TVBH02",
+                PeriodMonth = "2026-03",
+                PeriodQuarter = "Q1",
+                PeriodYear = 2026,
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01 - Cầu Giấy",
+                UserCode = "TVBH-HN01-02",
+                UserName = "Lê Văn Bán Hàng",
+                Position = "SalesConsultant",
+                TargetCarCount = 5,
+                ActualCarCount = 4,
+                CarCompletionRate = 80.0m,
+                TargetRevenue = 3500000000m,
+                ActualRevenue = 2800000000m,
+                RevenueCompletionRate = 80.0m,
+                TargetTestDriveCount = 12,
+                ActualTestDriveCount = 10,
+                TargetContractCount = 5,
+                ActualContractCount = 4,
+                TargetInsuranceCount = 4,
+                ActualInsuranceCount = 3,
+                TargetAccessoriesRevenue = 30000000m,
+                ActualAccessoriesRevenue = 22000000m,
+                OverallScore = 80.5m,
+                KpiGrade = "Pass",
+                BonusRate = 0m,
+                BonusAmount = 12000000m,
+                Status = "Approved",
+                Remark = "Đang tích cực bám sát khách hàng tiềm năng để chốt hợp đồng trước cuối tháng",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-25),
+                ApprovedBy = "Trưởng phòng KD - Nguyễn Hữu Thắng",
+                ApprovedAt = DateTime.Now.AddDays(-23)
+            };
+
+            // Kế hoạch 4: TVBH Lê Hoàng Nam (DLR-HCM01) Tháng 04/2026 - Đang trình duyệt
+            var kpi4 = new SalesTargetKpi
+            {
+                OrgId = org,
+                TargetCode = "KPI-202604-HCM01-0001",
+                TargetCodeUser = "CT-KPI/2026/04-HCM01-TVBH01",
+                PeriodMonth = "2026-04",
+                PeriodQuarter = "Q2",
+                PeriodYear = 2026,
+                DealerCode = "DLR-HCM01",
+                DealerName = "Hyundai Sài Gòn",
+                UserCode = "TVBH-HCM01-01",
+                UserName = "Lê Hoàng Nam",
+                Position = "SalesConsultant",
+                TargetCarCount = 8,
+                ActualCarCount = 0,
+                CarCompletionRate = 0m,
+                TargetRevenue = 6000000000m,
+                ActualRevenue = 0m,
+                RevenueCompletionRate = 0m,
+                TargetTestDriveCount = 20,
+                ActualTestDriveCount = 0,
+                TargetContractCount = 9,
+                ActualContractCount = 0,
+                TargetInsuranceCount = 6,
+                ActualInsuranceCount = 0,
+                TargetAccessoriesRevenue = 50000000m,
+                ActualAccessoriesRevenue = 0m,
+                OverallScore = 0m,
+                KpiGrade = "Pending",
+                BonusRate = 15.0m,
+                BonusAmount = 0m,
+                Status = "Submitted",
+                Remark = "Kế hoạch chỉ tiêu tháng 04/2026 chào đón xe điện IONIQ 5 và SUV SantaFe mới",
+                CreatedBy = "dealer.hcm01",
+                CreatedAt = DateTime.Now.AddDays(-2)
+            };
+
+            db.SalesTargetKpis.AddRange(kpi1, kpi2, kpi3, kpi4);
+            await db.SaveChangesAsync();
+
+            // Lines cho kpi1 (Toàn đại lý)
+            db.SalesTargetKpiLines.AddRange(
+                new SalesTargetKpiLine
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi1.Id,
+                    TargetCode = kpi1.TargetCode,
+                    LineIndex = 1,
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    TargetQty = 8,
+                    ActualQty = 7,
+                    CompletionRate = 87.5m,
+                    TargetRevenue = 4400000000m,
+                    ActualRevenue = 3850000000m,
+                    CommissionPerCar = 3000000m,
+                    BonusAmount = 21000000m,
+                    Status = "Approved",
+                    Remark = "Dòng xe chủ lực phân khúc sedan B"
+                },
+                new SalesTargetKpiLine
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi1.Id,
+                    TargetCode = kpi1.TargetCode,
+                    LineIndex = 2,
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    TargetQty = 6,
+                    ActualQty = 6,
+                    CompletionRate = 100.0m,
+                    TargetRevenue = 4200000000m,
+                    ActualRevenue = 4200000000m,
+                    CommissionPerCar = 3500000m,
+                    BonusAmount = 21000000m,
+                    Status = "Approved",
+                    Remark = "SUV đô thị bán chạy"
+                },
+                new SalesTargetKpiLine
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi1.Id,
+                    TargetCode = kpi1.TargetCode,
+                    LineIndex = 3,
+                    Model = "SantaFe 2.5T AWD",
+                    SpecCode = "2.5T AWD Calligraphy",
+                    TargetQty = 4,
+                    ActualQty = 3,
+                    CompletionRate = 75.0m,
+                    TargetRevenue = 5400000000m,
+                    ActualRevenue = 4050000000m,
+                    CommissionPerCar = 5000000m,
+                    BonusAmount = 15000000m,
+                    Status = "Approved",
+                    Remark = "SUV cao cấp 7 chỗ"
+                },
+                new SalesTargetKpiLine
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi1.Id,
+                    TargetCode = kpi1.TargetCode,
+                    LineIndex = 4,
+                    Model = "Tucson 1.6T HTRAC",
+                    SpecCode = "1.6 Turbo AWD",
+                    TargetQty = 2,
+                    ActualQty = 2,
+                    CompletionRate = 100.0m,
+                    TargetRevenue = 1900000000m,
+                    ActualRevenue = 1900000000m,
+                    CommissionPerCar = 4000000m,
+                    BonusAmount = 8000000m,
+                    Status = "Approved",
+                    Remark = "Crossover phân khúc C"
+                }
+            );
+
+            // Lines cho kpi2 (TVBH Trần Thị Tư Vấn)
+            db.SalesTargetKpiLines.AddRange(
+                new SalesTargetKpiLine
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi2.Id,
+                    TargetCode = kpi2.TargetCode,
+                    LineIndex = 1,
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    TargetQty = 3,
+                    ActualQty = 4,
+                    CompletionRate = 133.33m,
+                    TargetRevenue = 1650000000m,
+                    ActualRevenue = 2200000000m,
+                    CommissionPerCar = 3000000m,
+                    BonusAmount = 14400000m,
+                    Status = "Evaluated",
+                    Remark = "Bán vượt chỉ tiêu 4 xe Accent (kèm DEMOVIN00000001)"
+                },
+                new SalesTargetKpiLine
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi2.Id,
+                    TargetCode = kpi2.TargetCode,
+                    LineIndex = 2,
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    TargetQty = 2,
+                    ActualQty = 2,
+                    CompletionRate = 100.0m,
+                    TargetRevenue = 1400000000m,
+                    ActualRevenue = 1400000000m,
+                    CommissionPerCar = 3500000m,
+                    BonusAmount = 8400000m,
+                    Status = "Evaluated",
+                    Remark = "Bán đúng chỉ tiêu 2 xe Creta (kèm DEMOVIN00000002)"
+                },
+                new SalesTargetKpiLine
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi2.Id,
+                    TargetCode = kpi2.TargetCode,
+                    LineIndex = 3,
+                    Model = "SantaFe 2.5T AWD",
+                    SpecCode = "2.5T AWD Calligraphy",
+                    TargetQty = 1,
+                    ActualQty = 1,
+                    CompletionRate = 100.0m,
+                    TargetRevenue = 1350000000m,
+                    ActualRevenue = 1350000000m,
+                    CommissionPerCar = 5000000m,
+                    BonusAmount = 6000000m,
+                    Status = "Evaluated",
+                    Remark = "Chốt thành công 1 hợp đồng SantaFe Calligraphy bản Full"
+                }
+            );
+
+            // Lines cho kpi3 (TVBH Lê Văn Bán Hàng)
+            db.SalesTargetKpiLines.AddRange(
+                new SalesTargetKpiLine
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi3.Id,
+                    TargetCode = kpi3.TargetCode,
+                    LineIndex = 1,
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    TargetQty = 3,
+                    ActualQty = 2,
+                    CompletionRate = 66.67m,
+                    TargetRevenue = 1650000000m,
+                    ActualRevenue = 1100000000m,
+                    CommissionPerCar = 3000000m,
+                    BonusAmount = 6000000m,
+                    Status = "Approved",
+                    Remark = "Đã giao 2 xe, đang chăm sóc 2 khách hẹn chốt"
+                },
+                new SalesTargetKpiLine
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi3.Id,
+                    TargetCode = kpi3.TargetCode,
+                    LineIndex = 2,
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    TargetQty = 2,
+                    ActualQty = 2,
+                    CompletionRate = 100.0m,
+                    TargetRevenue = 1400000000m,
+                    ActualRevenue = 1400000000m,
+                    CommissionPerCar = 3500000m,
+                    BonusAmount = 7000000m,
+                    Status = "Approved",
+                    Remark = "Đã giao 2 xe Creta cho khách hàng gia đình"
+                }
+            );
+
+            // Daily Logs cho kpi2
+            db.SalesKpiDailyLogs.AddRange(
+                new SalesKpiDailyLog
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi2.Id,
+                    TargetCode = kpi2.TargetCode,
+                    LineIndex = 1,
+                    LogDate = DateTime.Now.AddDays(-18),
+                    KPICode = "KPI_TEST_DRIVE",
+                    KPIName = "Số lượt hướng dẫn khách hàng lái thử xe thực tế",
+                    TargetDailyQty = 1,
+                    ActualDailyQty = 2,
+                    LinkedVin = "DEMOVIN00000001",
+                    LinkedRefNo = "DT202603-0001",
+                    Notes = "Hướng dẫn khách hàng Hoàng Minh Đức lái thử xe Accent 1.4 AT tại showroom Phạm Văn Đồng",
+                    CreatedBy = "dealer.hn01",
+                    CreatedAt = DateTime.Now.AddDays(-18)
+                },
+                new SalesKpiDailyLog
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi2.Id,
+                    TargetCode = kpi2.TargetCode,
+                    LineIndex = 2,
+                    LogDate = DateTime.Now.AddDays(-15),
+                    KPICode = "KPI_CONTRACT_SIGN",
+                    KPIName = "Số hợp đồng mua bán xe ký mới & nhận cọc",
+                    TargetDailyQty = 1,
+                    ActualDailyQty = 1,
+                    LinkedVin = "DEMOVIN00000001",
+                    LinkedRefNo = "DEAL202603-001",
+                    Notes = "Ký hợp đồng bán lẻ DEAL202603-001 xe Accent 1.4 AT cho anh Nguyễn Văn An, nhận cọc 50 triệu",
+                    CreatedBy = "dealer.hn01",
+                    CreatedAt = DateTime.Now.AddDays(-15)
+                },
+                new SalesKpiDailyLog
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi2.Id,
+                    TargetCode = kpi2.TargetCode,
+                    LineIndex = 3,
+                    LogDate = DateTime.Now.AddDays(-10),
+                    KPICode = "KPI_RETAIL_DELIVERY",
+                    KPIName = "Số lượng xe thực tế bàn giao cho khách hàng",
+                    TargetDailyQty = 1,
+                    ActualDailyQty = 1,
+                    LinkedVin = "DEMOVIN00000001",
+                    LinkedRefNo = "DEAL202603-001",
+                    Notes = "Bàn giao xe Accent DEMOVIN00000001 cho khách hàng, kích hoạt Sổ bảo hành Online SBH",
+                    CreatedBy = "dealer.hn01",
+                    CreatedAt = DateTime.Now.AddDays(-10)
+                },
+                new SalesKpiDailyLog
+                {
+                    OrgId = org,
+                    SalesTargetKpiId = kpi2.Id,
+                    TargetCode = kpi2.TargetCode,
+                    LineIndex = 4,
+                    LogDate = DateTime.Now.AddDays(-5),
+                    KPICode = "KPI_RETAIL_DELIVERY",
+                    KPIName = "Số lượng xe thực tế bàn giao cho khách hàng",
+                    TargetDailyQty = 1,
+                    ActualDailyQty = 1,
+                    LinkedVin = "DEMOVIN00000002",
+                    LinkedRefNo = "DEAL202603-002",
+                    Notes = "Bàn giao xe Creta DEMOVIN00000002 cho khách hàng chị Trần Thị Mai",
+                    CreatedBy = "dealer.hn01",
+                    CreatedAt = DateTime.Now.AddDays(-5)
+                }
+            );
+
+            // Cập nhật thông tin KPI trên hồ sơ xe VIN
+            var v1Kpi = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Kpi != null)
+            {
+                v1Kpi.LastSalesKpiNo = kpi2.TargetCode;
+                v1Kpi.LastSalesKpiDate = DateTime.Now.AddDays(-10);
+                v1Kpi.SalesKpiCount = 2; // Ghi nhận cả kpi1 (Đại lý) và kpi2 (TVBH)
+            }
+
+            var v2Kpi = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Kpi != null)
+            {
+                v2Kpi.LastSalesKpiNo = kpi2.TargetCode;
+                v2Kpi.LastSalesKpiDate = DateTime.Now.AddDays(-5);
+                v2Kpi.SalesKpiCount = 2;
+            }
+        }
+
         await db.SaveChangesAsync();
     }
 
@@ -7330,11 +7899,18 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastMktFeeNo\" text NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastMktFeeDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"MktFeeCount\" integer NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastSalesKpiNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastSalesKpiDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"SalesKpiCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"MarketingActivityTypes\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MKTActivityTypeCode\" text NOT NULL DEFAULT '', \"MKTActivityTypeName\" text NOT NULL DEFAULT '', \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE TABLE IF NOT EXISTS public.\"MarketingActivities\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MKTActivityCode\" text NOT NULL DEFAULT '', \"MKTActivityName\" text NOT NULL DEFAULT '', \"MKTActivityTypeCode\" text NOT NULL DEFAULT 'DIGITAL', \"DefaultHTCLimitPrice\" numeric NOT NULL DEFAULT 0, \"FlagDesignImage\" boolean NOT NULL DEFAULT true, \"FlagActualImage\" boolean NOT NULL DEFAULT true, \"FlagContract\" boolean NOT NULL DEFAULT true, \"FlagInvoice\" boolean NOT NULL DEFAULT true, \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE TABLE IF NOT EXISTS public.\"MarketingFeeSettlements\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MKTFeeCode\" text NOT NULL DEFAULT '', \"MKTFeeCodeUser\" text NULL, \"MKTFeeName\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"CampaignMonth\" text NOT NULL DEFAULT '', \"DateStart\" timestamp NOT NULL DEFAULT now(), \"DateEnd\" timestamp NOT NULL DEFAULT now(), \"TotalActivityCount\" integer NOT NULL DEFAULT 0, \"TotalAmountDealer\" numeric NOT NULL DEFAULT 0, \"TotalAmountApproved\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmountAfterVAT\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"BankRefNo\" text NULL, \"SettledDate\" timestamp NULL, \"SettledBy\" text NULL, \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE TABLE IF NOT EXISTS public.\"MarketingFeeDetails\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MarketingFeeSettlementId\" bigint NOT NULL, \"MKTFeeCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"MKTActivityCode\" text NOT NULL DEFAULT '', \"MKTActivityName\" text NOT NULL DEFAULT '', \"MKTActivityTypeCode\" text NOT NULL DEFAULT 'DIGITAL', \"Vin\" text NULL, \"Model\" text NULL, \"SpecCode\" text NULL, \"Qty\" numeric NOT NULL DEFAULT 1, \"Price\" numeric NOT NULL DEFAULT 0, \"TotalAmountDealer\" numeric NOT NULL DEFAULT 0, \"HTCLimitPrice\" numeric NOT NULL DEFAULT 0, \"ApprovedQty\" numeric NOT NULL DEFAULT 0, \"ApprovedAmount\" numeric NOT NULL DEFAULT 0, \"FlagDesignImage\" boolean NOT NULL DEFAULT true, \"FlagActualImage\" boolean NOT NULL DEFAULT true, \"FlagContract\" boolean NOT NULL DEFAULT true, \"FlagInvoice\" boolean NOT NULL DEFAULT true, \"HasDesignImage\" boolean NOT NULL DEFAULT false, \"HasActualImage\" boolean NOT NULL DEFAULT false, \"HasContract\" boolean NOT NULL DEFAULT false, \"HasInvoice\" boolean NOT NULL DEFAULT false, \"Status\" text NOT NULL DEFAULT 'Pending', \"RejectReason\" text NULL, \"Remark\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"MarketingFeeDetailAttaches\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MarketingFeeDetailId\" bigint NOT NULL, \"MKTFeeCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"AttachCode\" text NOT NULL DEFAULT '', \"FileType\" text NOT NULL DEFAULT 'ActualImage', \"FileName\" text NOT NULL DEFAULT '', \"FilePath\" text NULL, \"FileSizeKb\" bigint NOT NULL DEFAULT 1024, \"Status\" text NOT NULL DEFAULT 'Approved', \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"Remark\" text NULL, \"UploadedAt\" timestamp NOT NULL DEFAULT now())"
+            "CREATE TABLE IF NOT EXISTS public.\"MarketingFeeDetailAttaches\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"MarketingFeeDetailId\" bigint NOT NULL, \"MKTFeeCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"AttachCode\" text NOT NULL DEFAULT '', \"FileType\" text NOT NULL DEFAULT 'ActualImage', \"FileName\" text NOT NULL DEFAULT '', \"FilePath\" text NULL, \"FileSizeKb\" bigint NOT NULL DEFAULT 1024, \"Status\" text NOT NULL DEFAULT 'Approved', \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"Remark\" text NULL, \"UploadedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS public.\"SalesKpiIndicators\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"KPICode\" text NOT NULL DEFAULT '', \"KPIName\" text NOT NULL DEFAULT '', \"KPICategory\" text NOT NULL DEFAULT 'SalesVolume', \"Unit\" text NOT NULL DEFAULT 'Xe', \"Weight\" numeric NOT NULL DEFAULT 10.0, \"TargetDefault\" numeric NOT NULL DEFAULT 10.0, \"FlagActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "CREATE TABLE IF NOT EXISTS public.\"SalesTargetKpis\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TargetCode\" text NOT NULL DEFAULT '', \"TargetCodeUser\" text NULL, \"PeriodMonth\" text NOT NULL DEFAULT '', \"PeriodQuarter\" text NOT NULL DEFAULT 'Q1', \"PeriodYear\" integer NOT NULL DEFAULT 2026, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"UserCode\" text NOT NULL DEFAULT 'ALL', \"UserName\" text NULL DEFAULT 'Toàn Đại Lý', \"Position\" text NOT NULL DEFAULT 'SalesConsultant', \"TargetCarCount\" integer NOT NULL DEFAULT 0, \"ActualCarCount\" integer NOT NULL DEFAULT 0, \"CarCompletionRate\" numeric NOT NULL DEFAULT 0, \"TargetRevenue\" numeric NOT NULL DEFAULT 0, \"ActualRevenue\" numeric NOT NULL DEFAULT 0, \"RevenueCompletionRate\" numeric NOT NULL DEFAULT 0, \"TargetTestDriveCount\" integer NOT NULL DEFAULT 0, \"ActualTestDriveCount\" integer NOT NULL DEFAULT 0, \"TargetContractCount\" integer NOT NULL DEFAULT 0, \"ActualContractCount\" integer NOT NULL DEFAULT 0, \"TargetInsuranceCount\" integer NOT NULL DEFAULT 0, \"ActualInsuranceCount\" integer NOT NULL DEFAULT 0, \"TargetAccessoriesRevenue\" numeric NOT NULL DEFAULT 0, \"ActualAccessoriesRevenue\" numeric NOT NULL DEFAULT 0, \"OverallScore\" numeric NOT NULL DEFAULT 0, \"KpiGrade\" text NOT NULL DEFAULT 'Pending', \"BonusRate\" numeric NOT NULL DEFAULT 0, \"BonusAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"EvaluatedBy\" text NULL, \"EvaluatedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"SalesTargetKpiLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SalesTargetKpiId\" bigint NOT NULL, \"TargetCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"TargetQty\" integer NOT NULL DEFAULT 1, \"ActualQty\" integer NOT NULL DEFAULT 0, \"CompletionRate\" numeric NOT NULL DEFAULT 0, \"TargetRevenue\" numeric NOT NULL DEFAULT 0, \"ActualRevenue\" numeric NOT NULL DEFAULT 0, \"CommissionPerCar\" numeric NOT NULL DEFAULT 3000000, \"BonusAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"SalesKpiDailyLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SalesTargetKpiId\" bigint NOT NULL, \"TargetCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"LogDate\" timestamp NOT NULL DEFAULT now(), \"KPICode\" text NOT NULL DEFAULT 'KPI_RETAIL_DELIVERY', \"KPIName\" text NOT NULL DEFAULT 'Bàn giao xe bán lẻ cho khách', \"TargetDailyQty\" numeric NOT NULL DEFAULT 1, \"ActualDailyQty\" numeric NOT NULL DEFAULT 1, \"LinkedVin\" text NULL, \"LinkedRefNo\" text NULL, \"Notes\" text NOT NULL DEFAULT '', \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

@@ -159,6 +159,9 @@ public sealed class Vehicle
     public string? LastMktFeeNo { get; set; }           // Mã hồ sơ quyết toán Marketing gần nhất (MKT-...)
     public DateTime? LastMktFeeDate { get; set; }       // Ngày quyết toán Marketing gần nhất
     public int MktFeeCount { get; set; } = 0;           // Tổng số lần xe phát sinh trong hồ sơ quyết toán Marketing
+    public string? LastSalesKpiNo { get; set; }         // Mã kế hoạch chỉ tiêu KPI bán hàng gần nhất xe tham gia (SP_KPIMonth / SalesTargetKpi)
+    public DateTime? LastSalesKpiDate { get; set; }     // Ngày phát sinh chỉ tiêu / ghi nhận KPI
+    public int SalesKpiCount { get; set; } = 0;         // Tổng số lần xe được ghi nhận trong các kỳ đánh giá KPI bán hàng
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -7027,6 +7030,325 @@ public sealed record VehicleMarketingFeeInfoDto(
     int MktFeeCount,
     List<MarketingFeeDetail> MarketingFeeLines
 );
+
+// ===== Quản lý Chỉ tiêu Bán hàng & KPI Doanh số Xe Ô tô Đại lý & Tư vấn Bán hàng TVBH (BizHTC.MasterData & DMS.NP.Biz / SP_KPIMonth, Mst_SMKPI, MngKPIMonthPresenter / SalesTargetKpi) =====
+
+/// <summary>Danh mục Chỉ số KPI Bán hàng & Hiệu suất Hoạt động Đại lý Ô tô chuẩn Hãng (BizHTC.MasterData / Mst_SMKPI / SalesKpiIndicator): định nghĩa danh mục các chỉ số KPI chuẩn (Số cuộc gọi tiếp cận Leads, Lượt tiếp đón showroom, Lượt lái thử, Số báo giá, Hợp đồng ký mới, Xe bàn giao bán lẻ, HĐ bảo hiểm, Doanh số phụ kiện, Hồ sơ vay ngân hàng, Điểm SSI/CSI).</summary>
+public sealed class SalesKpiIndicator
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string KPICode { get; set; } = "";             // Mã chỉ số KPI (KPI_CALL_LEADS, KPI_SHOWROOM_VISIT, KPI_TEST_DRIVE, KPI_QUOTATION, KPI_CONTRACT_SIGN, KPI_RETAIL_DELIVERY, KPI_INSURANCE_SOLD, KPI_ACCESSORIES_VAL, KPI_FINANCE_LOAN, KPI_CSI_SCORE)
+    public string KPIName { get; set; } = "";             // Tên chỉ số KPI (Số cuộc gọi tiếp cận khách hàng tiềm năng, Lượt khách tham quan showroom, Lượt lái thử xe thực tế, Số báo giá gửi khách, Hợp đồng bán lẻ ký mới, Xe thực tế bàn giao cho khách, Hợp đồng bảo hiểm bán kèm, Doanh số phụ kiện bán lẻ, Hồ sơ vay ngân hàng giải ngân, Điểm hài lòng khách hàng SSI/CSI)
+    public string KPICategory { get; set; } = "SalesVolume"; // Activity (Hoạt động phễu), SalesVolume (Sản lượng xe), Revenue (Doanh thu phụ trợ), Quality (Chất lượng & Hài lòng)
+    public string Unit { get; set; } = "Xe";              // Đơn vị tính: Cuộc, Lượt, Xe, HĐ, VNĐ, Điểm
+    public decimal Weight { get; set; } = 10.0m;          // Trọng số đánh giá chuẩn (%) trong bộ chỉ số tổng hợp
+    public decimal TargetDefault { get; set; } = 10.0m;   // Định mức chỉ tiêu giao mặc định hàng tháng
+    public bool FlagActive { get; set; } = true;          // Đang áp dụng trong hệ thống
+    public string? Remark { get; set; }                   // Mô tả hướng dẫn đo lường chỉ số
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Kế hoạch Chỉ tiêu Bán hàng & KPI Doanh số Xe Ô tô theo Tháng / Quý (DMS.NP.Biz & BizHTC.MasterData / SP_KPIMonth / SalesTargetKpi): quản lý giao chỉ tiêu và nghiệm thu đánh giá hiệu suất kinh doanh cho Đại lý và từng Tư vấn bán hàng TVBH / Trưởng nhóm bán hàng.</summary>
+public sealed class SalesTargetKpi
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string TargetCode { get; set; } = "";          // Mã kế hoạch chỉ tiêu KPI (KPI-2026-03-HN01-0001, KPI...)
+    public string? TargetCodeUser { get; set; }         // Số hiệu kế hoạch nội bộ tham chiếu của Đại lý
+    public string PeriodMonth { get; set; } = "";       // Kỳ / Tháng giao chỉ tiêu (YYYY-MM, ví dụ: 2026-03)
+    public string PeriodQuarter { get; set; } = "Q1";   // Quý áp dụng (Q1, Q2, Q3, Q4)
+    public int PeriodYear { get; set; } = 2026;         // Năm áp dụng
+    public string DealerCode { get; set; } = "";        // Mã đại lý phân phối (DLR-HN01, DLR-HCM01...)
+    public string? DealerName { get; set; }             // Tên đại lý
+    public string UserCode { get; set; } = "ALL";       // Mã nhân viên TVBH / Trưởng nhóm (hoặc "ALL" / "DEALER_OVERALL" cho chỉ tiêu toàn đại lý)
+    public string? UserName { get; set; } = "Toàn Đại Lý"; // Họ tên nhân viên TVBH / Trưởng nhóm
+    public string Position { get; set; } = "SalesConsultant"; // SalesConsultant (Tư vấn bán hàng), TeamLeader (Trưởng nhóm bán hàng), SalesManager (Trưởng phòng bán hàng), DealerOverall (Toàn đại lý)
+
+    // Chỉ tiêu & Thực đạt về Sản lượng & Doanh số Xe
+    public int TargetCarCount { get; set; } = 0;        // Chỉ tiêu số lượng xe bán lẻ (xe)
+    public int ActualCarCount { get; set; } = 0;        // Số lượng xe thực tế đã bàn giao (xe)
+    public decimal CarCompletionRate { get; set; } = 0; // Tỷ lệ hoàn thành sản lượng xe (%) = ActualCarCount / TargetCarCount * 100
+    public decimal TargetRevenue { get; set; } = 0;     // Chỉ tiêu tổng doanh thu bán xe (VNĐ)
+    public decimal ActualRevenue { get; set; } = 0;     // Tổng doanh thu bán xe thực tế đạt được (VNĐ)
+    public decimal RevenueCompletionRate { get; set; } = 0; // Tỷ lệ hoàn thành doanh thu (%) = ActualRevenue / TargetRevenue * 100
+
+    // Chỉ tiêu & Thực đạt về Hoạt động phễu & Gia tăng giá trị
+    public int TargetTestDriveCount { get; set; } = 0;  // Chỉ tiêu số lượt lái thử xe
+    public int ActualTestDriveCount { get; set; } = 0;  // Số lượt lái thử xe thực tế
+    public int TargetContractCount { get; set; } = 0;   // Chỉ tiêu số hợp đồng bán lẻ ký mới
+    public int ActualContractCount { get; set; } = 0;   // Số hợp đồng bán lẻ thực tế ký mới
+    public int TargetInsuranceCount { get; set; } = 0;  // Chỉ tiêu số hợp đồng bảo hiểm bán kèm
+    public int ActualInsuranceCount { get; set; } = 0;  // Số hợp đồng bảo hiểm thực tế bán kèm
+    public decimal TargetAccessoriesRevenue { get; set; } = 0; // Chỉ tiêu doanh thu phụ kiện bán lẻ (VNĐ)
+    public decimal ActualAccessoriesRevenue { get; set; } = 0; // Doanh thu phụ kiện thực tế (VNĐ)
+
+    // Đánh giá Tổng kết & Thưởng hiệu suất KPI
+    public decimal OverallScore { get; set; } = 0;      // Điểm tổng hợp kết quả KPI cuối kỳ (Thang 0 - 100 điểm)
+    public string KpiGrade { get; set; } = "Pending";   // Xếp loại thành tích: Pending, Excellent (>=110%), Good (100-109%), Pass (80-99%), Underperformed (<80%)
+    public decimal BonusRate { get; set; } = 0;         // Tỷ lệ % thưởng vượt chỉ tiêu (%)
+    public decimal BonusAmount { get; set; } = 0;       // Tổng tiền thưởng KPI đạt được trong kỳ (VNĐ)
+
+    // Trạng thái & Kiểm toán
+    public string Status { get; set; } = "Draft";       // Draft → Submitted (Pending) → Approved (Active) → Evaluated (Completed) (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                 // Ghi chú / Cam kết doanh số
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }             // Lãnh đạo Đại lý / Giám đốc Kinh doanh duyệt giao chỉ tiêu
+    public DateTime? ApprovedAt { get; set; }
+    public string? EvaluatedBy { get; set; }            // Trưởng bộ phận Kinh doanh / HR nghiệm thu đánh giá
+    public DateTime? EvaluatedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết Phân rã Chỉ tiêu Bán hàng theo từng Dòng xe Model / Phiên bản (DMS.NP.Biz / SP_KPIMonthDetail / SalesTargetKpiLine): giao số lượng xe, doanh thu dự kiến, theo dõi thực tế bàn giao và định mức hoa hồng thưởng theo từng model xe Hyundai.</summary>
+public sealed class SalesTargetKpiLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long SalesTargetKpiId { get; set; }
+    public string TargetCode { get; set; } = "";
+    public int LineIndex { get; set; } = 1;               // Thứ tự dòng (1, 2, 3...)
+    public string Model { get; set; } = "";               // Dòng xe phân bổ chỉ tiêu (SantaFe, Tucson, Accent, Creta, Grand i10, Custin, Stargazer, Palisade, Venue, Ioniq 5...)
+    public string? SpecCode { get; set; }                 // Mã phiên bản xe (1.5 AT Tiêu Chuẩn, 2.0 AT Đặc Biệt, 2.5T AWD Calligraphy...)
+    public int TargetQty { get; set; } = 1;               // Chỉ tiêu số lượng xe dòng này (xe)
+    public int ActualQty { get; set; } = 0;               // Số lượng xe thực tế đã bàn giao (xe)
+    public decimal CompletionRate { get; set; } = 0;      // Tỷ lệ hoàn thành sản lượng dòng xe (%) = ActualQty / TargetQty * 100
+    public decimal TargetRevenue { get; set; } = 0;       // Chỉ tiêu doanh thu dự kiến dòng này (VNĐ)
+    public decimal ActualRevenue { get; set; } = 0;       // Doanh thu thực tế đạt được dòng này (VNĐ)
+    public decimal CommissionPerCar { get; set; } = 3000000m; // Định mức hoa hồng / thưởng nóng trên mỗi xe bán được (VNĐ/xe)
+    public decimal BonusAmount { get; set; } = 0;         // Tổng tiền thưởng đạt được dòng này = ActualQty * CommissionPerCar (VNĐ)
+    public string Status { get; set; } = "Pending";       // Pending → Approved → Evaluated (hoặc Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú định hướng bán hàng cho model xe
+}
+
+/// <summary>Nhật ký Tiến độ & Tích lũy Hoạt động Bán hàng Hàng ngày (DMS.NP.Biz / SP_KPIMonth_Daily / SalesKpiDailyLog): ghi nhận tiến độ thực hiện các chỉ số trong tháng (cuộc gọi, tiếp khách showroom, lái thử, báo giá, ký hợp đồng, bàn giao xe kèm số khung VIN).</summary>
+public sealed class SalesKpiDailyLog
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long SalesTargetKpiId { get; set; }
+    public string TargetCode { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public DateTime LogDate { get; set; } = DateTime.Now; // Ngày phát sinh hoạt động
+    public string KPICode { get; set; } = "KPI_RETAIL_DELIVERY"; // Mã chỉ số KPI liên quan
+    public string KPIName { get; set; } = "Bàn giao xe bán lẻ cho khách";
+    public decimal TargetDailyQty { get; set; } = 1;      // Chỉ tiêu tiến độ trong ngày
+    public decimal ActualDailyQty { get; set; } = 1;      // Thực tế đạt được trong ngày
+    public string? LinkedVin { get; set; }                // Số khung xe VIN liên quan nếu phát sinh ký cọc / giao xe
+    public string? LinkedRefNo { get; set; }              // Mã số chứng từ liên quan (Mã HĐ Deal, Mã phiếu lái thử, Mã báo giá...)
+    public string Notes { get; set; } = "";               // Diễn giải chi tiết hoạt động đạt được
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+// ===== DTOs cho Quản lý Chỉ tiêu Bán hàng & KPI Doanh số Xe (SalesTargetKpi) =====
+
+public sealed record CreateSalesKpiIndicatorDto(
+    string KPICode,
+    string KPIName,
+    string? KPICategory,
+    string? Unit,
+    decimal? Weight,
+    decimal? TargetDefault,
+    bool? FlagActive,
+    string? Remark
+);
+
+public sealed record UpdateSalesKpiIndicatorDto(
+    string? KPIName,
+    string? KPICategory,
+    string? Unit,
+    decimal? Weight,
+    decimal? TargetDefault,
+    bool? FlagActive,
+    string? Remark
+);
+
+public sealed record CreateSalesTargetKpiDto(
+    string? TargetCode,
+    string? TargetCodeUser,
+    string PeriodMonth,
+    string? PeriodQuarter,
+    int? PeriodYear,
+    string DealerCode,
+    string? DealerName,
+    string? UserCode,
+    string? UserName,
+    string? Position,
+    int? TargetCarCount,
+    decimal? TargetRevenue,
+    int? TargetTestDriveCount,
+    int? TargetContractCount,
+    int? TargetInsuranceCount,
+    decimal? TargetAccessoriesRevenue,
+    decimal? BonusRate,
+    string? Remark,
+    string? CreatedBy,
+    List<SalesTargetKpiLineInputDto>? Lines,
+    List<SalesKpiDailyLogInputDto>? DailyLogs
+);
+
+public sealed record SalesTargetKpiLineInputDto(
+    string Model,
+    string? SpecCode,
+    int TargetQty,
+    decimal? TargetRevenue,
+    decimal? CommissionPerCar,
+    string? Remark
+);
+
+public sealed record SalesKpiDailyLogInputDto(
+    DateTime? LogDate,
+    string KPICode,
+    string? KPIName,
+    decimal? TargetDailyQty,
+    decimal ActualDailyQty,
+    string? LinkedVin,
+    string? LinkedRefNo,
+    string? Notes
+);
+
+public sealed record UpdateSalesTargetKpiHeaderDto(
+    string? TargetCodeUser,
+    string? PeriodQuarter,
+    int? PeriodYear,
+    string? DealerName,
+    string? UserName,
+    string? Position,
+    int? TargetCarCount,
+    decimal? TargetRevenue,
+    int? TargetTestDriveCount,
+    int? TargetContractCount,
+    int? TargetInsuranceCount,
+    decimal? TargetAccessoriesRevenue,
+    decimal? BonusRate,
+    string? Remark
+);
+
+public sealed record UpdateSalesTargetKpiLineDto(
+    string? Model,
+    string? SpecCode,
+    int? TargetQty,
+    int? ActualQty,
+    decimal? TargetRevenue,
+    decimal? ActualRevenue,
+    decimal? CommissionPerCar,
+    string? Status,
+    string? Remark
+);
+
+public sealed record SalesTargetKpiTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record EvaluateSalesTargetKpiDto(
+    decimal? OverallScore,
+    string? KpiGrade,
+    decimal? BonusRate,
+    decimal? BonusAmount,
+    string? EvaluatedBy,
+    string? Note
+);
+
+public sealed record AddSalesKpiDailyLogDto(
+    DateTime? LogDate,
+    string KPICode,
+    string? KPIName,
+    decimal? TargetDailyQty,
+    decimal ActualDailyQty,
+    string? LinkedVin,
+    string? LinkedRefNo,
+    string Notes,
+    string? CreatedBy
+);
+
+public sealed record SalesKpiSummaryDto(
+    int TotalPlans,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalApproved,
+    int TotalEvaluated,
+    int TotalCancelled,
+    int TotalTargetCarCount,
+    int TotalActualCarCount,
+    decimal OverallCarCompletionRatePercent,
+    decimal TotalTargetRevenue,
+    decimal TotalActualRevenue,
+    decimal OverallRevenueCompletionRatePercent,
+    int TotalTestDrives,
+    int TotalContracts,
+    int TotalInsurances,
+    decimal TotalAccessoriesRevenue,
+    decimal TotalBonusAmount,
+    List<SalesKpiDealerStatsDto> ByDealer,
+    List<SalesKpiModelStatsDto> ByModel,
+    List<SalesKpiConsultantStatsDto> ByConsultant,
+    List<SalesKpiMonthStatsDto> ByPeriodMonth
+);
+
+public sealed record SalesKpiDealerStatsDto(string DealerCode, string DealerName, int PlanCount, int TargetCars, int ActualCars, decimal CompletionRate, decimal TargetRevenue, decimal ActualRevenue, decimal BonusAmount);
+public sealed record SalesKpiModelStatsDto(string Model, int TargetQty, int ActualQty, decimal CompletionRate, decimal ActualRevenue, decimal BonusAmount);
+public sealed record SalesKpiConsultantStatsDto(string UserCode, string UserName, string DealerCode, string Position, int TargetCars, int ActualCars, decimal CompletionRate, decimal OverallScore, string KpiGrade, decimal BonusAmount);
+public sealed record SalesKpiMonthStatsDto(string PeriodMonth, int PlanCount, int TargetCars, int ActualCars, decimal CompletionRate, decimal TotalRevenue, decimal BonusAmount);
+
+public sealed record SalesLeaderboardDto(
+    string? PeriodMonth,
+    string? DealerCode,
+    DateTime GeneratedAt,
+    List<SalesLeaderboardRankDto> TopConsultants,
+    List<SalesLeaderboardDealerRankDto> TopDealers
+);
+
+public sealed record SalesLeaderboardRankDto(
+    int Rank,
+    string UserCode,
+    string UserName,
+    string DealerCode,
+    string DealerName,
+    int ActualCars,
+    int TargetCars,
+    decimal CompletionRatePercent,
+    decimal ActualRevenue,
+    decimal OverallScore,
+    string KpiGrade,
+    decimal BonusAmount
+);
+
+public sealed record SalesLeaderboardDealerRankDto(
+    int Rank,
+    string DealerCode,
+    string DealerName,
+    int ActualCars,
+    int TargetCars,
+    decimal CompletionRatePercent,
+    decimal ActualRevenue,
+    decimal TotalBonusAmount
+);
+
+public sealed record VehicleSalesKpiInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    string? LastSalesKpiNo,
+    DateTime? LastSalesKpiDate,
+    int SalesKpiCount,
+    SalesTargetKpi? TargetKpi,
+    List<SalesKpiDailyLog> RelatedKpiLogs
+);
+
 
 
 
