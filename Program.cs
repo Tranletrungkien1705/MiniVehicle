@@ -3865,6 +3865,104 @@ app.MapGet("/api/vehicles/{vin}/avn-payment-history", async (string vin, IVehicl
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Đăng ký & Nhật ký Khách hàng Lái thử xe (BizHTC.RetailContract / DLR_DriveTest, Mst_CarDriverTest / FrmMngTestDriver, FrmNewTestDriver) =====
+
+app.MapPost("/api/test-drives", async (CreateCustomerTestDriveDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.FullName) || string.IsNullOrWhiteSpace(dto.PhoneNo) || string.IsNullOrWhiteSpace(dto.DriverLicenseNo) || string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode, họ tên khách hàng FullName, số điện thoại PhoneNo, số GPLX DriverLicenseNo và số khung VIN." });
+    try { return Results.Ok(await svc.CreateCustomerTestDriveAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/test-drives", async (IVehicleService svc, string? status, string? dealer, string? driveTestType, string? purchaseIntent, string? model, string? vin, string? driveTestCode, string? phoneNo) =>
+    Results.Ok(await svc.ListCustomerTestDrivesAsync(status, dealer, driveTestType, purchaseIntent, model, vin, driveTestCode, phoneNo))).RequireAuthorization();
+
+app.MapGet("/api/test-drives/summary", async (IVehicleService svc, string? dealer, string? driveTestType) =>
+    Results.Ok(await svc.GetTestDriveSummaryAsync(dealer, driveTestType))).RequireAuthorization();
+
+app.MapGet("/api/reports/test-drives/summary", async (IVehicleService svc, string? dealer, string? driveTestType) =>
+    Results.Ok(await svc.GetTestDriveSummaryAsync(dealer, driveTestType))).RequireAuthorization();
+
+app.MapGet("/api/test-drives/available-cars", async (IVehicleService svc, string? dealer, string? model) =>
+    Results.Ok(await svc.GetAvailableTestDriveVehiclesAsync(dealer, model))).RequireAuthorization();
+
+app.MapGet("/api/test-drives/{driveTestCode}", async (string driveTestCode, IVehicleService svc) =>
+{
+    var r = await svc.GetCustomerTestDriveAsync(driveTestCode);
+    return r is null ? Results.NotFound(new { driveTestCode, error = "Không tìm thấy phiếu đăng ký lái thử." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/test-drives/{driveTestCode}", async (string driveTestCode, UpdateCustomerTestDriveDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateCustomerTestDriveAsync(driveTestCode, dto);
+        return r is null ? Results.NotFound(new { driveTestCode, error = "Không tìm thấy phiếu đăng ký lái thử." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/test-drives/{driveTestCode}/update", async (string driveTestCode, UpdateCustomerTestDriveDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateCustomerTestDriveAsync(driveTestCode, dto);
+        return r is null ? Results.NotFound(new { driveTestCode, error = "Không tìm thấy phiếu đăng ký lái thử." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/test-drives/{driveTestCode}/feedback", async (string driveTestCode, RecordTestDriveFeedbackDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RecordCustomerTestDriveFeedbackAsync(driveTestCode, dto);
+        return r is null ? Results.NotFound(new { driveTestCode, error = "Không tìm thấy phiếu đăng ký lái thử." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/test-drives/{driveTestCode}/{action}", async (string driveTestCode, string action, CustomerTestDriveTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("schedule" or "approve" or "start" or "in-progress" or "inprogress" or "complete" or "finish" or "noshow" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = schedule|approve|start|complete|noshow|reject|cancel" });
+    try
+    {
+        var r = await svc.CustomerTestDriveTransitionAsync(driveTestCode, action, dto);
+        return r is null ? Results.NotFound(new { driveTestCode, error = "Không tìm thấy phiếu đăng ký lái thử hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/test-drives/{driveTestCode}", async (string driveTestCode, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveCustomerTestDriveAsync(driveTestCode);
+        return r is null ? Results.NotFound(new { driveTestCode, error = "Không tìm thấy phiếu lái thử hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/test-drives", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleTestDriveHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/test-drive-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleTestDriveInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/test-drive-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleTestDriveHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

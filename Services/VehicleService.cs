@@ -2026,6 +2026,19 @@ public interface IVehicleService
     Task<object> GetAvnPaymentSummaryAsync(string? supplierCode, string? pmtMonth);
     Task<object?> GetVehicleAvnPaymentInfoAsync(string vin);
     Task<object?> GetVehicleAvnPaymentHistoryAsync(string vin);
+
+    // Đăng ký & Nhật ký Khách hàng Lái thử xe tại Đại lý / Roadshow (BizHTC.RetailContract / DLR_DriveTest, Mst_CarDriverTest)
+    Task<object> CreateCustomerTestDriveAsync(CreateCustomerTestDriveDto dto);
+    Task<object> ListCustomerTestDrivesAsync(string? status, string? dealer, string? driveTestType, string? purchaseIntent, string? model, string? vin, string? driveTestCode, string? phoneNo);
+    Task<object?> GetCustomerTestDriveAsync(string driveTestCode);
+    Task<object?> UpdateCustomerTestDriveAsync(string driveTestCode, UpdateCustomerTestDriveDto dto);
+    Task<object?> CustomerTestDriveTransitionAsync(string driveTestCode, string action, CustomerTestDriveTransitionDto? dto);
+    Task<object?> RecordCustomerTestDriveFeedbackAsync(string driveTestCode, RecordTestDriveFeedbackDto dto);
+    Task<object?> RemoveCustomerTestDriveAsync(string driveTestCode);
+    Task<object> GetTestDriveSummaryAsync(string? dealerCode, string? driveTestType);
+    Task<object> GetAvailableTestDriveVehiclesAsync(string? dealerCode, string? model);
+    Task<object?> GetVehicleTestDriveInfoAsync(string vin);
+    Task<object?> GetVehicleTestDriveHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -28956,6 +28969,698 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
                 veh.AvnPaymentCount
             },
             paymentLines = lines,
+            events
+        };
+    }
+
+    // ===== Đăng ký & Nhật ký Khách hàng Lái thử xe (BizHTC.RetailContract / DLR_DriveTest, Mst_CarDriverTest) =====
+
+    public async Task<object> CreateCustomerTestDriveAsync(CreateCustomerTestDriveDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode tổ chức lái thử.");
+        if (string.IsNullOrWhiteSpace(dto.FullName))
+            throw new InvalidOperationException("Cần họ tên khách hàng FullName.");
+        if (string.IsNullOrWhiteSpace(dto.PhoneNo))
+            throw new InvalidOperationException("Cần số điện thoại PhoneNo khách hàng.");
+        if (string.IsNullOrWhiteSpace(dto.DriverLicenseNo))
+            throw new InvalidOperationException("Cần số giấy phép lái xe DriverLicenseNo của khách hàng.");
+
+        var cleanVin = dto.Vin?.Trim().ToUpperInvariant() ?? "";
+        if (cleanVin.Length != 17)
+            throw new InvalidOperationException($"Số khung VIN '{cleanVin}' không hợp lệ (phải đúng 17 ký tự tiêu chuẩn ISO 3779).");
+
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == cleanVin);
+        var model = !string.IsNullOrWhiteSpace(dto.Model) ? dto.Model.Trim() : (veh?.Model ?? "SantaFe");
+        var spec = dto.SpecCode?.Trim();
+        var plate = !string.IsNullOrWhiteSpace(dto.DrvTestPlateNo) ? dto.DrvTestPlateNo.Trim().ToUpperInvariant() : veh?.PlateNo;
+
+        var today = DateTime.Today;
+        var seq = await db.CustomerTestDrives.CountAsync(d => d.OrgId == Org && d.CreatedAt.Date == today) + 1;
+        var code = string.IsNullOrWhiteSpace(dto.DriveTestCode)
+            ? $"DT{today:yyyyMMdd}-{seq:0000}"
+            : dto.DriveTestCode.Trim().ToUpperInvariant();
+
+        if (await db.CustomerTestDrives.AnyAsync(d => d.OrgId == Org && d.DriveTestCode == code))
+            throw new InvalidOperationException($"Mã phiếu lái thử {code} đã tồn tại.");
+
+        var odoStart = dto.OdoStart.HasValue && dto.OdoStart.Value >= 0
+            ? dto.OdoStart.Value
+            : (veh?.LastOdoKm ?? 100);
+
+        var td = new CustomerTestDrive
+        {
+            OrgId = Org,
+            DriveTestCode = code,
+            DriveTestCodeUser = dto.DriveTestCodeUser?.Trim(),
+            DealerCode = dto.DealerCode.Trim().ToUpperInvariant(),
+            DealerName = dto.DealerName?.Trim(),
+            Vin = cleanVin,
+            Model = model,
+            SpecCode = spec,
+            DrvTestPlateNo = plate,
+            FullName = dto.FullName.Trim(),
+            PhoneNo = dto.PhoneNo.Trim(),
+            Email = dto.Email?.Trim(),
+            CusAddress = dto.CusAddress?.Trim(),
+            Gender = string.IsNullOrWhiteSpace(dto.Gender) ? "Nam" : dto.Gender.Trim(),
+            BirthYear = dto.BirthYear,
+            RangeAgeCode = string.IsNullOrWhiteSpace(dto.RangeAgeCode) ? "26-35" : dto.RangeAgeCode.Trim(),
+            DriverLicenseNo = dto.DriverLicenseNo.Trim().ToUpperInvariant(),
+            LicenseClass = string.IsNullOrWhiteSpace(dto.LicenseClass) ? "B2" : dto.LicenseClass.Trim().ToUpperInvariant(),
+            DriveTestType = string.IsNullOrWhiteSpace(dto.DriveTestType) ? "Showroom" : dto.DriveTestType.Trim(),
+            EventName = dto.EventName?.Trim(),
+            RoutePath = dto.RoutePath?.Trim(),
+            DriveDTime = dto.DriveDTime ?? DateTime.Now,
+            DurationMinutes = dto.DurationMinutes.HasValue && dto.DurationMinutes.Value > 0 ? dto.DurationMinutes.Value : 30,
+            OdoStart = odoStart,
+            SalesManCode = dto.SalesManCode?.Trim(),
+            SalesManName = dto.SalesManName?.Trim(),
+            Instructor = dto.Instructor?.Trim(),
+            PurchaseIntent = string.IsNullOrWhiteSpace(dto.PurchaseIntent) ? "High" : dto.PurchaseIntent.Trim(),
+            CompetitorModel = dto.CompetitorModel?.Trim(),
+            ExpectedDealDate = dto.ExpectedDealDate,
+            Status = "Scheduled",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "SalesConsultant",
+            CreatedAt = DateTime.Now
+        };
+
+        db.CustomerTestDrives.Add(td);
+
+        if (veh != null)
+        {
+            veh.IsTestCar = true;
+            veh.LastTestDriveNo = td.DriveTestCode;
+            veh.LastTestDriveDate = td.DriveDTime;
+        }
+
+        Log(cleanVin, "CustomerTestDriveScheduled", $"{code} Đăng ký lái thử {td.Model} cho khách {td.FullName} ({td.PhoneNo}) tại ĐL {td.DealerCode}");
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            td.DriveTestCode,
+            td.DriveTestCodeUser,
+            td.DealerCode,
+            td.DealerName,
+            td.Vin,
+            td.Model,
+            td.SpecCode,
+            td.DrvTestPlateNo,
+            td.FullName,
+            td.PhoneNo,
+            td.DriveTestType,
+            td.DriveDTime,
+            td.DurationMinutes,
+            td.OdoStart,
+            td.PurchaseIntent,
+            td.Status,
+            td.CreatedAt
+        };
+    }
+
+    public async Task<object> ListCustomerTestDrivesAsync(
+        string? status, string? dealer, string? driveTestType, string? purchaseIntent, string? model, string? vin, string? driveTestCode, string? phoneNo)
+    {
+        var q = db.CustomerTestDrives.Where(d => d.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var st = status.Trim().ToLowerInvariant();
+            q = q.Where(d => d.Status.ToLower() == st);
+        }
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var dl = dealer.Trim().ToUpperInvariant();
+            q = q.Where(d => d.DealerCode == dl);
+        }
+        if (!string.IsNullOrWhiteSpace(driveTestType))
+        {
+            var dt = driveTestType.Trim().ToLowerInvariant();
+            q = q.Where(d => d.DriveTestType.ToLower() == dt);
+        }
+        if (!string.IsNullOrWhiteSpace(purchaseIntent))
+        {
+            var pi = purchaseIntent.Trim().ToLowerInvariant();
+            q = q.Where(d => d.PurchaseIntent.ToLower() == pi);
+        }
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var md = model.Trim().ToLowerInvariant();
+            q = q.Where(d => d.Model.ToLower().Contains(md));
+        }
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            q = q.Where(d => d.Vin.Contains(v));
+        }
+        if (!string.IsNullOrWhiteSpace(driveTestCode))
+        {
+            var code = driveTestCode.Trim().ToUpperInvariant();
+            q = q.Where(d => d.DriveTestCode.Contains(code) || (d.DriveTestCodeUser != null && d.DriveTestCodeUser.Contains(code)));
+        }
+        if (!string.IsNullOrWhiteSpace(phoneNo))
+        {
+            var p = phoneNo.Trim();
+            q = q.Where(d => d.PhoneNo.Contains(p));
+        }
+
+        var items = await q.OrderByDescending(d => d.Id).Take(500).Select(d => new
+        {
+            d.Id,
+            d.DriveTestCode,
+            d.DriveTestCodeUser,
+            d.DealerCode,
+            d.DealerName,
+            d.Vin,
+            d.Model,
+            d.SpecCode,
+            d.DrvTestPlateNo,
+            d.FullName,
+            d.PhoneNo,
+            d.Gender,
+            d.DriverLicenseNo,
+            d.DriveTestType,
+            d.EventName,
+            d.RoutePath,
+            d.DriveDTime,
+            d.DurationMinutes,
+            d.OdoStart,
+            d.OdoEnd,
+            d.DistanceKm,
+            d.SalesManCode,
+            d.SalesManName,
+            d.ScoreOverall,
+            d.PurchaseIntent,
+            d.ExpectedDealDate,
+            d.Status,
+            d.CreatedAt,
+            d.ApprovedAt,
+            d.StartedAt,
+            d.CompletedAt,
+            d.CancelledAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCustomerTestDriveAsync(string driveTestCode)
+    {
+        driveTestCode = driveTestCode.Trim().ToUpperInvariant();
+        var td = await db.CustomerTestDrives.FirstOrDefaultAsync(d => d.OrgId == Org && (d.DriveTestCode == driveTestCode || d.DriveTestCodeUser == driveTestCode));
+        if (td is null) return null;
+
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == td.Vin);
+
+        return new
+        {
+            td.Id,
+            td.DriveTestCode,
+            td.DriveTestCodeUser,
+            td.DealerCode,
+            td.DealerName,
+            td.Vin,
+            td.Model,
+            td.SpecCode,
+            td.DrvTestPlateNo,
+            td.FullName,
+            td.PhoneNo,
+            td.Email,
+            td.CusAddress,
+            td.Gender,
+            td.BirthYear,
+            td.RangeAgeCode,
+            td.DriverLicenseNo,
+            td.LicenseClass,
+            td.DriveTestType,
+            td.EventName,
+            td.RoutePath,
+            td.DriveDTime,
+            td.DurationMinutes,
+            td.OdoStart,
+            td.OdoEnd,
+            td.DistanceKm,
+            td.SalesManCode,
+            td.SalesManName,
+            td.Instructor,
+            td.ScoreEngine,
+            td.ScoreHandling,
+            td.ScoreNVH,
+            td.ScoreDesign,
+            td.ScoreFeatures,
+            td.ScoreOverall,
+            td.CustomerFeedback,
+            td.PurchaseIntent,
+            td.CompetitorModel,
+            td.ExpectedDealDate,
+            td.Status,
+            td.Remark,
+            td.CreatedBy,
+            td.CreatedAt,
+            td.ApprovedBy,
+            td.ApprovedAt,
+            td.StartedBy,
+            td.StartedAt,
+            td.CompletedBy,
+            td.CompletedAt,
+            td.CancelledBy,
+            td.CancelledAt,
+            td.CancelReason,
+            vehicle = veh == null ? null : new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.EngineNo,
+                veh.Color,
+                veh.ModelYear,
+                veh.PlateNo,
+                veh.StorageCode,
+                veh.IsTestCar,
+                veh.LastTestDriveNo,
+                veh.LastTestDriveDate,
+                veh.TestDriveCount,
+                veh.LastOdoKm
+            }
+        };
+    }
+
+    public async Task<object?> UpdateCustomerTestDriveAsync(string driveTestCode, UpdateCustomerTestDriveDto dto)
+    {
+        driveTestCode = driveTestCode.Trim().ToUpperInvariant();
+        var td = await db.CustomerTestDrives.FirstOrDefaultAsync(d => d.OrgId == Org && (d.DriveTestCode == driveTestCode || d.DriveTestCodeUser == driveTestCode));
+        if (td is null) return null;
+
+        if (td.Status is "Completed" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể chỉnh sửa phiếu lái thử ở trạng thái '{td.Status}'.");
+
+        if (dto.DriveTestCodeUser != null) td.DriveTestCodeUser = dto.DriveTestCodeUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) td.DealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        if (dto.DealerName != null) td.DealerName = dto.DealerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Vin))
+        {
+            var cleanVin = dto.Vin.Trim().ToUpperInvariant();
+            if (cleanVin.Length == 17) td.Vin = cleanVin;
+        }
+        if (!string.IsNullOrWhiteSpace(dto.Model)) td.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) td.SpecCode = dto.SpecCode.Trim();
+        if (dto.DrvTestPlateNo != null) td.DrvTestPlateNo = dto.DrvTestPlateNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.FullName)) td.FullName = dto.FullName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PhoneNo)) td.PhoneNo = dto.PhoneNo.Trim();
+        if (dto.Email != null) td.Email = dto.Email.Trim();
+        if (dto.CusAddress != null) td.CusAddress = dto.CusAddress.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Gender)) td.Gender = dto.Gender.Trim();
+        if (dto.BirthYear.HasValue) td.BirthYear = dto.BirthYear.Value;
+        if (dto.RangeAgeCode != null) td.RangeAgeCode = dto.RangeAgeCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DriverLicenseNo)) td.DriverLicenseNo = dto.DriverLicenseNo.Trim().ToUpperInvariant();
+        if (dto.LicenseClass != null) td.LicenseClass = dto.LicenseClass.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.DriveTestType)) td.DriveTestType = dto.DriveTestType.Trim();
+        if (dto.EventName != null) td.EventName = dto.EventName.Trim();
+        if (dto.RoutePath != null) td.RoutePath = dto.RoutePath.Trim();
+        if (dto.DriveDTime.HasValue) td.DriveDTime = dto.DriveDTime.Value;
+        if (dto.DurationMinutes.HasValue && dto.DurationMinutes.Value > 0) td.DurationMinutes = dto.DurationMinutes.Value;
+        if (dto.OdoStart.HasValue && dto.OdoStart.Value >= 0) td.OdoStart = dto.OdoStart.Value;
+        if (dto.OdoEnd.HasValue && dto.OdoEnd.Value >= td.OdoStart)
+        {
+            td.OdoEnd = dto.OdoEnd.Value;
+            td.DistanceKm = Math.Max(0, td.OdoEnd.Value - td.OdoStart);
+        }
+        if (dto.SalesManCode != null) td.SalesManCode = dto.SalesManCode.Trim();
+        if (dto.SalesManName != null) td.SalesManName = dto.SalesManName.Trim();
+        if (dto.Instructor != null) td.Instructor = dto.Instructor.Trim();
+
+        if (dto.ScoreEngine.HasValue) td.ScoreEngine = Math.Clamp(dto.ScoreEngine.Value, 1.0m, 5.0m);
+        if (dto.ScoreHandling.HasValue) td.ScoreHandling = Math.Clamp(dto.ScoreHandling.Value, 1.0m, 5.0m);
+        if (dto.ScoreNVH.HasValue) td.ScoreNVH = Math.Clamp(dto.ScoreNVH.Value, 1.0m, 5.0m);
+        if (dto.ScoreDesign.HasValue) td.ScoreDesign = Math.Clamp(dto.ScoreDesign.Value, 1.0m, 5.0m);
+        if (dto.ScoreFeatures.HasValue) td.ScoreFeatures = Math.Clamp(dto.ScoreFeatures.Value, 1.0m, 5.0m);
+        if (dto.ScoreOverall.HasValue) td.ScoreOverall = Math.Clamp(dto.ScoreOverall.Value, 1.0m, 5.0m);
+
+        if (dto.CustomerFeedback != null) td.CustomerFeedback = dto.CustomerFeedback.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PurchaseIntent)) td.PurchaseIntent = dto.PurchaseIntent.Trim();
+        if (dto.CompetitorModel != null) td.CompetitorModel = dto.CompetitorModel.Trim();
+        if (dto.ExpectedDealDate.HasValue) td.ExpectedDealDate = dto.ExpectedDealDate.Value;
+        if (dto.Remark != null) td.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return await GetCustomerTestDriveAsync(td.DriveTestCode);
+    }
+
+    public async Task<object?> CustomerTestDriveTransitionAsync(string driveTestCode, string action, CustomerTestDriveTransitionDto? dto)
+    {
+        driveTestCode = driveTestCode.Trim().ToUpperInvariant();
+        var td = await db.CustomerTestDrives.FirstOrDefaultAsync(d => d.OrgId == Org && (d.DriveTestCode == driveTestCode || d.DriveTestCodeUser == driveTestCode));
+        if (td is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "User";
+
+        switch (action.ToLowerInvariant())
+        {
+            case "schedule":
+            case "approve":
+                if (td.Status is not ("Draft" or "Scheduled")) return null;
+                td.Status = "Scheduled";
+                td.ApprovedBy = actor;
+                td.ApprovedAt = now;
+                Log(td.Vin, "CustomerTestDriveScheduled", $"{td.DriveTestCode} Duyệt lịch lái thử cho khách {td.FullName} ({td.PhoneNo}) bởi {actor}");
+                break;
+
+            case "start":
+            case "in-progress":
+            case "inprogress":
+                if (td.Status is not ("Draft" or "Scheduled")) return null;
+                td.Status = "InProgress";
+                td.StartedBy = actor;
+                td.StartedAt = now;
+                if (dto?.OdoStart is >= 0) td.OdoStart = dto.OdoStart.Value;
+                Log(td.Vin, "CustomerTestDriveStarted", $"{td.DriveTestCode} Xuất phát lái thử xe {td.Model} - ODO bắt đầu: {td.OdoStart}km");
+                break;
+
+            case "complete":
+            case "finish":
+                if (td.Status is not ("Scheduled" or "InProgress")) return null;
+                td.Status = "Completed";
+                td.CompletedBy = actor;
+                td.CompletedAt = now;
+                if (td.StartedAt is null) td.StartedAt = now.AddMinutes(-td.DurationMinutes);
+                if (dto?.OdoEnd is { } odoEndVal && odoEndVal >= td.OdoStart)
+                {
+                    td.OdoEnd = odoEndVal;
+                    td.DistanceKm = Math.Max(0, odoEndVal - td.OdoStart);
+                }
+                else if (!td.OdoEnd.HasValue)
+                {
+                    td.DistanceKm = td.DurationMinutes > 0 ? (td.DurationMinutes * 25 / 60) : 15;
+                    td.OdoEnd = td.OdoStart + td.DistanceKm;
+                }
+
+                var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == td.Vin);
+                if (veh != null)
+                {
+                    veh.LastTestDriveNo = td.DriveTestCode;
+                    veh.LastTestDriveDate = td.DriveDTime;
+                    veh.TestDriveCount++;
+                    if (td.OdoEnd.HasValue && td.OdoEnd.Value > (veh.LastOdoKm ?? 0))
+                        veh.LastOdoKm = td.OdoEnd.Value;
+                }
+
+                Log(td.Vin, "CustomerTestDriveCompleted", $"{td.DriveTestCode} Hoàn tất lái thử {td.DistanceKm}km (ODO: {td.OdoStart} -> {td.OdoEnd}) - Khách {td.FullName} - Đánh giá: {td.ScoreOverall ?? 5}★");
+                break;
+
+            case "noshow":
+                if (td.Status is not ("Draft" or "Scheduled")) return null;
+                td.Status = "NoShow";
+                td.CancelledBy = actor;
+                td.CancelledAt = now;
+                td.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Khách hàng không đến theo lịch hẹn lái thử";
+                Log(td.Vin, "CustomerTestDriveNoShow", $"{td.DriveTestCode} Khách không đến lái thử: {td.CancelReason}");
+                break;
+
+            case "reject":
+                if (td.Status is not ("Draft" or "Scheduled")) return null;
+                td.Status = "Rejected";
+                td.CancelledBy = actor;
+                td.CancelledAt = now;
+                td.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Từ chối yêu cầu lái thử";
+                Log(td.Vin, "CustomerTestDriveRejected", $"{td.DriveTestCode} Từ chối lái thử: {td.CancelReason}");
+                break;
+
+            case "cancel":
+                if (td.Status is "Completed" or "Cancelled") return null;
+                td.Status = "Cancelled";
+                td.CancelledBy = actor;
+                td.CancelledAt = now;
+                td.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hủy lịch hẹn lái thử";
+                Log(td.Vin, "CustomerTestDriveCancelled", $"{td.DriveTestCode} Hủy lái thử: {td.CancelReason}");
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ. Hỗ trợ: schedule, start, complete, noshow, reject, cancel.");
+        }
+
+        await db.SaveChangesAsync();
+        return await GetCustomerTestDriveAsync(td.DriveTestCode);
+    }
+
+    public async Task<object?> RecordCustomerTestDriveFeedbackAsync(string driveTestCode, RecordTestDriveFeedbackDto dto)
+    {
+        driveTestCode = driveTestCode.Trim().ToUpperInvariant();
+        var td = await db.CustomerTestDrives.FirstOrDefaultAsync(d => d.OrgId == Org && (d.DriveTestCode == driveTestCode || d.DriveTestCodeUser == driveTestCode));
+        if (td is null) return null;
+
+        if (dto.ScoreEngine.HasValue) td.ScoreEngine = Math.Clamp(dto.ScoreEngine.Value, 1.0m, 5.0m);
+        if (dto.ScoreHandling.HasValue) td.ScoreHandling = Math.Clamp(dto.ScoreHandling.Value, 1.0m, 5.0m);
+        if (dto.ScoreNVH.HasValue) td.ScoreNVH = Math.Clamp(dto.ScoreNVH.Value, 1.0m, 5.0m);
+        if (dto.ScoreDesign.HasValue) td.ScoreDesign = Math.Clamp(dto.ScoreDesign.Value, 1.0m, 5.0m);
+        if (dto.ScoreFeatures.HasValue) td.ScoreFeatures = Math.Clamp(dto.ScoreFeatures.Value, 1.0m, 5.0m);
+        if (dto.ScoreOverall.HasValue) td.ScoreOverall = Math.Clamp(dto.ScoreOverall.Value, 1.0m, 5.0m);
+
+        if (dto.CustomerFeedback != null) td.CustomerFeedback = dto.CustomerFeedback.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PurchaseIntent)) td.PurchaseIntent = dto.PurchaseIntent.Trim();
+        if (dto.CompetitorModel != null) td.CompetitorModel = dto.CompetitorModel.Trim();
+        if (dto.ExpectedDealDate.HasValue) td.ExpectedDealDate = dto.ExpectedDealDate.Value;
+        if (dto.Remark != null) td.Remark = dto.Remark.Trim();
+
+        if (dto.OdoEnd.HasValue && dto.OdoEnd.Value >= td.OdoStart)
+        {
+            td.OdoEnd = dto.OdoEnd.Value;
+            td.DistanceKm = Math.Max(0, td.OdoEnd.Value - td.OdoStart);
+        }
+
+        if (td.Status == "InProgress" || td.Status == "Scheduled")
+        {
+            td.Status = "Completed";
+            td.CompletedBy = dto.Actor?.Trim() ?? "SalesConsultant";
+            td.CompletedAt = DateTime.Now;
+        }
+
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == td.Vin);
+        if (veh != null)
+        {
+            veh.LastTestDriveNo = td.DriveTestCode;
+            veh.LastTestDriveDate = td.DriveDTime;
+            veh.TestDriveCount++;
+            if (td.OdoEnd.HasValue && td.OdoEnd.Value > (veh.LastOdoKm ?? 0))
+                veh.LastOdoKm = td.OdoEnd.Value;
+        }
+
+        Log(td.Vin, "CustomerTestDriveFeedbackRecorded", $"{td.DriveTestCode} Ghi nhận đánh giá CSI {td.ScoreOverall:0.0}★ - Tiềm năng:{td.PurchaseIntent} - Ý kiến:{td.CustomerFeedback}");
+        await db.SaveChangesAsync();
+
+        return await GetCustomerTestDriveAsync(td.DriveTestCode);
+    }
+
+    public async Task<object?> RemoveCustomerTestDriveAsync(string driveTestCode)
+    {
+        driveTestCode = driveTestCode.Trim().ToUpperInvariant();
+        var td = await db.CustomerTestDrives.FirstOrDefaultAsync(d => d.OrgId == Org && (d.DriveTestCode == driveTestCode || d.DriveTestCodeUser == driveTestCode));
+        if (td is null) return null;
+
+        if (td.Status == "Completed")
+            throw new InvalidOperationException("Không thể xóa phiếu lái thử đã hoàn tất.");
+
+        db.CustomerTestDrives.Remove(td);
+        Log(td.Vin, "CustomerTestDriveDeleted", $"{td.DriveTestCode} Xóa phiếu đăng ký lái thử của khách {td.FullName}");
+        await db.SaveChangesAsync();
+
+        return new { success = true, driveTestCode, message = "Đã xóa phiếu đăng ký lái thử thành công." };
+    }
+
+    public async Task<object> GetTestDriveSummaryAsync(string? dealerCode, string? driveTestType)
+    {
+        var q = db.CustomerTestDrives.Where(d => d.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+        {
+            var dl = dealerCode.Trim().ToUpperInvariant();
+            q = q.Where(d => d.DealerCode == dl);
+        }
+        if (!string.IsNullOrWhiteSpace(driveTestType))
+        {
+            var dt = driveTestType.Trim().ToLowerInvariant();
+            q = q.Where(d => d.DriveTestType.ToLower() == dt);
+        }
+
+        var list = await q.ToListAsync();
+
+        int total = list.Count;
+        int draft = list.Count(d => d.Status == "Draft");
+        int scheduled = list.Count(d => d.Status == "Scheduled");
+        int inProgress = list.Count(d => d.Status == "InProgress");
+        int completed = list.Count(d => d.Status == "Completed");
+        int cancelled = list.Count(d => d.Status is "Cancelled" or "Rejected");
+        int noShow = list.Count(d => d.Status == "NoShow");
+        int highPotential = list.Count(d => d.PurchaseIntent is "VeryHigh" or "High");
+
+        var scored = list.Where(d => d.ScoreOverall.HasValue).ToList();
+        decimal avgOverall = scored.Count > 0 ? Math.Round(scored.Average(d => d.ScoreOverall!.Value), 2) : 5.0m;
+
+        var scoredEngine = list.Where(d => d.ScoreEngine.HasValue).ToList();
+        decimal avgEngine = scoredEngine.Count > 0 ? Math.Round(scoredEngine.Average(d => d.ScoreEngine!.Value), 2) : 5.0m;
+
+        var scoredHandling = list.Where(d => d.ScoreHandling.HasValue).ToList();
+        decimal avgHandling = scoredHandling.Count > 0 ? Math.Round(scoredHandling.Average(d => d.ScoreHandling!.Value), 2) : 5.0m;
+
+        var scoredNVH = list.Where(d => d.ScoreNVH.HasValue).ToList();
+        decimal avgNVH = scoredNVH.Count > 0 ? Math.Round(scoredNVH.Average(d => d.ScoreNVH!.Value), 2) : 5.0m;
+
+        int totalDistance = list.Sum(d => d.DistanceKm);
+        decimal conversionRate = completed > 0
+            ? Math.Round((decimal)highPotential / completed * 100, 1)
+            : 0;
+
+        var byModel = list
+            .GroupBy(d => d.Model)
+            .Select(g => new TestDriveModelStatsDto(
+                g.Key,
+                g.Count(),
+                g.Count(x => x.Status == "Completed"),
+                g.Count(x => x.PurchaseIntent is "VeryHigh" or "High"),
+                g.Any(x => x.ScoreOverall.HasValue) ? Math.Round(g.Where(x => x.ScoreOverall.HasValue).Average(x => x.ScoreOverall!.Value), 2) : 5.0m
+            ))
+            .OrderByDescending(x => x.TotalDrives)
+            .ToList();
+
+        var byDealer = list
+            .GroupBy(d => new { d.DealerCode, DealerName = d.DealerName ?? d.DealerCode })
+            .Select(g => new TestDriveDealerStatsDto(
+                g.Key.DealerCode,
+                g.Key.DealerName,
+                g.Count(),
+                g.Count(x => x.Status == "Completed"),
+                g.Count(x => x.PurchaseIntent is "VeryHigh" or "High")
+            ))
+            .OrderByDescending(x => x.TotalDrives)
+            .ToList();
+
+        var byDriveType = list
+            .GroupBy(d => d.DriveTestType)
+            .Select(g => new TestDriveTypeStatsDto(
+                g.Key,
+                g.Count(),
+                g.Count(x => x.Status == "Completed"),
+                g.Any(x => x.ScoreOverall.HasValue) ? Math.Round(g.Where(x => x.ScoreOverall.HasValue).Average(x => x.ScoreOverall!.Value), 2) : 5.0m
+            ))
+            .OrderByDescending(x => x.TotalDrives)
+            .ToList();
+
+        return new CustomerTestDriveSummaryDto(
+            total,
+            draft,
+            scheduled,
+            inProgress,
+            completed,
+            cancelled,
+            noShow,
+            highPotential,
+            avgOverall,
+            avgEngine,
+            avgHandling,
+            avgNVH,
+            totalDistance,
+            conversionRate,
+            byModel,
+            byDealer,
+            byDriveType
+        );
+    }
+
+    public async Task<object> GetAvailableTestDriveVehiclesAsync(string? dealerCode, string? model)
+    {
+        var q = db.Vehicles.Where(v => v.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+        {
+            var dl = dealerCode.Trim().ToUpperInvariant();
+            q = q.Where(v => v.DealerCode == dl || v.DealerCode == null);
+        }
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var md = model.Trim().ToLowerInvariant();
+            q = q.Where(v => v.Model.ToLower().Contains(md));
+        }
+
+        var list = await q.OrderByDescending(v => v.IsTestCar).ThenBy(v => v.Model).Take(200).Select(v => new
+        {
+            v.Vin,
+            v.Model,
+            v.EngineNo,
+            v.Color,
+            v.ModelYear,
+            v.PlateNo,
+            v.DealerCode,
+            v.StorageCode,
+            v.IsTestCar,
+            v.LastTestDriveNo,
+            v.LastTestDriveDate,
+            v.TestDriveCount,
+            v.LastOdoKm,
+            status = v.Status.ToString()
+        }).ToListAsync();
+
+        return new { count = list.Count, vehicles = list };
+    }
+
+    public async Task<object?> GetVehicleTestDriveInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var drives = await db.CustomerTestDrives
+            .Where(d => d.OrgId == Org && d.Vin == vin)
+            .OrderByDescending(d => d.Id)
+            .Take(50)
+            .ToListAsync();
+
+        return new VehicleTestDriveInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.PlateNo,
+            veh.IsTestCar,
+            veh.LastTestDriveNo,
+            veh.LastTestDriveDate,
+            veh.TestDriveCount,
+            drives
+        );
+    }
+
+    public async Task<object?> GetVehicleTestDriveHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var drives = await db.CustomerTestDrives
+            .Where(d => d.OrgId == Org && d.Vin == vin)
+            .OrderByDescending(d => d.Id)
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("CustomerTestDrive") || e.Kind.StartsWith("TestCar")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.PlateNo,
+                veh.EngineNo,
+                veh.Color,
+                veh.StorageCode,
+                veh.IsTestCar,
+                veh.LastTestDriveNo,
+                veh.LastTestDriveDate,
+                veh.TestDriveCount,
+                veh.LastOdoKm
+            },
+            testDrives = drives,
             events
         };
     }

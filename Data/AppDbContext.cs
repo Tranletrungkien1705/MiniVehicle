@@ -111,6 +111,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<StoragePaymentLine> StoragePaymentLines => Set<StoragePaymentLine>();
     public DbSet<AvnPayment> AvnPayments => Set<AvnPayment>();
     public DbSet<AvnPaymentLine> AvnPaymentLines => Set<AvnPaymentLine>();
+    public DbSet<CustomerTestDrive> CustomerTestDrives => Set<CustomerTestDrive>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -168,5 +169,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<StoragePayment>().HasIndex(x => new { x.OrgId, x.PaymentStorageNo }).IsUnique();
         b.Entity<AvnPayment>().HasIndex(x => new { x.OrgId, x.PaymentAVNNo }).IsUnique();
         b.Entity<AvnPaymentLine>().HasIndex(x => new { x.OrgId, x.PaymentAVNNo, x.Vin });
+        b.Entity<CustomerTestDrive>().HasIndex(x => new { x.OrgId, x.DriveTestCode }).IsUnique();
+        b.Entity<CustomerTestDrive>().HasIndex(x => new { x.OrgId, x.Vin });
     }
 }

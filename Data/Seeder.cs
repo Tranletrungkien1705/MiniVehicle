@@ -3915,6 +3915,185 @@ public static class Seeder
                 v2Avn.AvnPaymentCount = 1;
             }
         }
+
+        if (!await db.CustomerTestDrives.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var td1 = new CustomerTestDrive
+            {
+                OrgId = org,
+                DriveTestCode = "DT202603-0001",
+                DriveTestCodeUser = "LT/2026/03/HN01-001",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01 - Phạm Văn Đồng",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                SpecCode = "1.4 AT Đặc biệt",
+                DrvTestPlateNo = "30E-999.88",
+                FullName = "Hoàng Minh Đức",
+                PhoneNo = "0987654321",
+                Email = "minhduc.hoang@gmail.com",
+                CusAddress = "Khu đô thị Ngoại Giao Đoàn, Bắc Từ Liêm, Hà Nội",
+                Gender = "Nam",
+                BirthYear = 1990,
+                RangeAgeCode = "26-35",
+                DriverLicenseNo = "GPLX-010190088999",
+                LicenseClass = "B2",
+                DriveTestType = "Showroom",
+                EventName = "Trải nghiệm Hyundai Accent Mới",
+                RoutePath = "Showroom Phạm Văn Đồng - Cầu Nhật Tân - Đường Võ Nguyên Giáp - Quay đầu",
+                DriveDTime = DateTime.Now.AddDays(-3),
+                DurationMinutes = 35,
+                OdoStart = 1520,
+                OdoEnd = 1545,
+                DistanceKm = 25,
+                SalesManCode = "TVBH01",
+                SalesManName = "Lê Hoàng Long",
+                Instructor = "KTV-Chuyên gia Đặng Văn Nam",
+                ScoreEngine = 4.8m,
+                ScoreHandling = 4.9m,
+                ScoreNVH = 4.7m,
+                ScoreDesign = 5.0m,
+                ScoreFeatures = 5.0m,
+                ScoreOverall = 4.9m,
+                CustomerFeedback = "Xe vận hành đầm chắc, hộp số mượt mà, màn hình giải trí và phím bấm rất nhạy. Khách rất hài lòng với gói an toàn Hyundai SmartSense.",
+                PurchaseIntent = "VeryHigh",
+                CompetitorModel = "Toyota Vios, Honda City",
+                ExpectedDealDate = DateTime.Now.AddDays(4),
+                Status = "Completed",
+                Remark = "Khách lái thử cùng vợ, dự định đặt cọc phiên bản 1.4 AT Đặc biệt màu trắng trong tuần",
+                CreatedBy = "tvbh.long",
+                CreatedAt = DateTime.Now.AddDays(-4),
+                ApprovedBy = "Trưởng phòng Bán hàng Trần Văn Thắng",
+                ApprovedAt = DateTime.Now.AddDays(-3),
+                StartedBy = "Lê Hoàng Long",
+                StartedAt = DateTime.Now.AddDays(-3),
+                CompletedBy = "Lê Hoàng Long",
+                CompletedAt = DateTime.Now.AddDays(-3)
+            };
+
+            var td2 = new CustomerTestDrive
+            {
+                OrgId = org,
+                DriveTestCode = "DT202603-0002",
+                DriveTestCodeUser = "LT/2026/03/HN01-002",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01 - Phạm Văn Đồng",
+                Vin = "DEMOVIN00000002",
+                Model = "Creta 1.5 Cao cấp",
+                SpecCode = "1.5 Cao cấp 2 tông màu",
+                DrvTestPlateNo = "30E-888.66",
+                FullName = "Nguyễn Thùy Linh",
+                PhoneNo = "0934567890",
+                Email = "thuylinh.nguyen@outlook.com",
+                CusAddress = "Toà nhà Dolphin Plaza, Mỹ Đình, Nam Từ Liêm, Hà Nội",
+                Gender = "Nữ",
+                BirthYear = 1993,
+                RangeAgeCode = "26-35",
+                DriverLicenseNo = "GPLX-010193077666",
+                LicenseClass = "B1",
+                DriveTestType = "HomeDrive",
+                EventName = "Lái thử tại nhà cuối tuần",
+                RoutePath = "Khu đô thị Mỹ Đình - Đường vành đai 3 trên cao - Đại lộ Thăng Long",
+                DriveDTime = DateTime.Now.AddDays(-1),
+                DurationMinutes = 40,
+                OdoStart = 2850,
+                OdoEnd = 2882,
+                DistanceKm = 32,
+                SalesManCode = "TVBH02",
+                SalesManName = "Trần Thị Mai Anh",
+                Instructor = "KTV Đỗ Văn Sơn",
+                ScoreEngine = 4.7m,
+                ScoreHandling = 4.8m,
+                ScoreNVH = 4.6m,
+                ScoreDesign = 5.0m,
+                ScoreFeatures = 4.9m,
+                ScoreOverall = 4.8m,
+                CustomerFeedback = "Gầm cao thoáng, quan sát tốt, loa Bose nghe rất hay, cảnh báo điểm mù hiển thị rõ ràng trên gương.",
+                PurchaseIntent = "High",
+                CompetitorModel = "Kia Seltos, Honda HR-V",
+                ExpectedDealDate = DateTime.Now.AddDays(10),
+                Status = "Completed",
+                Remark = "Khách chọn mua xe phục vụ gia đình đưa đón con đi học, đang chờ ngày tốt để ký hợp đồng",
+                CreatedBy = "tvbh.maianh",
+                CreatedAt = DateTime.Now.AddDays(-2),
+                ApprovedBy = "Trưởng phòng Bán hàng Trần Văn Thắng",
+                ApprovedAt = DateTime.Now.AddDays(-1),
+                StartedBy = "Trần Thị Mai Anh",
+                StartedAt = DateTime.Now.AddDays(-1),
+                CompletedBy = "Trần Thị Mai Anh",
+                CompletedAt = DateTime.Now.AddDays(-1)
+            };
+
+            var td3 = new CustomerTestDrive
+            {
+                OrgId = org,
+                DriveTestCode = "DT202603-0003",
+                DriveTestCodeUser = "LT/2026/03/SG01-001",
+                DealerCode = "DLR-SG01",
+                DealerName = "Hyundai Sài Gòn 01 - Trường Chinh",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                SpecCode = "1.4 AT Tiêu chuẩn",
+                DrvTestPlateNo = "51K-999.11",
+                FullName = "Phạm Quang Hải",
+                PhoneNo = "0978112233",
+                Email = "quanghai.pham@gmail.com",
+                CusAddress = "Đường Cách Mạng Tháng 8, Quận 10, TP. Hồ Chí Minh",
+                Gender = "Nam",
+                BirthYear = 1988,
+                RangeAgeCode = "36-45",
+                DriverLicenseNo = "GPLX-790188055444",
+                LicenseClass = "B2",
+                DriveTestType = "RoadshowEvent",
+                EventName = "Roadshow Hyundai Trải Nghiệm Lái Thử Toàn Quốc 2026",
+                RoutePath = "Khu đô thị Sala - Cầu Ba Son - Mai Chí Thọ - Hầm Thủ Thiêm",
+                DriveDTime = DateTime.Now.AddDays(1),
+                DurationMinutes = 30,
+                OdoStart = 1545,
+                OdoEnd = null,
+                DistanceKm = 0,
+                SalesManCode = "TVBH05",
+                SalesManName = "Vũ Đình Trọng",
+                Instructor = "Chuyên gia Hyundai Lái Xe An Toàn",
+                ScoreEngine = null,
+                ScoreHandling = null,
+                ScoreNVH = null,
+                ScoreDesign = null,
+                ScoreFeatures = null,
+                ScoreOverall = null,
+                CustomerFeedback = null,
+                PurchaseIntent = "High",
+                CompetitorModel = "Mazda 2, Toyota Vios",
+                ExpectedDealDate = null,
+                Status = "Scheduled",
+                Remark = "Đã xác nhận lịch hẹn qua điện thoại với khách hàng, chuẩn bị xe và thẻ đeo sự kiện",
+                CreatedBy = "tvbh.trong",
+                CreatedAt = DateTime.Now.AddDays(-1),
+                ApprovedBy = "Giám đốc Bán hàng Nguyễn Tuấn Kiệt",
+                ApprovedAt = DateTime.Now
+            };
+
+            db.CustomerTestDrives.AddRange(td1, td2, td3);
+
+            var v1Td = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Td != null)
+            {
+                v1Td.IsTestCar = true;
+                v1Td.LastTestDriveNo = td1.DriveTestCode;
+                v1Td.LastTestDriveDate = td1.DriveDTime;
+                v1Td.TestDriveCount = 1;
+            }
+
+            var v2Td = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Td != null)
+            {
+                v2Td.IsTestCar = true;
+                v2Td.LastTestDriveNo = td2.DriveTestCode;
+                v2Td.LastTestDriveDate = td2.DriveDTime;
+                v2Td.TestDriveCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -4120,8 +4299,12 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastAvnPaymentNo\" text NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastAvnPaymentDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"AvnPaymentCount\" integer NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastTestDriveNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastTestDriveDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"TestDriveCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"AvnPayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PaymentAVNNo\" text NOT NULL DEFAULT '', \"PaymentAVNNoUser\" text NULL, \"PmtMonth\" text NOT NULL DEFAULT '', \"SupplierCode\" text NOT NULL DEFAULT 'MOBIS', \"SupplierName\" text NULL DEFAULT 'Mobis Auto Parts Vietnam', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalBeforeVAT\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"SupplierSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"SupplierSignDate\" timestamp NULL, \"SupplierSignBy\" text NULL, \"HTVSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"HTVSignDate\" timestamp NULL, \"HTVSignBy\" text NULL, \"BankRefNo\" text NULL, \"PaymentDate\" timestamp NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"AvnPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AvnPaymentId\" bigint NOT NULL, \"PaymentAVNNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"AvnDeviceCode\" text NOT NULL DEFAULT 'AVN-GEN5W-10INCH', \"AvnSerialNo\" text NOT NULL DEFAULT '', \"MapCardSerialNo\" text NULL, \"MapVersion\" text NULL DEFAULT 'VN-MAP-2026.Q1', \"DevicePrice\" numeric NOT NULL DEFAULT 7500000, \"MapPrice\" numeric NOT NULL DEFAULT 1200000, \"InstallationFee\" numeric NOT NULL DEFAULT 300000, \"AccessoryCost\" numeric NOT NULL DEFAULT 200000, \"TotalAmount\" numeric NOT NULL DEFAULT 9200000, \"InStorageDate\" timestamp NULL, \"AvnInstallDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"AvnPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AvnPaymentId\" bigint NOT NULL, \"PaymentAVNNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"AvnDeviceCode\" text NOT NULL DEFAULT 'AVN-GEN5W-10INCH', \"AvnSerialNo\" text NOT NULL DEFAULT '', \"MapCardSerialNo\" text NULL, \"MapVersion\" text NULL DEFAULT 'VN-MAP-2026.Q1', \"DevicePrice\" numeric NOT NULL DEFAULT 7500000, \"MapPrice\" numeric NOT NULL DEFAULT 1200000, \"InstallationFee\" numeric NOT NULL DEFAULT 300000, \"AccessoryCost\" numeric NOT NULL DEFAULT 200000, \"TotalAmount\" numeric NOT NULL DEFAULT 9200000, \"InStorageDate\" timestamp NULL, \"AvnInstallDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"CustomerTestDrives\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"DriveTestCode\" text NOT NULL DEFAULT '', \"DriveTestCodeUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"DrvTestPlateNo\" text NULL, \"FullName\" text NOT NULL DEFAULT '', \"PhoneNo\" text NOT NULL DEFAULT '', \"Email\" text NULL, \"CusAddress\" text NULL, \"Gender\" text NOT NULL DEFAULT 'Nam', \"BirthYear\" integer NULL, \"RangeAgeCode\" text NULL DEFAULT '26-35', \"DriverLicenseNo\" text NOT NULL DEFAULT '', \"LicenseClass\" text NULL DEFAULT 'B2', \"DriveTestType\" text NOT NULL DEFAULT 'Showroom', \"EventName\" text NULL, \"RoutePath\" text NULL, \"DriveDTime\" timestamp NOT NULL DEFAULT now(), \"DurationMinutes\" integer NOT NULL DEFAULT 30, \"OdoStart\" integer NOT NULL DEFAULT 0, \"OdoEnd\" integer NULL, \"DistanceKm\" integer NOT NULL DEFAULT 0, \"SalesManCode\" text NULL, \"SalesManName\" text NULL, \"Instructor\" text NULL, \"ScoreEngine\" numeric NULL DEFAULT 5.0, \"ScoreHandling\" numeric NULL DEFAULT 5.0, \"ScoreNVH\" numeric NULL DEFAULT 5.0, \"ScoreDesign\" numeric NULL DEFAULT 5.0, \"ScoreFeatures\" numeric NULL DEFAULT 5.0, \"ScoreOverall\" numeric NULL DEFAULT 5.0, \"CustomerFeedback\" text NULL, \"PurchaseIntent\" text NOT NULL DEFAULT 'High', \"CompetitorModel\" text NULL, \"ExpectedDealDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"StartedBy\" text NULL, \"StartedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

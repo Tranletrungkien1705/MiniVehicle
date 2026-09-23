@@ -119,6 +119,9 @@ public sealed class Vehicle
     public string? LastAvnPaymentNo { get; set; }     // Mã bảng kê quyết toán AVN gần nhất (PaymentAVNNo)
     public DateTime? LastAvnPaymentDate { get; set; } // Ngày quyết toán chi phí AVN gần nhất
     public int AvnPaymentCount { get; set; } = 0;     // Số lần xe phát sinh trong bảng kê quyết toán AVN
+    public string? LastTestDriveNo { get; set; }      // Mã phiếu khách hàng lái thử xe gần nhất (CustomerTestDrive / DLR_DriveTest)
+    public DateTime? LastTestDriveDate { get; set; }  // Ngày lái thử xe gần nhất
+    public int TestDriveCount { get; set; } = 0;      // Tổng số lượt khách hàng đã lái thử trên xe này
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -3885,6 +3888,206 @@ public sealed record VehicleAvnPaymentInfoDto(
     int AvnPaymentCount,
     List<AvnPaymentLine> PaymentLines
 );
+
+// ===== Đăng ký & Nhật ký Khách hàng Lái thử xe tại Đại lý / Roadshow (BizHTC.RetailContract / DLR_DriveTest, Mst_CarDriverTest / FrmMngTestDriver, FrmNewTestDriver) =====
+
+/// <summary>Đăng ký &amp; Nhật ký Khách hàng Lái thử xe tại Đại lý / Roadshow (BizHTC.RetailContract / DLR_DriveTest / TestDrive): quản lý tiếp nhận khách hàng trải nghiệm lái thử xe thực tế, kiểm tra thông tin GPLX, xe lái thử VIN, loại hình lái thử (Showroom, HomeDrive, Roadshow), quãng đường ODO, khảo sát phản hồi đánh giá CSI (Động cơ, Cảm giác lái, Cách âm NVH, Tiện nghi ADAS), mức độ tiềm năng mua xe và dự kiến chốt hợp đồng.</summary>
+public sealed class CustomerTestDrive
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string DriveTestCode { get; set; } = "";             // Mã phiếu lái thử (DT202603-0001, DT...)
+    public string? DriveTestCodeUser { get; set; }            // Mã số phiếu tham chiếu nội bộ đại lý
+    public string DealerCode { get; set; } = "";              // Mã đại lý tổ chức lái thử
+    public string? DealerName { get; set; }                   // Tên đại lý
+    public string Vin { get; set; } = "";                     // Số khung xe lái thử
+    public string Model { get; set; } = "";                   // Dòng xe lái thử (SantaFe, Tucson, Creta, Accent, Custin, Palisade, Ioniq 5...)
+    public string? SpecCode { get; set; }                     // Phiên bản xe (1.6T HTRAC, 2.0 AT, EV 72.6kWh...)
+    public string? DrvTestPlateNo { get; set; }               // Biển số xe lái thử (30E-999.88, 51K-888.66...)
+    public string FullName { get; set; } = "";                // Họ và tên khách hàng lái thử
+    public string PhoneNo { get; set; } = "";                 // SĐT liên hệ của khách hàng
+    public string? Email { get; set; }                        // Email khách hàng
+    public string? CusAddress { get; set; }                   // Địa chỉ khách hàng
+    public string Gender { get; set; } = "Nam";               // Giới tính (Nam, Nữ, Khác)
+    public int? BirthYear { get; set; }                       // Năm sinh
+    public string? RangeAgeCode { get; set; } = "26-35";      // Nhóm tuổi: 18-25, 26-35, 36-45, 46-55, Over55
+    public string DriverLicenseNo { get; set; } = "";         // Số giấy phép lái xe GPLX
+    public string? LicenseClass { get; set; } = "B2";         // Hạng GPLX: B1, B2, C, D, E...
+    public string DriveTestType { get; set; } = "Showroom";   // Loại hình lái thử: Showroom (Tại đại lý), HomeDrive (Lái thử tại nhà), RoadshowEvent (Sự kiện trải nghiệm), WeekendDrive (Lái thử cuối tuần)
+    public string? EventName { get; set; }                    // Tên sự kiện Roadshow / Ngày hội lái thử (nếu có)
+    public string? RoutePath { get; set; }                    // Lộ trình / Tuyến đường lái thử (Nội đô, Đường trường, Cao tốc, Cung đường đèo dốc...)
+    public DateTime DriveDTime { get; set; } = DateTime.Now;  // Ngày giờ hẹn lái thử
+    public int DurationMinutes { get; set; } = 30;            // Thời lượng lái thử thực tế (phút)
+    public int OdoStart { get; set; } = 0;                    // Số km ODO trước khi lái thử
+    public int? OdoEnd { get; set; }                          // Số km ODO sau khi kết thúc lái thử
+    public int DistanceKm { get; set; } = 0;                  // Quãng đường đã chạy (km) = OdoEnd - OdoStart
+    public string? SalesManCode { get; set; }                 // Mã tư vấn bán hàng TVBH đồng hành
+    public string? SalesManName { get; set; }                 // Tên tư vấn bán hàng TVBH
+    public string? Instructor { get; set; }                   // Chuyên gia / KTV hướng dẫn kỹ thuật lái xe an toàn
+    public decimal? ScoreEngine { get; set; } = 5.0m;         // Đánh giá động cơ & khả năng tăng tốc (1.0 - 5.0 sao)
+    public decimal? ScoreHandling { get; set; } = 5.0m;       // Đánh giá cảm giác lái & vô lăng (1.0 - 5.0 sao)
+    public decimal? ScoreNVH { get; set; } = 5.0m;            // Đánh giá độ cách âm & độ êm ái giảm xóc NVH (1.0 - 5.0 sao)
+    public decimal? ScoreDesign { get; set; } = 5.0m;         // Đánh giá thiết kế ngoại thất & nội thất (1.0 - 5.0 sao)
+    public decimal? ScoreFeatures { get; set; } = 5.0m;       // Đánh giá tính năng an toàn ADAS & tiện nghi công nghệ (1.0 - 5.0 sao)
+    public decimal? ScoreOverall { get; set; } = 5.0m;        // Điểm đánh giá hài lòng chung (1.0 - 5.0 sao)
+    public string? CustomerFeedback { get; set; }             // Ý kiến nhận xét chi tiết của khách hàng sau khi lái thử
+    public string PurchaseIntent { get; set; } = "High";     // Mức độ tiềm năng mua xe: VeryHigh (Rất cao - Trong tuần), High (Cao - Trong tháng), Medium (Trung bình - Đang cân nhắc), Low (Thấp - Tham khảo)
+    public string? CompetitorModel { get; set; }              // Dòng xe đối thủ khách đang so sánh (Mazda CX-5, Ford Territory, Honda CR-V, Toyota Corolla Cross...)
+    public DateTime? ExpectedDealDate { get; set; }           // Ngày dự kiến ký hợp đồng mua xe
+    public string Status { get; set; } = "Draft";             // Draft → Scheduled → InProgress → Completed (hoặc Cancelled / NoShow / Rejected)
+    public string? Remark { get; set; }                       // Ghi chú điều hành buổi lái thử
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                   // Trưởng phòng bán hàng duyệt lịch lái thử
+    public DateTime? ApprovedAt { get; set; }
+    public string? StartedBy { get; set; }                    // TVBH xuất phát bàn giao xe
+    public DateTime? StartedAt { get; set; }
+    public string? CompletedBy { get; set; }                  // TVBH & khách hàng nghiệm thu hoàn tất
+    public DateTime? CompletedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+// ===== DTOs cho Khách hàng Lái thử xe (BizHTC.RetailContract / DLR_DriveTest / CustomerTestDrive) =====
+
+public sealed record CreateCustomerTestDriveDto(
+    string? DriveTestCode,
+    string? DriveTestCodeUser,
+    string DealerCode,
+    string? DealerName,
+    string Vin,
+    string? Model,
+    string? SpecCode,
+    string? DrvTestPlateNo,
+    string FullName,
+    string PhoneNo,
+    string? Email,
+    string? CusAddress,
+    string? Gender,
+    int? BirthYear,
+    string? RangeAgeCode,
+    string DriverLicenseNo,
+    string? LicenseClass,
+    string? DriveTestType,
+    string? EventName,
+    string? RoutePath,
+    DateTime? DriveDTime,
+    int? DurationMinutes,
+    int? OdoStart,
+    string? SalesManCode,
+    string? SalesManName,
+    string? Instructor,
+    string? PurchaseIntent,
+    string? CompetitorModel,
+    DateTime? ExpectedDealDate,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record UpdateCustomerTestDriveDto(
+    string? DriveTestCodeUser,
+    string? DealerCode,
+    string? DealerName,
+    string? Vin,
+    string? Model,
+    string? SpecCode,
+    string? DrvTestPlateNo,
+    string? FullName,
+    string? PhoneNo,
+    string? Email,
+    string? CusAddress,
+    string? Gender,
+    int? BirthYear,
+    string? RangeAgeCode,
+    string? DriverLicenseNo,
+    string? LicenseClass,
+    string? DriveTestType,
+    string? EventName,
+    string? RoutePath,
+    DateTime? DriveDTime,
+    int? DurationMinutes,
+    int? OdoStart,
+    int? OdoEnd,
+    string? SalesManCode,
+    string? SalesManName,
+    string? Instructor,
+    decimal? ScoreEngine,
+    decimal? ScoreHandling,
+    decimal? ScoreNVH,
+    decimal? ScoreDesign,
+    decimal? ScoreFeatures,
+    decimal? ScoreOverall,
+    string? CustomerFeedback,
+    string? PurchaseIntent,
+    string? CompetitorModel,
+    DateTime? ExpectedDealDate,
+    string? Remark
+);
+
+public sealed record CustomerTestDriveTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    int? OdoStart,
+    int? OdoEnd,
+    DateTime? TransitionDate
+);
+
+public sealed record RecordTestDriveFeedbackDto(
+    decimal? ScoreEngine,
+    decimal? ScoreHandling,
+    decimal? ScoreNVH,
+    decimal? ScoreDesign,
+    decimal? ScoreFeatures,
+    decimal? ScoreOverall,
+    string? CustomerFeedback,
+    string? PurchaseIntent,
+    string? CompetitorModel,
+    DateTime? ExpectedDealDate,
+    int? OdoEnd,
+    string? Actor,
+    string? Remark
+);
+
+public sealed record CustomerTestDriveSummaryDto(
+    int TotalTestDrives,
+    int TotalDraft,
+    int TotalScheduled,
+    int TotalInProgress,
+    int TotalCompleted,
+    int TotalCancelled,
+    int TotalNoShow,
+    int TotalHighPotential,
+    decimal AverageScoreOverall,
+    decimal AverageScoreEngine,
+    decimal AverageScoreHandling,
+    decimal AverageScoreNVH,
+    int TotalDistanceKm,
+    decimal ConversionRatePercent,
+    List<TestDriveModelStatsDto> ByModel,
+    List<TestDriveDealerStatsDto> ByDealer,
+    List<TestDriveTypeStatsDto> ByDriveType
+);
+
+public sealed record TestDriveModelStatsDto(string Model, int TotalDrives, int CompletedDrives, int HighPotentialCount, decimal AverageScore);
+public sealed record TestDriveDealerStatsDto(string DealerCode, string DealerName, int TotalDrives, int CompletedDrives, int HighPotentialCount);
+public sealed record TestDriveTypeStatsDto(string DriveTestType, int TotalDrives, int CompletedDrives, decimal AverageScore);
+
+public sealed record VehicleTestDriveInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? PlateNo,
+    bool IsTestCar,
+    string? LastTestDriveNo,
+    DateTime? LastTestDriveDate,
+    int TestDriveCount,
+    List<CustomerTestDrive> RecentTestDrives
+);
+
 
 
 
