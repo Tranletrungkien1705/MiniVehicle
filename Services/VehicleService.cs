@@ -2087,6 +2087,22 @@ public interface IVehicleService
     Task<object> GetTransportInsurancePaymentSummaryAsync(string? transporterCode, string? pmtMonth, string? insuranceCompanyCode);
     Task<object?> GetVehicleTranspInsPaymentInfoAsync(string vin);
     Task<object?> GetVehicleTranspInsPaymentHistoryAsync(string vin);
+
+    // Quản lý Định mức Tồn kho An toàn & Cân đối Tồn kho Đại lý OEM (BizHTC.MasterData & BizHTC.StorageFG / Mst_DealerInventoryThreshold, Mst_MinInventory, St_MinInvBalance)
+    Task<object> CreateDealerInventoryThresholdAsync(CreateDealerInventoryThresholdDto dto);
+    Task<object> BatchCreateDealerInventoryThresholdsAsync(BatchCreateDealerInventoryThresholdDto dto);
+    Task<object> ListDealerInventoryThresholdsAsync(string? status, string? dealer, string? model, int? month, int? year, string? thresholdNo);
+    Task<object?> GetDealerInventoryThresholdAsync(string thresholdNo);
+    Task<object?> UpdateDealerInventoryThresholdAsync(string thresholdNo, UpdateDealerInventoryThresholdDto dto);
+    Task<object?> DealerInventoryThresholdTransitionAsync(string thresholdNo, string action, DealerInventoryThresholdTransitionDto? dto);
+    Task<object?> RemoveDealerInventoryThresholdAsync(string thresholdNo);
+    Task<object> RunInventoryAuditAsync(RunInventoryAuditDto? dto);
+    Task<object> ListInventoryAuditRecordsAsync(string? dealer, string? model, string? healthStatus, string? auditNo);
+    Task<object> GetDealerStockHealthReportAsync(string? dealer, string? model, string? region);
+    Task<object> GetStockRebalanceSuggestionsAsync(string? model);
+    Task<object> GetDealerInventoryThresholdSummaryAsync(int? month, int? year, string? region);
+    Task<object?> GetVehicleInventoryThresholdInfoAsync(string vin);
+    Task<object?> GetVehicleInventoryThresholdHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -32328,6 +32344,872 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             },
             payments,
             lines,
+            events
+        };
+    }
+
+    // ===== Quản lý Định mức Tồn kho An toàn & Cân đối Kho Đại lý OEM (BizHTC.MasterData & BizHTC.StorageFG / Mst_DealerInventoryThreshold, Mst_MinInventory, St_MinInvBalance) =====
+
+    private static string ResolveDealerNameForThreshold(string dealerCode, string? customName = null)
+    {
+        if (!string.IsNullOrWhiteSpace(customName)) return customName.Trim();
+        return dealerCode.ToUpperInvariant() switch
+        {
+            "DLR-HN01" => "Hyundai Đông Đô",
+            "DLR-HN02" => "Hyundai Phạm Văn Đồng",
+            "DLR-HN03" => "Hyundai Hà Đông",
+            "DLR-HCM01" => "Hyundai Sài Gòn",
+            "DLR-HCM02" => "Hyundai Gia Định",
+            "DLR-DN01" => "Hyundai Đà Nẵng",
+            "DLR-HP01" => "Hyundai Hải Phòng",
+            "DLR-CT01" => "Hyundai Cần Thơ",
+            "DLR-BD01" => "Hyundai Bình Dương",
+            "DLR-VT01" => "Hyundai Vũng Tàu",
+            "DLR-NA01" => "Hyundai Nghệ An",
+            _ => dealerCode
+        };
+    }
+
+    private static string ResolveRegionCodeForThreshold(string dealerCode, string? customRegion = null)
+    {
+        if (!string.IsNullOrWhiteSpace(customRegion)) return customRegion.Trim();
+        var d = dealerCode.ToUpperInvariant();
+        if (d.Contains("HN") || d.Contains("HP") || d.Contains("NA") || d.Contains("NB") || d.Contains("TN"))
+            return "MienBac";
+        if (d.Contains("DN") || d.Contains("HUE") || d.Contains("QN") || d.Contains("KH"))
+            return "MienTrung";
+        if (d.Contains("HCM") || d.Contains("BD") || d.Contains("CT") || d.Contains("VT") || d.Contains("DNAI"))
+            return "MienNam";
+        return "MienBac";
+    }
+
+    public async Task<object> CreateDealerInventoryThresholdAsync(CreateDealerInventoryThresholdDto dto)
+    {
+        var dealerCode = dto.DealerCode?.Trim().ToUpperInvariant() ?? throw new InvalidOperationException("Mã đại lý không được để trống.");
+        var model = dto.Model?.Trim() ?? throw new InvalidOperationException("Dòng xe không được để trống.");
+        var month = dto.PeriodMonth ?? DateTime.Now.Month;
+        var year = dto.PeriodYear ?? DateTime.Now.Year;
+
+        var thresholdNo = !string.IsNullOrWhiteSpace(dto.ThresholdNo)
+            ? dto.ThresholdNo.Trim().ToUpperInvariant()
+            : $"TH{year:D4}{month:D2}-{(await db.DealerInventoryThresholds.CountAsync(t => t.OrgId == Org) + 1):D4}";
+
+        if (await db.DealerInventoryThresholds.AnyAsync(t => t.OrgId == Org && t.ThresholdNo == thresholdNo))
+            throw new InvalidOperationException($"Mã định mức tồn kho {thresholdNo} đã tồn tại.");
+
+        var minQty = dto.MinInvQty ?? 5;
+        var targetQty = dto.TargetInvQty ?? Math.Max(minQty, 10);
+        var maxQty = dto.MaxInvQty ?? Math.Max(targetQty, 25);
+        if (minQty < 0 || targetQty < minQty || maxQty < targetQty)
+            throw new InvalidOperationException("Quy tắc định mức tồn kho không hợp lệ (Phải thỏa mãn: 0 <= MinQty <= TargetQty <= MaxQty).");
+
+        var threshold = new DealerInventoryThreshold
+        {
+            OrgId = Org,
+            ThresholdNo = thresholdNo,
+            ThresholdNoUser = dto.ThresholdNoUser?.Trim(),
+            DealerCode = dealerCode,
+            DealerName = ResolveDealerNameForThreshold(dealerCode, dto.DealerName),
+            RegionCode = ResolveRegionCodeForThreshold(dealerCode, dto.RegionCode),
+            Model = model,
+            SpecCode = dto.SpecCode?.Trim(),
+            PeriodMonth = month,
+            PeriodYear = year,
+            MinInvQty = minQty,
+            TargetInvQty = targetQty,
+            MaxInvQty = maxQty,
+            WarningThresholdPercent = dto.WarningThresholdPercent ?? 20m,
+            DailySalesRate = dto.DailySalesRate ?? 0.5m,
+            EffectiveFrom = dto.EffectiveFrom ?? new DateTime(year, month, 1),
+            EffectiveTo = dto.EffectiveTo ?? new DateTime(year, month, DateTime.DaysInMonth(year, month)),
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "planner.inventory",
+            CreatedAt = DateTime.Now
+        };
+
+        db.DealerInventoryThresholds.Add(threshold);
+        await db.SaveChangesAsync();
+
+        return threshold;
+    }
+
+    public async Task<object> BatchCreateDealerInventoryThresholdsAsync(BatchCreateDealerInventoryThresholdDto dto)
+    {
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("Danh sách định mức tồn kho thiết lập không được để trống.");
+
+        var month = dto.PeriodMonth ?? DateTime.Now.Month;
+        var year = dto.PeriodYear ?? DateTime.Now.Year;
+        var effFrom = dto.EffectiveFrom ?? new DateTime(year, month, 1);
+        var effTo = dto.EffectiveTo ?? new DateTime(year, month, DateTime.DaysInMonth(year, month));
+        var createdBy = dto.CreatedBy?.Trim() ?? "planner.inventory";
+
+        var baseIndex = await db.DealerInventoryThresholds.CountAsync(t => t.OrgId == Org);
+        var createdList = new List<DealerInventoryThreshold>();
+
+        foreach (var item in dto.Items)
+        {
+            var dealerCode = item.DealerCode?.Trim().ToUpperInvariant() ?? throw new InvalidOperationException("Mã đại lý không được để trống.");
+            var model = item.Model?.Trim() ?? throw new InvalidOperationException("Dòng xe không được để trống.");
+
+            baseIndex++;
+            var thresholdNo = $"TH{year:D4}{month:D2}-{baseIndex:D4}";
+
+            var minQty = item.MinInvQty ?? 5;
+            var targetQty = item.TargetInvQty ?? Math.Max(minQty, 10);
+            var maxQty = item.MaxInvQty ?? Math.Max(targetQty, 25);
+
+            var th = new DealerInventoryThreshold
+            {
+                OrgId = Org,
+                ThresholdNo = thresholdNo,
+                ThresholdNoUser = dto.ThresholdNoUser?.Trim(),
+                DealerCode = dealerCode,
+                DealerName = ResolveDealerNameForThreshold(dealerCode, item.DealerName),
+                RegionCode = ResolveRegionCodeForThreshold(dealerCode, item.RegionCode),
+                Model = model,
+                SpecCode = item.SpecCode?.Trim(),
+                PeriodMonth = month,
+                PeriodYear = year,
+                MinInvQty = minQty,
+                TargetInvQty = targetQty,
+                MaxInvQty = maxQty,
+                WarningThresholdPercent = item.WarningThresholdPercent ?? 20m,
+                DailySalesRate = item.DailySalesRate ?? 0.5m,
+                EffectiveFrom = effFrom,
+                EffectiveTo = effTo,
+                Status = "Draft",
+                Remark = item.Remark?.Trim(),
+                CreatedBy = createdBy,
+                CreatedAt = DateTime.Now
+            };
+
+            db.DealerInventoryThresholds.Add(th);
+            createdList.Add(th);
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            TotalCreated = createdList.Count,
+            Period = $"{year:D4}-{month:D2}",
+            Thresholds = createdList
+        };
+    }
+
+    public async Task<object> ListDealerInventoryThresholdsAsync(string? status, string? dealer, string? model, int? month, int? year, string? thresholdNo)
+    {
+        var q = db.DealerInventoryThresholds.Where(t => t.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var s = status.Trim();
+            q = q.Where(t => t.Status == s);
+        }
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(t => t.DealerCode.Contains(d) || (t.DealerName != null && t.DealerName.ToUpper().Contains(d)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var m = model.Trim().ToUpperInvariant();
+            q = q.Where(t => t.Model.ToUpper().Contains(m));
+        }
+
+        if (month.HasValue && month.Value > 0)
+            q = q.Where(t => t.PeriodMonth == month.Value);
+
+        if (year.HasValue && year.Value > 0)
+            q = q.Where(t => t.PeriodYear == year.Value);
+
+        if (!string.IsNullOrWhiteSpace(thresholdNo))
+        {
+            var tn = thresholdNo.Trim().ToUpperInvariant();
+            q = q.Where(t => t.ThresholdNo.Contains(tn) || (t.ThresholdNoUser != null && t.ThresholdNoUser.ToUpper().Contains(tn)));
+        }
+
+        return await q.OrderByDescending(t => t.PeriodYear)
+                      .ThenByDescending(t => t.PeriodMonth)
+                      .ThenBy(t => t.DealerCode)
+                      .ThenBy(t => t.Model)
+                      .ToListAsync();
+    }
+
+    public async Task<object?> GetDealerInventoryThresholdAsync(string thresholdNo)
+    {
+        thresholdNo = thresholdNo.Trim().ToUpperInvariant();
+        var th = await db.DealerInventoryThresholds.FirstOrDefaultAsync(t => t.OrgId == Org && t.ThresholdNo == thresholdNo);
+        if (th is null) return null;
+
+        var recentAudits = await db.InventoryAuditRecords
+            .Where(a => a.OrgId == Org && (a.ThresholdNo == thresholdNo || (a.DealerCode == th.DealerCode && a.Model == th.Model)))
+            .OrderByDescending(a => a.AuditDate)
+            .Take(10)
+            .ToListAsync();
+
+        var inStockVehicles = await db.Vehicles
+            .Where(v => v.OrgId == Org && v.DealerCode == th.DealerCode && v.Model == th.Model)
+            .Take(20)
+            .ToListAsync();
+
+        return new
+        {
+            threshold = th,
+            recentAudits,
+            currentVehicles = inStockVehicles
+        };
+    }
+
+    public async Task<object?> UpdateDealerInventoryThresholdAsync(string thresholdNo, UpdateDealerInventoryThresholdDto dto)
+    {
+        thresholdNo = thresholdNo.Trim().ToUpperInvariant();
+        var th = await db.DealerInventoryThresholds.FirstOrDefaultAsync(t => t.OrgId == Org && t.ThresholdNo == thresholdNo);
+        if (th is null) return null;
+
+        if (th.Status != "Draft")
+            throw new InvalidOperationException($"Chỉ có thể chỉnh sửa định mức tồn kho ở trạng thái Draft. Hiện tại là {th.Status}.");
+
+        if (dto.ThresholdNoUser != null) th.ThresholdNoUser = dto.ThresholdNoUser.Trim();
+        if (dto.DealerName != null) th.DealerName = dto.DealerName.Trim();
+        if (dto.RegionCode != null) th.RegionCode = dto.RegionCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Model)) th.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) th.SpecCode = dto.SpecCode.Trim();
+        if (dto.PeriodMonth.HasValue && dto.PeriodMonth.Value > 0) th.PeriodMonth = dto.PeriodMonth.Value;
+        if (dto.PeriodYear.HasValue && dto.PeriodYear.Value > 0) th.PeriodYear = dto.PeriodYear.Value;
+        if (dto.MinInvQty.HasValue) th.MinInvQty = dto.MinInvQty.Value;
+        if (dto.TargetInvQty.HasValue) th.TargetInvQty = dto.TargetInvQty.Value;
+        if (dto.MaxInvQty.HasValue) th.MaxInvQty = dto.MaxInvQty.Value;
+        if (dto.WarningThresholdPercent.HasValue) th.WarningThresholdPercent = dto.WarningThresholdPercent.Value;
+        if (dto.DailySalesRate.HasValue) th.DailySalesRate = dto.DailySalesRate.Value;
+        if (dto.EffectiveFrom.HasValue) th.EffectiveFrom = dto.EffectiveFrom.Value;
+        if (dto.EffectiveTo.HasValue) th.EffectiveTo = dto.EffectiveTo.Value;
+        if (dto.Remark != null) th.Remark = dto.Remark.Trim();
+
+        if (th.MinInvQty < 0 || th.TargetInvQty < th.MinInvQty || th.MaxInvQty < th.TargetInvQty)
+            throw new InvalidOperationException("Quy tắc định mức tồn kho không hợp lệ (Phải thỏa mãn: 0 <= MinQty <= TargetQty <= MaxQty).");
+
+        await db.SaveChangesAsync();
+        return th;
+    }
+
+    public async Task<object?> DealerInventoryThresholdTransitionAsync(string thresholdNo, string action, DealerInventoryThresholdTransitionDto? dto)
+    {
+        thresholdNo = thresholdNo.Trim().ToUpperInvariant();
+        var th = await db.DealerInventoryThresholds.FirstOrDefaultAsync(t => t.OrgId == Org && t.ThresholdNo == thresholdNo);
+        if (th is null) return null;
+
+        var actor = dto?.Actor?.Trim() ?? "admin";
+        var actTime = dto?.TransitionDate ?? DateTime.Now;
+
+        switch (action.Trim().ToLowerInvariant())
+        {
+            case "submit":
+                if (th.Status != "Draft")
+                    throw new InvalidOperationException($"Chỉ có thể Submit định mức từ trạng thái Draft. Hiện tại là {th.Status}.");
+                th.Status = "Active"; // Hoặc kích hoạt luôn
+                th.ApprovedBy = actor;
+                th.ApprovedAt = actTime;
+                break;
+
+            case "activate":
+            case "approve":
+                if (th.Status != "Draft" && th.Status != "Suspended")
+                    throw new InvalidOperationException($"Không thể Active định mức từ trạng thái {th.Status}.");
+                th.Status = "Active";
+                th.ApprovedBy = actor;
+                th.ApprovedAt = actTime;
+                break;
+
+            case "suspend":
+                if (th.Status != "Active")
+                    throw new InvalidOperationException($"Chỉ có thể tạm dừng định mức đang Active. Hiện tại là {th.Status}.");
+                th.Status = "Suspended";
+                th.SuspendedBy = actor;
+                th.SuspendedAt = actTime;
+                break;
+
+            case "resume":
+                if (th.Status != "Suspended")
+                    throw new InvalidOperationException($"Chỉ có thể mở lại định mức đang Suspended. Hiện tại là {th.Status}.");
+                th.Status = "Active";
+                break;
+
+            case "expire":
+                if (th.Status != "Active" && th.Status != "Suspended")
+                    throw new InvalidOperationException($"Chỉ có thể kết thúc định mức đang Active/Suspended. Hiện tại là {th.Status}.");
+                th.Status = "Expired";
+                break;
+
+            case "cancel":
+                if (th.Status == "Expired")
+                    throw new InvalidOperationException("Không thể hủy định mức đã Expired.");
+                th.Status = "Cancelled";
+                th.CancelledBy = actor;
+                th.CancelledAt = actTime;
+                th.CancelReason = dto?.Reason?.Trim() ?? "Hủy định mức theo yêu cầu điều hành";
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không được hỗ trợ.");
+        }
+
+        await db.SaveChangesAsync();
+        return th;
+    }
+
+    public async Task<object?> RemoveDealerInventoryThresholdAsync(string thresholdNo)
+    {
+        thresholdNo = thresholdNo.Trim().ToUpperInvariant();
+        var th = await db.DealerInventoryThresholds.FirstOrDefaultAsync(t => t.OrgId == Org && t.ThresholdNo == thresholdNo);
+        if (th is null) return null;
+
+        if (th.Status != "Draft" && th.Status != "Cancelled")
+            throw new InvalidOperationException($"Chỉ có thể xóa định mức ở trạng thái Draft hoặc Cancelled. Hiện tại là {th.Status}.");
+
+        db.DealerInventoryThresholds.Remove(th);
+        await db.SaveChangesAsync();
+        return new { success = true, message = $"Đã xóa định mức tồn kho {thresholdNo}." };
+    }
+
+    public async Task<object> RunInventoryAuditAsync(RunInventoryAuditDto? dto)
+    {
+        var qThresholds = db.DealerInventoryThresholds.Where(t => t.OrgId == Org && t.Status == "Active");
+
+        if (!string.IsNullOrWhiteSpace(dto?.DealerCode))
+        {
+            var d = dto.DealerCode.Trim().ToUpperInvariant();
+            qThresholds = qThresholds.Where(t => t.DealerCode == d);
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Model))
+        {
+            var m = dto.Model.Trim().ToUpperInvariant();
+            qThresholds = qThresholds.Where(t => t.Model.ToUpper() == m);
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.RegionCode))
+        {
+            var r = dto.RegionCode.Trim();
+            qThresholds = qThresholds.Where(t => t.RegionCode == r);
+        }
+
+        var activeRules = await qThresholds.ToListAsync();
+        if (activeRules.Count == 0)
+        {
+            return new
+            {
+                TotalAudited = 0,
+                Message = "Không tìm thấy định mức tồn kho Active nào phù hợp để chạy kiểm kê."
+            };
+        }
+
+        var allVehicles = await db.Vehicles.Where(v => v.OrgId == Org).ToListAsync();
+        var baseAuditIndex = await db.InventoryAuditRecords.CountAsync(a => a.OrgId == Org);
+        var auditRecords = new List<InventoryAuditRecord>();
+        var auditDate = DateTime.Now;
+        var auditor = dto?.AuditedBy?.Trim() ?? "system.audit";
+
+        foreach (var rule in activeRules)
+        {
+            baseAuditIndex++;
+            var auditNo = $"AUD{auditDate:yyyyMM}-{baseAuditIndex:D4}";
+
+            var matchingVehicles = allVehicles.Where(v =>
+                string.Equals(v.DealerCode, rule.DealerCode, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(v.Model, rule.Model, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            var inStockCount = matchingVehicles.Count(v => v.Status == VehicleStatus.InStock);
+            var allocatedCount = matchingVehicles.Count(v => v.Status == VehicleStatus.Allocated);
+            var inTransitCount = matchingVehicles.Count(v => v.Status == VehicleStatus.OnDelivery);
+            var totalOnHand = inStockCount + allocatedCount + inTransitCount;
+
+            var variance = totalOnHand - rule.MinInvQty;
+            var fulfillmentRate = rule.MinInvQty > 0
+                ? Math.Round((decimal)totalOnHand / rule.MinInvQty * 100m, 1)
+                : 100m;
+
+            var daysOfSupply = rule.DailySalesRate > 0
+                ? Math.Round((decimal)totalOnHand / rule.DailySalesRate, 1)
+                : 0m;
+
+            string health;
+            string rebalanceAction;
+            string? recDealer = null;
+            int recQty = 0;
+
+            if (totalOnHand == 0)
+            {
+                health = "OutOfStock";
+                rebalanceAction = "UrgentOrder";
+                recQty = rule.MinInvQty;
+            }
+            else if (totalOnHand < (int)Math.Ceiling(rule.MinInvQty * (1m - rule.WarningThresholdPercent / 100m)))
+            {
+                health = "CriticalShortage";
+                rebalanceAction = "RestockFromPlant";
+                recQty = rule.TargetInvQty - totalOnHand;
+            }
+            else if (totalOnHand < rule.MinInvQty)
+            {
+                health = "Shortage";
+                rebalanceAction = "TransferIn";
+                recQty = rule.MinInvQty - totalOnHand;
+            }
+            else if (totalOnHand > rule.MaxInvQty)
+            {
+                health = "Surplus";
+                rebalanceAction = "TransferOut";
+                recQty = totalOnHand - rule.TargetInvQty;
+            }
+            else
+            {
+                health = "Optimal";
+                rebalanceAction = "NoAction";
+                recQty = 0;
+            }
+
+            var remark = $"Kiểm kê tự động {auditDate:dd/MM/yyyy}: Tồn On-Hand={totalOnHand} (Kho={inStockCount}, Phân bổ={allocatedCount}, Vận chuyển={inTransitCount}), Định mức Sàn={rule.MinInvQty}, Mục tiêu={rule.TargetInvQty}, Trần={rule.MaxInvQty}. Trạng thái: {health}. DOS={daysOfSupply} ngày.";
+
+            var record = new InventoryAuditRecord
+            {
+                OrgId = Org,
+                AuditNo = auditNo,
+                ThresholdId = rule.Id,
+                ThresholdNo = rule.ThresholdNo,
+                DealerCode = rule.DealerCode,
+                DealerName = rule.DealerName,
+                RegionCode = rule.RegionCode,
+                Model = rule.Model,
+                SpecCode = rule.SpecCode,
+                MinInvQty = rule.MinInvQty,
+                TargetInvQty = rule.TargetInvQty,
+                MaxInvQty = rule.MaxInvQty,
+                InStockCount = inStockCount,
+                AllocatedCount = allocatedCount,
+                InTransitCount = inTransitCount,
+                TotalOnHand = totalOnHand,
+                VarianceQty = variance,
+                StockFulfillmentRate = fulfillmentRate,
+                DaysOfSupply = daysOfSupply,
+                HealthStatus = health,
+                RebalanceAction = rebalanceAction,
+                RecommendedTransferDealer = recDealer,
+                RecommendedTransferQty = recQty,
+                AuditDate = auditDate,
+                AuditedBy = auditor,
+                Remark = remark
+            };
+
+            db.InventoryAuditRecords.Add(record);
+            auditRecords.Add(record);
+
+            // Cập nhật lên hồ sơ xe VIN
+            foreach (var veh in matchingVehicles)
+            {
+                veh.LastInventoryAuditDate = auditDate;
+                veh.InventoryAlertStatus = health;
+                veh.LastThresholdNo = rule.ThresholdNo;
+                veh.ThresholdAuditCount++;
+
+                Log(veh.Vin, "ThresholdAudit", $"Định mức {rule.ThresholdNo}: Sức khỏe tồn kho {health}, Tồn={totalOnHand}/{rule.MinInvQty} xe");
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            AuditDate = auditDate,
+            TotalRulesEvaluated = activeRules.Count,
+            Summary = new
+            {
+                Optimal = auditRecords.Count(r => r.HealthStatus == "Optimal"),
+                Shortage = auditRecords.Count(r => r.HealthStatus == "Shortage"),
+                CriticalShortage = auditRecords.Count(r => r.HealthStatus == "CriticalShortage"),
+                Surplus = auditRecords.Count(r => r.HealthStatus == "Surplus"),
+                OutOfStock = auditRecords.Count(r => r.HealthStatus == "OutOfStock")
+            },
+            Records = auditRecords
+        };
+    }
+
+    public async Task<object> ListInventoryAuditRecordsAsync(string? dealer, string? model, string? healthStatus, string? auditNo)
+    {
+        var q = db.InventoryAuditRecords.Where(a => a.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(a => a.DealerCode.Contains(d) || (a.DealerName != null && a.DealerName.ToUpper().Contains(d)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var m = model.Trim().ToUpperInvariant();
+            q = q.Where(a => a.Model.ToUpper().Contains(m));
+        }
+
+        if (!string.IsNullOrWhiteSpace(healthStatus))
+        {
+            var h = healthStatus.Trim();
+            q = q.Where(a => a.HealthStatus == h);
+        }
+
+        if (!string.IsNullOrWhiteSpace(auditNo))
+        {
+            var an = auditNo.Trim().ToUpperInvariant();
+            q = q.Where(a => a.AuditNo.Contains(an) || (a.ThresholdNo != null && a.ThresholdNo.ToUpper().Contains(an)));
+        }
+
+        return await q.OrderByDescending(a => a.AuditDate)
+                      .Take(200)
+                      .ToListAsync();
+    }
+
+    public async Task<object> GetDealerStockHealthReportAsync(string? dealer, string? model, string? region)
+    {
+        var qRules = db.DealerInventoryThresholds.Where(t => t.OrgId == Org && t.Status == "Active");
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            qRules = qRules.Where(t => t.DealerCode.Contains(d));
+        }
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var m = model.Trim().ToUpperInvariant();
+            qRules = qRules.Where(t => t.Model.ToUpper().Contains(m));
+        }
+
+        if (!string.IsNullOrWhiteSpace(region))
+        {
+            var r = region.Trim();
+            qRules = qRules.Where(t => t.RegionCode == r);
+        }
+
+        var rules = await qRules.ToListAsync();
+        var allVehicles = await db.Vehicles.Where(v => v.OrgId == Org).ToListAsync();
+
+        var result = new List<DealerStockHealthDto>();
+
+        foreach (var r in rules)
+        {
+            var matchingVehicles = allVehicles.Where(v =>
+                string.Equals(v.DealerCode, r.DealerCode, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(v.Model, r.Model, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            var inStock = matchingVehicles.Count(v => v.Status == VehicleStatus.InStock);
+            var allocated = matchingVehicles.Count(v => v.Status == VehicleStatus.Allocated);
+            var inTransit = matchingVehicles.Count(v => v.Status == VehicleStatus.OnDelivery);
+            var totalOnHand = inStock + allocated + inTransit;
+            var variance = totalOnHand - r.MinInvQty;
+            var fulfillmentRate = r.MinInvQty > 0 ? Math.Round((decimal)totalOnHand / r.MinInvQty * 100m, 1) : 100m;
+            var dos = r.DailySalesRate > 0 ? Math.Round((decimal)totalOnHand / r.DailySalesRate, 1) : 0m;
+
+            string health;
+            string action;
+            int transferQty = 0;
+
+            if (totalOnHand == 0)
+            {
+                health = "OutOfStock";
+                action = "UrgentOrder";
+                transferQty = r.MinInvQty;
+            }
+            else if (totalOnHand < (int)Math.Ceiling(r.MinInvQty * (1m - r.WarningThresholdPercent / 100m)))
+            {
+                health = "CriticalShortage";
+                action = "RestockFromPlant";
+                transferQty = r.TargetInvQty - totalOnHand;
+            }
+            else if (totalOnHand < r.MinInvQty)
+            {
+                health = "Shortage";
+                action = "TransferIn";
+                transferQty = r.MinInvQty - totalOnHand;
+            }
+            else if (totalOnHand > r.MaxInvQty)
+            {
+                health = "Surplus";
+                action = "TransferOut";
+                transferQty = totalOnHand - r.TargetInvQty;
+            }
+            else
+            {
+                health = "Optimal";
+                action = "NoAction";
+                transferQty = 0;
+            }
+
+            result.Add(new DealerStockHealthDto(
+                r.DealerCode,
+                r.DealerName ?? r.DealerCode,
+                r.RegionCode ?? "MienBac",
+                r.Model,
+                r.SpecCode,
+                r.MinInvQty,
+                r.TargetInvQty,
+                r.MaxInvQty,
+                inStock,
+                allocated,
+                inTransit,
+                totalOnHand,
+                variance,
+                fulfillmentRate,
+                dos,
+                health,
+                action,
+                null,
+                transferQty,
+                r.ThresholdNo,
+                matchingVehicles.Select(v => v.LastInventoryAuditDate).Max()
+            ));
+        }
+
+        return result.OrderBy(x => x.HealthStatus switch
+        {
+            "OutOfStock" => 1,
+            "CriticalShortage" => 2,
+            "Shortage" => 3,
+            "Surplus" => 4,
+            _ => 5
+        }).ThenBy(x => x.DealerCode).ToList();
+    }
+
+    public async Task<object> GetStockRebalanceSuggestionsAsync(string? model)
+    {
+        var healthListObj = await GetDealerStockHealthReportAsync(null, model, null);
+        var healthList = (List<DealerStockHealthDto>)healthListObj;
+
+        var suggestions = new List<DealerRebalanceSuggestionDto>();
+
+        // Nhóm theo Model để tìm cặp Thừa - Thiếu
+        var models = healthList.Select(h => h.Model).Distinct().ToList();
+
+        foreach (var m in models)
+        {
+            var surplusDealers = healthList.Where(h => h.Model == m && h.HealthStatus == "Surplus").ToList();
+            var shortageDealers = healthList.Where(h => h.Model == m && (h.HealthStatus == "Shortage" || h.HealthStatus == "CriticalShortage" || h.HealthStatus == "OutOfStock")).ToList();
+
+            foreach (var surplus in surplusDealers)
+            {
+                var availableSurplus = surplus.TotalOnHand - surplus.TargetInvQty;
+                if (availableSurplus <= 0) continue;
+
+                foreach (var deficit in shortageDealers)
+                {
+                    if (availableSurplus <= 0) break;
+                    var neededQty = deficit.TargetInvQty - deficit.TotalOnHand;
+                    if (neededQty <= 0) continue;
+
+                    var transferQty = Math.Min(availableSurplus, neededQty);
+                    if (transferQty > 0)
+                    {
+                        suggestions.Add(new DealerRebalanceSuggestionDto(
+                            m,
+                            surplus.DealerCode,
+                            surplus.DealerName,
+                            surplus.TotalOnHand,
+                            surplus.MaxInvQty,
+                            surplus.TotalOnHand - surplus.MaxInvQty,
+                            deficit.DealerCode,
+                            deficit.DealerName,
+                            deficit.TotalOnHand,
+                            deficit.MinInvQty,
+                            deficit.MinInvQty - deficit.TotalOnHand,
+                            transferQty,
+                            $"Đại lý {surplus.DealerName} đang thừa {surplus.TotalOnHand - surplus.TargetInvQty} xe (Tồn={surplus.TotalOnHand}/{surplus.MaxInvQty} trần). Đề xuất chuyển {transferQty} xe sang {deficit.DealerName} (Tồn={deficit.TotalOnHand}/{deficit.MinInvQty} sàn)."
+                        ));
+
+                        availableSurplus -= transferQty;
+                    }
+                }
+            }
+        }
+
+        return suggestions;
+    }
+
+    public async Task<object> GetDealerInventoryThresholdSummaryAsync(int? month, int? year, string? region)
+    {
+        var qRules = db.DealerInventoryThresholds.Where(t => t.OrgId == Org);
+
+        if (month.HasValue && month.Value > 0)
+            qRules = qRules.Where(t => t.PeriodMonth == month.Value);
+
+        if (year.HasValue && year.Value > 0)
+            qRules = qRules.Where(t => t.PeriodYear == year.Value);
+
+        if (!string.IsNullOrWhiteSpace(region))
+        {
+            var r = region.Trim();
+            qRules = qRules.Where(t => t.RegionCode == r);
+        }
+
+        var rules = await qRules.ToListAsync();
+        var allVehicles = await db.Vehicles.Where(v => v.OrgId == Org).ToListAsync();
+
+        var healthListObj = await GetDealerStockHealthReportAsync(null, null, region);
+        var healthList = (List<DealerStockHealthDto>)healthListObj;
+
+        var totalRules = rules.Count;
+        var totalActive = rules.Count(r => r.Status == "Active");
+        var totalDraft = rules.Count(r => r.Status == "Draft");
+        var totalExpired = rules.Count(r => r.Status == "Expired");
+        var totalSuspended = rules.Count(r => r.Status == "Suspended");
+
+        var totalAudited = healthList.Count;
+        var totalOptimal = healthList.Count(h => h.HealthStatus == "Optimal");
+        var totalShortage = healthList.Count(h => h.HealthStatus == "Shortage");
+        var totalCritShortage = healthList.Count(h => h.HealthStatus == "CriticalShortage");
+        var totalSurplus = healthList.Count(h => h.HealthStatus == "Surplus");
+        var totalOutOfStock = healthList.Count(h => h.HealthStatus == "OutOfStock");
+
+        var totalOnHand = healthList.Sum(h => h.TotalOnHand);
+        var avgFulfillment = healthList.Count > 0 ? Math.Round(healthList.Average(h => h.StockFulfillmentRate), 1) : 0m;
+
+        // Thống kê theo Dealer
+        var byDealer = healthList.GroupBy(h => h.DealerCode).Select(g => new ThresholdByDealerStatsDto(
+            g.Key,
+            g.First().DealerName,
+            g.First().RegionCode,
+            g.Count(),
+            g.Sum(x => x.TotalOnHand),
+            g.Sum(x => x.MinInvQty),
+            g.Sum(x => x.TargetInvQty),
+            g.Sum(x => x.MaxInvQty),
+            g.Count(x => x.HealthStatus == "Shortage" || x.HealthStatus == "CriticalShortage" || x.HealthStatus == "OutOfStock"),
+            g.Count(x => x.HealthStatus == "Surplus"),
+            g.Count(x => x.HealthStatus == "Optimal"),
+            g.Count() > 0 ? Math.Round(g.Average(x => x.StockFulfillmentRate), 1) : 0m
+        )).OrderBy(d => d.DealerCode).ToList();
+
+        // Thống kê theo Model
+        var byModel = healthList.GroupBy(h => h.Model).Select(g => new ThresholdByModelStatsDto(
+            g.Key,
+            g.Count(),
+            g.Sum(x => x.TotalOnHand),
+            g.Sum(x => x.MinInvQty),
+            g.Sum(x => x.TargetInvQty),
+            g.Sum(x => x.MaxInvQty),
+            g.Count(x => x.HealthStatus == "Shortage" || x.HealthStatus == "CriticalShortage" || x.HealthStatus == "OutOfStock"),
+            g.Count(x => x.HealthStatus == "Surplus"),
+            g.Count(x => x.HealthStatus == "Optimal"),
+            g.Count() > 0 ? Math.Round(g.Average(x => x.StockFulfillmentRate), 1) : 0m
+        )).OrderByDescending(m => m.TotalOnHand).ToList();
+
+        // Thống kê theo Region
+        var byRegion = healthList.GroupBy(h => h.RegionCode).Select(g => new ThresholdByRegionStatsDto(
+            g.Key,
+            g.Count(),
+            g.Sum(x => x.TotalOnHand),
+            g.Sum(x => x.MinInvQty),
+            g.Sum(x => x.TargetInvQty),
+            g.Sum(x => x.MaxInvQty),
+            g.Count(x => x.HealthStatus == "Shortage" || x.HealthStatus == "CriticalShortage" || x.HealthStatus == "OutOfStock"),
+            g.Count(x => x.HealthStatus == "Surplus"),
+            g.Count(x => x.HealthStatus == "Optimal"),
+            g.Count() > 0 ? Math.Round(g.Average(x => x.StockFulfillmentRate), 1) : 0m
+        )).OrderBy(r => r.RegionCode).ToList();
+
+        return new DealerInventoryThresholdSummaryDto(
+            totalRules,
+            totalActive,
+            totalDraft,
+            totalExpired,
+            totalSuspended,
+            totalAudited,
+            totalOptimal,
+            totalShortage,
+            totalCritShortage,
+            totalSurplus,
+            totalOutOfStock,
+            totalOnHand,
+            avgFulfillment,
+            byDealer,
+            byModel,
+            byRegion
+        );
+    }
+
+    public async Task<object?> GetVehicleInventoryThresholdInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var applicableThresholds = await db.DealerInventoryThresholds
+            .Where(t => t.OrgId == Org && t.Model == veh.Model && (veh.DealerCode == null || t.DealerCode == veh.DealerCode))
+            .OrderByDescending(t => t.PeriodYear)
+            .ThenByDescending(t => t.PeriodMonth)
+            .ToListAsync();
+
+        var recentAudits = await db.InventoryAuditRecords
+            .Where(a => a.OrgId == Org && a.Model == veh.Model && (veh.DealerCode == null || a.DealerCode == veh.DealerCode))
+            .OrderByDescending(a => a.AuditDate)
+            .Take(10)
+            .ToListAsync();
+
+        return new VehicleInventoryThresholdInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.DealerCode,
+            veh.LastInventoryAuditDate,
+            veh.InventoryAlertStatus,
+            veh.LastThresholdNo,
+            veh.ThresholdAuditCount,
+            applicableThresholds,
+            recentAudits
+        );
+    }
+
+    public async Task<object?> GetVehicleInventoryThresholdHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var thresholds = await db.DealerInventoryThresholds
+            .Where(t => t.OrgId == Org && t.Model == veh.Model && (veh.DealerCode == null || t.DealerCode == veh.DealerCode))
+            .ToListAsync();
+
+        var audits = await db.InventoryAuditRecords
+            .Where(a => a.OrgId == Org && a.Model == veh.Model && (veh.DealerCode == null || a.DealerCode == veh.DealerCode))
+            .OrderByDescending(a => a.AuditDate)
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("Threshold") || e.Kind.StartsWith("Stock") || e.Kind.StartsWith("Transfer")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.EngineNo,
+                veh.Color,
+                veh.StorageCode,
+                veh.DealerCode,
+                veh.Status,
+                veh.LastInventoryAuditDate,
+                veh.InventoryAlertStatus,
+                veh.LastThresholdNo,
+                veh.ThresholdAuditCount
+            },
+            thresholds,
+            audits,
             events
         };
     }

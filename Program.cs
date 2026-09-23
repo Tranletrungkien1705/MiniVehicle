@@ -4366,6 +4366,110 @@ app.MapGet("/api/vehicles/{vin}/transport-insurance-payment-history", async (str
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ---- Quản lý Định mức Tồn kho An toàn & Cân đối Tồn kho Đại lý OEM (BizHTC.MasterData & BizHTC.StorageFG / Mst_DealerInventoryThreshold, Mst_MinInventory, St_MinInvBalance / FrmMstSalesInventoryThreshold, FrmSt_MinInvBalance) ----
+app.MapPost("/api/inventory-thresholds", async (CreateDealerInventoryThresholdDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.Model))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode và dòng xe Model." });
+    try { return Results.Ok(await svc.CreateDealerInventoryThresholdAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/inventory-thresholds/batch", async (BatchCreateDealerInventoryThresholdDto dto, IVehicleService svc) =>
+{
+    if (dto.Items is null || dto.Items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách định mức tồn kho Items." });
+    try { return Results.Ok(await svc.BatchCreateDealerInventoryThresholdsAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/inventory-thresholds", async (IVehicleService svc, string? status, string? dealer, string? model, int? month, int? year, string? thresholdNo) =>
+    Results.Ok(await svc.ListDealerInventoryThresholdsAsync(status, dealer, model, month, year, thresholdNo))).RequireAuthorization();
+
+app.MapGet("/api/inventory-thresholds/summary", async (IVehicleService svc, int? month, int? year, string? region) =>
+    Results.Ok(await svc.GetDealerInventoryThresholdSummaryAsync(month, year, region))).RequireAuthorization();
+
+app.MapGet("/api/reports/inventory-thresholds/summary", async (IVehicleService svc, int? month, int? year, string? region) =>
+    Results.Ok(await svc.GetDealerInventoryThresholdSummaryAsync(month, year, region))).RequireAuthorization();
+
+app.MapGet("/api/inventory-thresholds/health-report", async (IVehicleService svc, string? dealer, string? model, string? region) =>
+    Results.Ok(await svc.GetDealerStockHealthReportAsync(dealer, model, region))).RequireAuthorization();
+
+app.MapGet("/api/inventory-thresholds/rebalance-suggestions", async (IVehicleService svc, string? model) =>
+    Results.Ok(await svc.GetStockRebalanceSuggestionsAsync(model))).RequireAuthorization();
+
+app.MapPost("/api/inventory-thresholds/audit", async (RunInventoryAuditDto? dto, IVehicleService svc) =>
+    Results.Ok(await svc.RunInventoryAuditAsync(dto))).RequireAuthorization();
+
+app.MapGet("/api/inventory-thresholds/audit/records", async (IVehicleService svc, string? dealer, string? model, string? healthStatus, string? auditNo) =>
+    Results.Ok(await svc.ListInventoryAuditRecordsAsync(dealer, model, healthStatus, auditNo))).RequireAuthorization();
+
+app.MapGet("/api/inventory-thresholds/{thresholdNo}", async (string thresholdNo, IVehicleService svc) =>
+{
+    var r = await svc.GetDealerInventoryThresholdAsync(thresholdNo);
+    return r is null ? Results.NotFound(new { thresholdNo, error = "Không tìm thấy định mức tồn kho." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/inventory-thresholds/{thresholdNo}", async (string thresholdNo, UpdateDealerInventoryThresholdDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateDealerInventoryThresholdAsync(thresholdNo, dto);
+        return r is null ? Results.NotFound(new { thresholdNo, error = "Không tìm thấy định mức tồn kho hoặc định mức không ở trạng thái Draft." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/inventory-thresholds/{thresholdNo}/update", async (string thresholdNo, UpdateDealerInventoryThresholdDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateDealerInventoryThresholdAsync(thresholdNo, dto);
+        return r is null ? Results.NotFound(new { thresholdNo, error = "Không tìm thấy định mức tồn kho hoặc định mức không ở trạng thái Draft." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/inventory-thresholds/{thresholdNo}/{action}", async (string thresholdNo, string action, DealerInventoryThresholdTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "activate" or "approve" or "suspend" or "resume" or "expire" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|activate|approve|suspend|resume|expire|cancel" });
+    try
+    {
+        var r = await svc.DealerInventoryThresholdTransitionAsync(thresholdNo, action, dto);
+        return r is null ? Results.NotFound(new { thresholdNo, error = "Không tìm thấy định mức tồn kho hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/inventory-thresholds/{thresholdNo}", async (string thresholdNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveDealerInventoryThresholdAsync(thresholdNo);
+        return r is null ? Results.NotFound(new { thresholdNo, error = "Không tìm thấy định mức tồn kho hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/inventory-threshold-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleInventoryThresholdInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/inventory-thresholds", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleInventoryThresholdHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/inventory-threshold-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleInventoryThresholdHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

@@ -4700,6 +4700,348 @@ public static class Seeder
                 v2Tip.TranspInsPaymentCount = 1;
             }
         }
+
+        // ===== Quản lý Định mức Tồn kho An toàn & Cân đối Kho Đại lý (DealerInventoryThreshold & InventoryAuditRecord) =====
+        if (!await db.DealerInventoryThresholds.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var th1 = new DealerInventoryThreshold
+            {
+                OrgId = org,
+                ThresholdNo = "TH202605-0001",
+                ThresholdNoUser = "QĐ-ĐMTK/2026/05-HN01-ACC",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                RegionCode = "MienBac",
+                Model = "Accent",
+                SpecCode = "1.5 AT Tiêu Chuẩn",
+                PeriodMonth = 5,
+                PeriodYear = 2026,
+                MinInvQty = 8,
+                TargetInvQty = 18,
+                MaxInvQty = 35,
+                WarningThresholdPercent = 20m,
+                DailySalesRate = 0.8m,
+                EffectiveFrom = new DateTime(2026, 5, 1),
+                EffectiveTo = new DateTime(2026, 5, 31),
+                Status = "Active",
+                Remark = "Định mức tồn kho an toàn tháng 05/2026 cho dòng sedan phân khúc B Hyundai Accent tại đại lý Đông Đô",
+                CreatedBy = "planner.inventory",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ApprovedBy = "sales.director",
+                ApprovedAt = DateTime.Now.AddDays(-8)
+            };
+
+            var th2 = new DealerInventoryThreshold
+            {
+                OrgId = org,
+                ThresholdNo = "TH202605-0002",
+                ThresholdNoUser = "QĐ-ĐMTK/2026/05-HN01-STA",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                RegionCode = "MienBac",
+                Model = "SantaFe",
+                SpecCode = "2.5 H-Trac Cao Cấp",
+                PeriodMonth = 5,
+                PeriodYear = 2026,
+                MinInvQty = 5,
+                TargetInvQty = 12,
+                MaxInvQty = 25,
+                WarningThresholdPercent = 20m,
+                DailySalesRate = 0.4m,
+                EffectiveFrom = new DateTime(2026, 5, 1),
+                EffectiveTo = new DateTime(2026, 5, 31),
+                Status = "Active",
+                Remark = "Định mức tồn kho an toàn SUV hạng D Hyundai SantaFe tại đại lý Đông Đô",
+                CreatedBy = "planner.inventory",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ApprovedBy = "sales.director",
+                ApprovedAt = DateTime.Now.AddDays(-8)
+            };
+
+            var th3 = new DealerInventoryThreshold
+            {
+                OrgId = org,
+                ThresholdNo = "TH202605-0003",
+                ThresholdNoUser = "QĐ-ĐMTK/2026/05-HN02-TUC",
+                DealerCode = "DLR-HN02",
+                DealerName = "Hyundai Phạm Văn Đồng",
+                RegionCode = "MienBac",
+                Model = "Tucson",
+                SpecCode = "1.6 Turbo AWD",
+                PeriodMonth = 5,
+                PeriodYear = 2026,
+                MinInvQty = 6,
+                TargetInvQty = 14,
+                MaxInvQty = 28,
+                WarningThresholdPercent = 25m,
+                DailySalesRate = 0.5m,
+                EffectiveFrom = new DateTime(2026, 5, 1),
+                EffectiveTo = new DateTime(2026, 5, 31),
+                Status = "Active",
+                Remark = "Định mức tồn kho an toàn C-SUV Hyundai Tucson tại đại lý Phạm Văn Đồng",
+                CreatedBy = "planner.inventory",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ApprovedBy = "sales.director",
+                ApprovedAt = DateTime.Now.AddDays(-8)
+            };
+
+            var th4 = new DealerInventoryThreshold
+            {
+                OrgId = org,
+                ThresholdNo = "TH202605-0004",
+                ThresholdNoUser = "QĐ-ĐMTK/2026/05-HCM01-CRE",
+                DealerCode = "DLR-HCM01",
+                DealerName = "Hyundai Sài Gòn",
+                RegionCode = "MienNam",
+                Model = "Creta",
+                SpecCode = "1.5 Cao Cấp",
+                PeriodMonth = 5,
+                PeriodYear = 2026,
+                MinInvQty = 10,
+                TargetInvQty = 22,
+                MaxInvQty = 45,
+                WarningThresholdPercent = 20m,
+                DailySalesRate = 1.0m,
+                EffectiveFrom = new DateTime(2026, 5, 1),
+                EffectiveTo = new DateTime(2026, 5, 31),
+                Status = "Active",
+                Remark = "Định mức tồn kho an toàn B-SUV Hyundai Creta khu vực TP.HCM",
+                CreatedBy = "planner.inventory",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ApprovedBy = "sales.director",
+                ApprovedAt = DateTime.Now.AddDays(-8)
+            };
+
+            var th5 = new DealerInventoryThreshold
+            {
+                OrgId = org,
+                ThresholdNo = "TH202605-0005",
+                ThresholdNoUser = "QĐ-ĐMTK/2026/05-DN01-I10",
+                DealerCode = "DLR-DN01",
+                DealerName = "Hyundai Đà Nẵng",
+                RegionCode = "MienTrung",
+                Model = "Grand i10",
+                SpecCode = "1.2 AT Hatchback",
+                PeriodMonth = 5,
+                PeriodYear = 2026,
+                MinInvQty = 6,
+                TargetInvQty = 15,
+                MaxInvQty = 30,
+                WarningThresholdPercent = 20m,
+                DailySalesRate = 0.6m,
+                EffectiveFrom = new DateTime(2026, 5, 1),
+                EffectiveTo = new DateTime(2026, 5, 31),
+                Status = "Active",
+                Remark = "Định mức tồn kho an toàn xe đô thị cỡ nhỏ A-Hatchback tại miền Trung",
+                CreatedBy = "planner.inventory",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ApprovedBy = "sales.director",
+                ApprovedAt = DateTime.Now.AddDays(-8)
+            };
+
+            var th6 = new DealerInventoryThreshold
+            {
+                OrgId = org,
+                ThresholdNo = "TH202605-0006",
+                ThresholdNoUser = "QĐ-ĐMTK/2026/05-CT01-CUS",
+                DealerCode = "DLR-CT01",
+                DealerName = "Hyundai Cần Thơ",
+                RegionCode = "MienNam",
+                Model = "Custin",
+                SpecCode = "1.5T Đặc Biệt",
+                PeriodMonth = 5,
+                PeriodYear = 2026,
+                MinInvQty = 4,
+                TargetInvQty = 8,
+                MaxInvQty = 18,
+                WarningThresholdPercent = 20m,
+                DailySalesRate = 0.3m,
+                EffectiveFrom = new DateTime(2026, 5, 1),
+                EffectiveTo = new DateTime(2026, 5, 31),
+                Status = "Active",
+                Remark = "Định mức tồn kho MPV cỡ trung cao cấp Hyundai Custin tại ĐBSCL",
+                CreatedBy = "planner.inventory",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ApprovedBy = "sales.director",
+                ApprovedAt = DateTime.Now.AddDays(-8)
+            };
+
+            var th7 = new DealerInventoryThreshold
+            {
+                OrgId = org,
+                ThresholdNo = "TH202605-0007",
+                ThresholdNoUser = "QĐ-ĐMTK/2026/05-HN01-ION5",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                RegionCode = "MienBac",
+                Model = "Ioniq 5",
+                SpecCode = "EV Prestige 72.6 kWh",
+                PeriodMonth = 5,
+                PeriodYear = 2026,
+                MinInvQty = 2,
+                TargetInvQty = 5,
+                MaxInvQty = 10,
+                WarningThresholdPercent = 15m,
+                DailySalesRate = 0.15m,
+                EffectiveFrom = new DateTime(2026, 5, 1),
+                EffectiveTo = new DateTime(2026, 5, 31),
+                Status = "Draft",
+                Remark = "Dự thảo định mức xe điện thông minh thuần điện Hyundai Ioniq 5",
+                CreatedBy = "planner.inventory",
+                CreatedAt = DateTime.Now.AddDays(-2)
+            };
+
+            db.DealerInventoryThresholds.AddRange(th1, th2, th3, th4, th5, th6, th7);
+            await db.SaveChangesAsync();
+
+            // Seed các đợt kiểm kê & đối soát sức khỏe tồn kho thực tế
+            var aud1 = new InventoryAuditRecord
+            {
+                OrgId = org,
+                AuditNo = "AUD202605-0001",
+                ThresholdId = th1.Id,
+                ThresholdNo = th1.ThresholdNo,
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                RegionCode = "MienBac",
+                Model = "Accent",
+                SpecCode = "1.5 AT Tiêu Chuẩn",
+                MinInvQty = 8,
+                TargetInvQty = 18,
+                MaxInvQty = 35,
+                InStockCount = 12,
+                AllocatedCount = 2,
+                InTransitCount = 2,
+                TotalOnHand = 16,
+                VarianceQty = 8,
+                StockFulfillmentRate = 200m,
+                DaysOfSupply = 20m,
+                HealthStatus = "Optimal",
+                RebalanceAction = "NoAction",
+                AuditDate = DateTime.Now.AddDays(-1),
+                AuditedBy = "system.autoaudit",
+                Remark = "Tồn kho thực tế dòng Accent đạt 200% định mức tối thiểu (16/8 xe), sức khỏe tồn kho Đạt chuẩn (Optimal), dự trữ 20 ngày bán hàng."
+            };
+
+            var aud2 = new InventoryAuditRecord
+            {
+                OrgId = org,
+                AuditNo = "AUD202605-0002",
+                ThresholdId = th2.Id,
+                ThresholdNo = th2.ThresholdNo,
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                RegionCode = "MienBac",
+                Model = "SantaFe",
+                SpecCode = "2.5 H-Trac Cao Cấp",
+                MinInvQty = 5,
+                TargetInvQty = 12,
+                MaxInvQty = 25,
+                InStockCount = 2,
+                AllocatedCount = 1,
+                InTransitCount = 0,
+                TotalOnHand = 3,
+                VarianceQty = -2,
+                StockFulfillmentRate = 60m,
+                DaysOfSupply = 7.5m,
+                HealthStatus = "Shortage",
+                RebalanceAction = "TransferIn",
+                RecommendedTransferDealer = "DLR-HCM01",
+                RecommendedTransferQty = 2,
+                AuditDate = DateTime.Now.AddDays(-1),
+                AuditedBy = "system.autoaudit",
+                Remark = "Cảnh báo thiếu xe SantaFe (Total On-Hand 3/5 xe), tỷ lệ đáp ứng 60% < 100%, đề xuất điều chuyển 2 xe từ Hyundai Sài Gòn sang."
+            };
+
+            var aud3 = new InventoryAuditRecord
+            {
+                OrgId = org,
+                AuditNo = "AUD202605-0003",
+                ThresholdId = th3.Id,
+                ThresholdNo = th3.ThresholdNo,
+                DealerCode = "DLR-HN02",
+                DealerName = "Hyundai Phạm Văn Đồng",
+                RegionCode = "MienBac",
+                Model = "Tucson",
+                SpecCode = "1.6 Turbo AWD",
+                MinInvQty = 6,
+                TargetInvQty = 14,
+                MaxInvQty = 28,
+                InStockCount = 7,
+                AllocatedCount = 3,
+                InTransitCount = 1,
+                TotalOnHand = 11,
+                VarianceQty = 5,
+                StockFulfillmentRate = 183.3m,
+                DaysOfSupply = 22m,
+                HealthStatus = "Optimal",
+                RebalanceAction = "NoAction",
+                AuditDate = DateTime.Now.AddDays(-1),
+                AuditedBy = "system.autoaudit",
+                Remark = "Tồn kho dòng Tucson tại Phạm Văn Đồng ở mức an toàn (11 xe), đáp ứng tốt nhu cầu giao xe."
+            };
+
+            var aud4 = new InventoryAuditRecord
+            {
+                OrgId = org,
+                AuditNo = "AUD202605-0004",
+                ThresholdId = th4.Id,
+                ThresholdNo = th4.ThresholdNo,
+                DealerCode = "DLR-HCM01",
+                DealerName = "Hyundai Sài Gòn",
+                RegionCode = "MienNam",
+                Model = "Creta",
+                SpecCode = "1.5 Cao Cấp",
+                MinInvQty = 10,
+                TargetInvQty = 22,
+                MaxInvQty = 45,
+                InStockCount = 28,
+                AllocatedCount = 10,
+                InTransitCount = 12,
+                TotalOnHand = 50,
+                VarianceQty = 5,
+                StockFulfillmentRate = 500m,
+                DaysOfSupply = 50m,
+                HealthStatus = "Surplus",
+                RebalanceAction = "TransferOut",
+                RecommendedTransferDealer = "DLR-DN01",
+                RecommendedTransferQty = 5,
+                AuditDate = DateTime.Now.AddDays(-1),
+                AuditedBy = "system.autoaudit",
+                Remark = "Cảnh báo vượt trần tồn kho Creta (Total 50/45 xe trần), đề xuất điều chuyển 5 xe hỗ trợ cho đại lý Đà Nẵng và miền Trung."
+            };
+
+            db.InventoryAuditRecords.AddRange(aud1, aud2, aud3, aud4);
+
+            // Cập nhật thông tin kiểm kê định mức trên hồ sơ xe VIN
+            var v1Th = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Th != null)
+            {
+                v1Th.LastInventoryAuditDate = DateTime.Now.AddDays(-1);
+                v1Th.InventoryAlertStatus = "Shortage";
+                v1Th.LastThresholdNo = th2.ThresholdNo;
+                v1Th.ThresholdAuditCount = 1;
+            }
+
+            var v2Th = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Th != null)
+            {
+                v2Th.LastInventoryAuditDate = DateTime.Now.AddDays(-1);
+                v2Th.InventoryAlertStatus = "Optimal";
+                v2Th.LastThresholdNo = th1.ThresholdNo;
+                v2Th.ThresholdAuditCount = 1;
+            }
+
+            var v3Th = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000003");
+            if (v3Th != null)
+            {
+                v3Th.LastInventoryAuditDate = DateTime.Now.AddDays(-1);
+                v3Th.InventoryAlertStatus = "Optimal";
+                v3Th.LastThresholdNo = th3.ThresholdNo;
+                v3Th.ThresholdAuditCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -4929,7 +5271,13 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastTranspInsPaymentDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"TranspInsPaymentCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"TransportInsurancePayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TransportInsNo\" text NOT NULL DEFAULT '', \"TransportInsNoUser\" text NULL, \"PmtMonth\" text NOT NULL DEFAULT '', \"TransporterCode\" text NOT NULL DEFAULT 'NYK', \"TransporterName\" text NULL DEFAULT 'Công ty TNHH Vận tải Hàng hải NYK Việt Nam', \"InsuranceCompanyCode\" text NOT NULL DEFAULT 'BAOVIET', \"InsuranceCompanyName\" text NULL DEFAULT 'Tổng Công ty Bảo hiểm Bảo Việt', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalFreightAmount\" numeric NOT NULL DEFAULT 0, \"TotalDelayPenalty\" numeric NOT NULL DEFAULT 0, \"TotalInsuranceFee\" numeric NOT NULL DEFAULT 0, \"TotalBeforeVAT\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"TransporterSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"TransporterSignDate\" timestamp NULL, \"TransporterSignBy\" text NULL, \"HTVSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"HTVSignDate\" timestamp NULL, \"HTVSignBy\" text NULL, \"BankRefNo\" text NULL, \"PaymentDate\" timestamp NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"TransportInsurancePaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TransportInsurancePaymentId\" bigint NOT NULL, \"TransportInsNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"FStorageCode\" text NULL DEFAULT 'PLANT-HTMV1', \"FProvinceName\" text NULL DEFAULT 'Ninh Bình', \"TStorageCode\" text NULL, \"TProvinceName\" text NULL DEFAULT 'Hà Nội', \"DealerCode\" text NULL, \"DlvStartDate\" timestamp NOT NULL DEFAULT now(), \"ExpectedDays\" integer NOT NULL DEFAULT 2, \"ExpectedDlvEndDate\" timestamp NOT NULL DEFAULT now(), \"DlvEndDate\" timestamp NOT NULL DEFAULT now(), \"DelayDate\" integer NOT NULL DEFAULT 0, \"FreightAmount\" numeric NOT NULL DEFAULT 2500000, \"PenaltyPerDay\" numeric NOT NULL DEFAULT 100000, \"DelayPenalty\" numeric NOT NULL DEFAULT 0, \"CarValue\" numeric NOT NULL DEFAULT 550000000, \"InsuranceRate\" numeric NOT NULL DEFAULT 0.05, \"InsuranceFee\" numeric NOT NULL DEFAULT 275000, \"TotalAmount\" numeric NOT NULL DEFAULT 2775000, \"DlvMnNo\" text NULL, \"TranspReqType\" text NOT NULL DEFAULT 'OEMToDealer', \"Status\" text NOT NULL DEFAULT 'Pending', \"StandardRemark\" text NULL, \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"TransportInsurancePaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TransportInsurancePaymentId\" bigint NOT NULL, \"TransportInsNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"FStorageCode\" text NULL DEFAULT 'PLANT-HTMV1', \"FProvinceName\" text NULL DEFAULT 'Ninh Bình', \"TStorageCode\" text NULL, \"TProvinceName\" text NULL DEFAULT 'Hà Nội', \"DealerCode\" text NULL, \"DlvStartDate\" timestamp NOT NULL DEFAULT now(), \"ExpectedDays\" integer NOT NULL DEFAULT 2, \"ExpectedDlvEndDate\" timestamp NOT NULL DEFAULT now(), \"DlvEndDate\" timestamp NOT NULL DEFAULT now(), \"DelayDate\" integer NOT NULL DEFAULT 0, \"FreightAmount\" numeric NOT NULL DEFAULT 2500000, \"PenaltyPerDay\" numeric NOT NULL DEFAULT 100000, \"DelayPenalty\" numeric NOT NULL DEFAULT 0, \"CarValue\" numeric NOT NULL DEFAULT 550000000, \"InsuranceRate\" numeric NOT NULL DEFAULT 0.05, \"InsuranceFee\" numeric NOT NULL DEFAULT 275000, \"TotalAmount\" numeric NOT NULL DEFAULT 2775000, \"DlvMnNo\" text NULL, \"TranspReqType\" text NOT NULL DEFAULT 'OEMToDealer', \"Status\" text NOT NULL DEFAULT 'Pending', \"StandardRemark\" text NULL, \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastInventoryAuditDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"InventoryAlertStatus\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastThresholdNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"ThresholdAuditCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"DealerInventoryThresholds\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ThresholdNo\" text NOT NULL DEFAULT '', \"ThresholdNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RegionCode\" text NULL DEFAULT 'MienBac', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"PeriodMonth\" integer NOT NULL DEFAULT 5, \"PeriodYear\" integer NOT NULL DEFAULT 2026, \"MinInvQty\" integer NOT NULL DEFAULT 5, \"TargetInvQty\" integer NOT NULL DEFAULT 10, \"MaxInvQty\" integer NOT NULL DEFAULT 25, \"WarningThresholdPercent\" numeric NOT NULL DEFAULT 20, \"DailySalesRate\" numeric NOT NULL DEFAULT 0.5, \"EffectiveFrom\" timestamp NULL, \"EffectiveTo\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SuspendedBy\" text NULL, \"SuspendedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"InventoryAuditRecords\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AuditNo\" text NOT NULL DEFAULT '', \"ThresholdId\" bigint NULL, \"ThresholdNo\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RegionCode\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"MinInvQty\" integer NOT NULL DEFAULT 5, \"TargetInvQty\" integer NOT NULL DEFAULT 10, \"MaxInvQty\" integer NOT NULL DEFAULT 25, \"InStockCount\" integer NOT NULL DEFAULT 0, \"AllocatedCount\" integer NOT NULL DEFAULT 0, \"InTransitCount\" integer NOT NULL DEFAULT 0, \"TotalOnHand\" integer NOT NULL DEFAULT 0, \"VarianceQty\" integer NOT NULL DEFAULT 0, \"StockFulfillmentRate\" numeric NOT NULL DEFAULT 0, \"DaysOfSupply\" numeric NOT NULL DEFAULT 0, \"HealthStatus\" text NOT NULL DEFAULT 'Optimal', \"RebalanceAction\" text NULL, \"RecommendedTransferDealer\" text NULL, \"RecommendedTransferQty\" integer NOT NULL DEFAULT 0, \"AuditDate\" timestamp NOT NULL DEFAULT now(), \"AuditedBy\" text NULL, \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

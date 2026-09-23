@@ -118,6 +118,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<GpsPaymentLine> GpsPaymentLines => Set<GpsPaymentLine>();
     public DbSet<TransportInsurancePayment> TransportInsurancePayments => Set<TransportInsurancePayment>();
     public DbSet<TransportInsurancePaymentLine> TransportInsurancePaymentLines => Set<TransportInsurancePaymentLine>();
+    public DbSet<DealerInventoryThreshold> DealerInventoryThresholds => Set<DealerInventoryThreshold>();
+    public DbSet<InventoryAuditRecord> InventoryAuditRecords => Set<InventoryAuditRecord>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -189,5 +191,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<TransportInsurancePayment>().HasIndex(x => new { x.OrgId, x.InsuranceCompanyCode });
         b.Entity<TransportInsurancePaymentLine>().HasIndex(x => new { x.OrgId, x.TransportInsNo, x.Vin });
         b.Entity<TransportInsurancePaymentLine>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<DealerInventoryThreshold>().HasIndex(x => new { x.OrgId, x.ThresholdNo }).IsUnique();
+        b.Entity<DealerInventoryThreshold>().HasIndex(x => new { x.OrgId, x.DealerCode, x.Model, x.PeriodYear, x.PeriodMonth });
+        b.Entity<DealerInventoryThreshold>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<InventoryAuditRecord>().HasIndex(x => new { x.OrgId, x.AuditNo }).IsUnique();
+        b.Entity<InventoryAuditRecord>().HasIndex(x => new { x.OrgId, x.DealerCode, x.Model });
+        b.Entity<InventoryAuditRecord>().HasIndex(x => new { x.OrgId, x.HealthStatus });
     }
 }

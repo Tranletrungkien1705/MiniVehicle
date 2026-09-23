@@ -135,6 +135,10 @@ public sealed class Vehicle
     public string? LastTranspInsPaymentNo { get; set; } // Mã bảng kê quyết toán vận tải & bảo hiểm gần nhất (TransportInsNo)
     public DateTime? LastTranspInsPaymentDate { get; set; } // Ngày quyết toán chi phí vận tải & bảo hiểm gần nhất
     public int TranspInsPaymentCount { get; set; } = 0; // Số lần xe phát sinh trong bảng kê quyết toán vận chuyển & bảo hiểm
+    public DateTime? LastInventoryAuditDate { get; set; } // Ngày kiểm kê & đối soát định mức tồn kho an toàn gần nhất (Mst_DealerInventoryThreshold)
+    public string? InventoryAlertStatus { get; set; }   // Trạng thái sức khỏe tồn kho: Optimal, Shortage, CriticalShortage, Surplus, OutOfStock
+    public string? LastThresholdNo { get; set; }        // Mã quyết định định mức tồn kho áp dụng gần nhất (DIT...)
+    public int ThresholdAuditCount { get; set; } = 0;   // Tổng số lần xe được đối soát trong các đợt kiểm kê tồn kho đại lý
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -4770,6 +4774,270 @@ public sealed record VehicleTranspInsPaymentInfoDto(
     int TranspInsPaymentCount,
     List<TransportInsurancePaymentLine> PaymentLines
 );
+
+// ===== Quản lý Định mức Tồn kho An toàn & Cân đối Tồn kho Đại lý OEM (BizHTC.MasterData & BizHTC.StorageFG / Mst_DealerInventoryThreshold, Mst_MinInventory, St_MinInvBalance / FrmMstSalesInventoryThreshold, FrmSt_MinInvBalance, FrmReportMinInventory) =====
+
+/// <summary>Thiết lập Định mức / Hạn mức Tồn kho An toàn Xe ô tô cho Đại lý (BizHTC.MasterData.Mst_DealerInventoryThreshold / DealerInventoryThreshold): quản lý định mức tồn kho tối thiểu sàn (Safety Stock), định mức tồn kho mục tiêu (Target Stock) và hạn mức tồn kho tối đa trần (Ceiling Stock) theo từng Đại lý, Dòng xe (Model) / Phiên bản (Spec), kỳ tháng/năm áp dụng và biên độ cảnh báo bán hàng.</summary>
+public sealed class DealerInventoryThreshold
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ThresholdNo { get; set; } = "";             // Mã thiết lập định mức tồn kho (TH202605-0001, DIT...)
+    public string? ThresholdNoUser { get; set; }            // Số hiệu văn bản / quyết định ban hành định mức (QĐ-ĐMTK/2026/05-01)
+    public string DealerCode { get; set; } = "";            // Mã đại lý áp dụng định mức (DLR-HN01, DLR-HN02, DLR-HCM01...)
+    public string? DealerName { get; set; }                 // Tên đại lý
+    public string? RegionCode { get; set; } = "MienBac";    // Khu vực địa lý: MienBac, MienTrung, MienNam, TayNguyen
+    public string Model { get; set; } = "";                 // Dòng xe áp dụng (SantaFe, Tucson, Accent, Creta, Custin, Grand i10, Venue, Ioniq 5...)
+    public string? SpecCode { get; set; }                   // Phiên bản cấu hình chi tiết (1.5 AT Tiêu Chuẩn, 1.6 Turbo...)
+    public int PeriodMonth { get; set; } = DateTime.Now.Month; // Tháng áp dụng định mức (1 - 12)
+    public int PeriodYear { get; set; } = DateTime.Now.Year;   // Năm áp dụng định mức (2026...)
+    public int MinInvQty { get; set; } = 5;                 // Định mức tồn kho tối thiểu sàn (Safety Stock MinQty)
+    public int TargetInvQty { get; set; } = 10;             // Định mức tồn kho mục tiêu (Target Stock Qty)
+    public int MaxInvQty { get; set; } = 25;                // Định mức tồn kho tối đa trần (Ceiling Stock MaxQty)
+    public decimal WarningThresholdPercent { get; set; } = 20.0m; // Ngưỡng cảnh báo bán hàng / biên độ nguy cấp (%) (SalesThresholdPercent / NguongBH)
+    public decimal DailySalesRate { get; set; } = 0.5m;     // Tốc độ bán hàng trung bình ngày (xe/ngày) làm cơ sở tính Days of Supply
+    public DateTime? EffectiveFrom { get; set; }            // Ngày bắt đầu có hiệu lực
+    public DateTime? EffectiveTo { get; set; }              // Ngày hết hạn hiệu lực
+    public string Status { get; set; } = "Draft";           // Draft → Active → Expired (hoặc Suspended / Cancelled)
+    public string? Remark { get; set; }                     // Ghi chú căn cứ thiết lập định mức tồn kho
+    public string? CreatedBy { get; set; }                  // Người lập thiết lập định mức
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                 // Trưởng phòng Kế hoạch / Giám đốc Bán hàng OEM duyệt ban hành
+    public DateTime? ApprovedAt { get; set; }
+    public string? SuspendedBy { get; set; }                // Người tạm dừng áp dụng định mức
+    public DateTime? SuspendedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Nhật ký Kiểm kê &amp; Cân đối Sức khỏe Tồn kho Đại lý theo Thời điểm (BizHTC.StorageFG.St_MinInvBalance / InventoryAuditRecord): ghi nhận kết quả đối soát số lượng tồn kho thực tế (InStock, Allocated, InTransit) với định mức tồn an toàn, chênh lệch tồn kho Variance, số ngày bán hàng dự trữ DOS, xếp loại sức khỏe và hành động điều chuyển đề xuất.</summary>
+public sealed class InventoryAuditRecord
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string AuditNo { get; set; } = "";               // Mã đợt kiểm kê cân đối tồn kho (AUD202605-0001, AUD...)
+    public long? ThresholdId { get; set; }                  // Liên kết định mức tồn kho đang áp dụng
+    public string? ThresholdNo { get; set; }
+    public string DealerCode { get; set; } = "";            // Mã đại lý được kiểm kê
+    public string? DealerName { get; set; }
+    public string? RegionCode { get; set; }
+    public string Model { get; set; } = "";                 // Dòng xe
+    public string? SpecCode { get; set; }                   // Phiên bản xe
+    public int MinInvQty { get; set; } = 5;                 // Định mức tồn kho tối thiểu
+    public int TargetInvQty { get; set; } = 10;             // Định mức tồn kho mục tiêu
+    public int MaxInvQty { get; set; } = 25;                // Định mức tồn kho tối đa
+    public int InStockCount { get; set; } = 0;              // Số lượng xe thực tế trong kho đại lý
+    public int AllocatedCount { get; set; } = 0;            // Số lượng xe đã phân bổ chờ giao cho đại lý
+    public int InTransitCount { get; set; } = 0;            // Số lượng xe đang trên đường vận chuyển tới đại lý
+    public int TotalOnHand { get; set; } = 0;               // Tổng tồn thực tế sẵn sàng = InStockCount + AllocatedCount + InTransitCount
+    public int VarianceQty { get; set; } = 0;               // Chênh lệch so với định mức tối thiểu = TotalOnHand - MinInvQty
+    public decimal StockFulfillmentRate { get; set; } = 0;  // Tỷ lệ đáp ứng định mức tồn (%) = (TotalOnHand / MinInvQty) * 100
+    public decimal DaysOfSupply { get; set; } = 0;          // Số ngày bán hàng dự trữ (DOS) = TotalOnHand / DailySalesRate
+    public string HealthStatus { get; set; } = "Optimal";   // Trạng thái sức khỏe tồn kho: OutOfStock, CriticalShortage, Shortage, Optimal, Surplus
+    public string? RebalanceAction { get; set; }            // Đề xuất điều phối: NoAction, UrgentOrder, TransferIn, TransferOut, RestockFromPlant
+    public string? RecommendedTransferDealer { get; set; }  // Đại lý đối ứng đề xuất điều chuyển nhận hoặc chuyển xe
+    public int RecommendedTransferQty { get; set; } = 0;    // Số lượng xe đề xuất điều chuyển
+    public DateTime AuditDate { get; set; } = DateTime.Now; // Thời điểm thực hiện kiểm kê đối soát
+    public string? AuditedBy { get; set; }                  // Chuyên viên điều phối / Hệ thống tự động kiểm kê
+    public string? Remark { get; set; }                     // Nhận xét & khuyến nghị điều hành tồn kho
+}
+
+// ===== DTOs cho Quản lý Định mức Tồn kho An toàn & Cân đối Kho Đại lý (DealerInventoryThreshold) =====
+
+public sealed record CreateDealerInventoryThresholdDto(
+    string? ThresholdNo,
+    string? ThresholdNoUser,
+    string DealerCode,
+    string? DealerName,
+    string? RegionCode,
+    string Model,
+    string? SpecCode,
+    int? PeriodMonth,
+    int? PeriodYear,
+    int? MinInvQty,
+    int? TargetInvQty,
+    int? MaxInvQty,
+    decimal? WarningThresholdPercent,
+    decimal? DailySalesRate,
+    DateTime? EffectiveFrom,
+    DateTime? EffectiveTo,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record BatchCreateDealerInventoryThresholdItemDto(
+    string DealerCode,
+    string? DealerName,
+    string? RegionCode,
+    string Model,
+    string? SpecCode,
+    int? MinInvQty,
+    int? TargetInvQty,
+    int? MaxInvQty,
+    decimal? WarningThresholdPercent,
+    decimal? DailySalesRate,
+    string? Remark
+);
+
+public sealed record BatchCreateDealerInventoryThresholdDto(
+    int? PeriodMonth,
+    int? PeriodYear,
+    string? ThresholdNoUser,
+    DateTime? EffectiveFrom,
+    DateTime? EffectiveTo,
+    string? CreatedBy,
+    List<BatchCreateDealerInventoryThresholdItemDto> Items
+);
+
+public sealed record UpdateDealerInventoryThresholdDto(
+    string? ThresholdNoUser,
+    string? DealerName,
+    string? RegionCode,
+    string? Model,
+    string? SpecCode,
+    int? PeriodMonth,
+    int? PeriodYear,
+    int? MinInvQty,
+    int? TargetInvQty,
+    int? MaxInvQty,
+    decimal? WarningThresholdPercent,
+    decimal? DailySalesRate,
+    DateTime? EffectiveFrom,
+    DateTime? EffectiveTo,
+    string? Remark
+);
+
+public sealed record DealerInventoryThresholdTransitionDto(
+    string? Actor,
+    string? Note,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record RunInventoryAuditDto(
+    string? DealerCode,
+    string? Model,
+    string? RegionCode,
+    string? AuditedBy,
+    string? Remark
+);
+
+public sealed record DealerStockHealthDto(
+    string DealerCode,
+    string DealerName,
+    string RegionCode,
+    string Model,
+    string? SpecCode,
+    int MinInvQty,
+    int TargetInvQty,
+    int MaxInvQty,
+    int InStockCount,
+    int AllocatedCount,
+    int InTransitCount,
+    int TotalOnHand,
+    int VarianceQty,
+    decimal StockFulfillmentRate,
+    decimal DaysOfSupply,
+    string HealthStatus,
+    string RebalanceAction,
+    string? RecommendedTransferDealer,
+    int RecommendedTransferQty,
+    string? ThresholdNo,
+    DateTime? LastAuditDate
+);
+
+public sealed record DealerRebalanceSuggestionDto(
+    string Model,
+    string SourceDealerCode,
+    string SourceDealerName,
+    int SourceTotalOnHand,
+    int SourceMaxInvQty,
+    int SourceSurplusQty,
+    string TargetDealerCode,
+    string TargetDealerName,
+    int TargetTotalOnHand,
+    int TargetMinInvQty,
+    int TargetDeficitQty,
+    int SuggestedTransferQty,
+    string RecommendationReason
+);
+
+public sealed record DealerInventoryThresholdSummaryDto(
+    int TotalThresholdRules,
+    int TotalActiveRules,
+    int TotalDraftRules,
+    int TotalExpiredRules,
+    int TotalSuspendedRules,
+    int TotalAuditedItems,
+    int TotalOptimalItems,
+    int TotalShortageItems,
+    int TotalCriticalShortageItems,
+    int TotalSurplusItems,
+    int TotalOutOfStockItems,
+    int TotalOnHandVehicles,
+    decimal AverageFulfillmentRate,
+    List<ThresholdByDealerStatsDto> ByDealer,
+    List<ThresholdByModelStatsDto> ByModel,
+    List<ThresholdByRegionStatsDto> ByRegion
+);
+
+public sealed record ThresholdByDealerStatsDto(
+    string DealerCode,
+    string DealerName,
+    string RegionCode,
+    int RuleCount,
+    int TotalOnHand,
+    int TotalMinQty,
+    int TotalTargetQty,
+    int TotalMaxQty,
+    int ShortageCount,
+    int SurplusCount,
+    int OptimalCount,
+    decimal AverageFulfillmentRate
+);
+
+public sealed record ThresholdByModelStatsDto(
+    string Model,
+    int RuleCount,
+    int TotalOnHand,
+    int TotalMinQty,
+    int TotalTargetQty,
+    int TotalMaxQty,
+    int ShortageCount,
+    int SurplusCount,
+    int OptimalCount,
+    decimal AverageFulfillmentRate
+);
+
+public sealed record ThresholdByRegionStatsDto(
+    string RegionCode,
+    int RuleCount,
+    int TotalOnHand,
+    int TotalMinQty,
+    int TotalTargetQty,
+    int TotalMaxQty,
+    int ShortageCount,
+    int SurplusCount,
+    int OptimalCount,
+    decimal AverageFulfillmentRate
+);
+
+public sealed record VehicleInventoryThresholdInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    DateTime? LastInventoryAuditDate,
+    string? InventoryAlertStatus,
+    string? LastThresholdNo,
+    int ThresholdAuditCount,
+    List<DealerInventoryThreshold> ApplicableThresholds,
+    List<InventoryAuditRecord> RecentAuditRecords
+);
+
 
 
 
