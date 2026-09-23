@@ -107,6 +107,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<GpsLocationLog> GpsLocationLogs => Set<GpsLocationLog>();
     public DbSet<ServiceCavity> ServiceCavities => Set<ServiceCavity>();
     public DbSet<CavityDispatchLog> CavityDispatchLogs => Set<CavityDispatchLog>();
+    public DbSet<StoragePayment> StoragePayments => Set<StoragePayment>();
+    public DbSet<StoragePaymentLine> StoragePaymentLines => Set<StoragePaymentLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -161,5 +163,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<GpsClaim>().HasIndex(x => new { x.OrgId, x.GpsClaimNo }).IsUnique();
         b.Entity<ServiceCavity>().HasIndex(x => new { x.OrgId, x.CavityNo }).IsUnique();
         b.Entity<CavityDispatchLog>().HasIndex(x => new { x.OrgId, x.DispatchNo }).IsUnique();
+        b.Entity<StoragePayment>().HasIndex(x => new { x.OrgId, x.PaymentStorageNo }).IsUnique();
     }
 }

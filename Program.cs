@@ -3611,6 +3611,133 @@ app.MapGet("/api/vehicles/{vin}/cavities", async (string vin, IVehicleService sv
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Bảng kê & Quyết toán chi phí Lưu kho bãi xe tồn OEM (BizHTC.Payment / Pmt_PaymentStorage & StoragePayment / FrmQuanLyThanhToanLuuKho) =====
+
+app.MapPost("/api/storage-payments", async (CreateStoragePaymentDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.PmtMonth))
+        return Results.BadRequest(new { error = "Cần tháng/kỳ quyết toán PmtMonth (YYYY-MM)." });
+    try { return Results.Ok(await svc.CreateStoragePaymentAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/storage-payments", async (IVehicleService svc, string? status, string? storageCode, string? pmtMonth, string? storageProvider, string? pmtStorageNo, string? vin) =>
+    Results.Ok(await svc.ListStoragePaymentsAsync(status, storageCode, pmtMonth, storageProvider, pmtStorageNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/storage-payments/summary", async (IVehicleService svc, string? storageCode, string? pmtMonth) =>
+    Results.Ok(await svc.GetStoragePaymentSummaryAsync(storageCode, pmtMonth))).RequireAuthorization();
+
+app.MapGet("/api/reports/storage-payments/summary", async (IVehicleService svc, string? storageCode, string? pmtMonth) =>
+    Results.Ok(await svc.GetStoragePaymentSummaryAsync(storageCode, pmtMonth))).RequireAuthorization();
+
+app.MapGet("/api/storage-payments/{paymentStorageNo}", async (string paymentStorageNo, IVehicleService svc) =>
+{
+    var r = await svc.GetStoragePaymentAsync(paymentStorageNo);
+    return r is null ? Results.NotFound(new { paymentStorageNo, error = "Không tìm thấy bảng kê quyết toán lưu kho." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/storage-payments/{paymentStorageNo}", async (string paymentStorageNo, UpdateStoragePaymentHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateStoragePaymentHeaderAsync(paymentStorageNo, dto);
+        return r is null ? Results.NotFound(new { paymentStorageNo, error = "Không tìm thấy bảng kê quyết toán lưu kho." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/storage-payments/{paymentStorageNo}/update", async (string paymentStorageNo, UpdateStoragePaymentHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateStoragePaymentHeaderAsync(paymentStorageNo, dto);
+        return r is null ? Results.NotFound(new { paymentStorageNo, error = "Không tìm thấy bảng kê quyết toán lưu kho." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/storage-payments/{paymentStorageNo}/{action}", async (string paymentStorageNo, string action, StoragePaymentTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "request" or "approve1" or "approve-step1" or "approve2" or "approve" or "tcms-sign" or "tcmssign" or "sign-tcms" or "htv-sign" or "htvsign" or "sign-htv" or "settle" or "pay" or "finish" or "complete" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve1|approve2|tcms-sign|htv-sign|settle|reject|cancel" });
+    try
+    {
+        var r = await svc.StoragePaymentTransitionAsync(paymentStorageNo, action, dto);
+        return r is null ? Results.NotFound(new { paymentStorageNo, error = "Không tìm thấy bảng kê hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/storage-payments/{paymentStorageNo}/lines/{vin}/update", async (string paymentStorageNo, string vin, UpdateStoragePaymentLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateStoragePaymentLineAsync(paymentStorageNo, vin, dto);
+        return r is null ? Results.NotFound(new { paymentStorageNo, vin, error = "Không tìm thấy dòng xe trong bảng kê lưu kho." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/storage-payments/{paymentStorageNo}/lines/{vin}", async (string paymentStorageNo, string vin, UpdateStoragePaymentLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateStoragePaymentLineAsync(paymentStorageNo, vin, dto);
+        return r is null ? Results.NotFound(new { paymentStorageNo, vin, error = "Không tìm thấy dòng xe trong bảng kê lưu kho." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/storage-payments/{paymentStorageNo}/lines", async (string paymentStorageNo, List<StoragePaymentLineInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items xe để thêm vào bảng kê." });
+    try
+    {
+        var r = await svc.AddStoragePaymentLinesAsync(paymentStorageNo, items);
+        return r is null ? Results.NotFound(new { paymentStorageNo, error = "Không tìm thấy bảng kê hoặc không thể thêm xe." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/storage-payments/{paymentStorageNo}/lines/{vin}", async (string paymentStorageNo, string vin, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveStoragePaymentLineAsync(paymentStorageNo, vin);
+        return r is null ? Results.NotFound(new { paymentStorageNo, vin, error = "Không tìm thấy dòng xe trong bảng kê hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/storage-payments/{paymentStorageNo}", async (string paymentStorageNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveStoragePaymentAsync(paymentStorageNo);
+        return r is null ? Results.NotFound(new { paymentStorageNo, error = "Không tìm thấy bảng kê hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/storage-payment-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleStoragePaymentInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/storage-payments", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleStoragePaymentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/storage-payment-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleStoragePaymentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

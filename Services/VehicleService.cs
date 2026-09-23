@@ -1998,6 +1998,20 @@ public interface IVehicleService
     Task<object?> GetCavityHistoryAsync(string cavityNo);
     Task<object?> GetVehicleCavityHistoryAsync(string vin);
     Task<object?> GetVehicleCavityInfoAsync(string vin);
+
+    // Bảng kê & Quyết toán chi phí Lưu kho bãi xe ô tô tồn bãi OEM (BizHTC.Payment / Pmt_PaymentStorage & StoragePayment)
+    Task<object> CreateStoragePaymentAsync(CreateStoragePaymentDto dto);
+    Task<object> ListStoragePaymentsAsync(string? status, string? storageCode, string? pmtMonth, string? storageProvider, string? pmtStorageNo, string? vin);
+    Task<object?> GetStoragePaymentAsync(string paymentStorageNo);
+    Task<object?> UpdateStoragePaymentHeaderAsync(string paymentStorageNo, UpdateStoragePaymentHeaderDto dto);
+    Task<object?> StoragePaymentTransitionAsync(string paymentStorageNo, string action, StoragePaymentTransitionDto? dto);
+    Task<object?> UpdateStoragePaymentLineAsync(string paymentStorageNo, string vin, UpdateStoragePaymentLineDto dto);
+    Task<object?> AddStoragePaymentLinesAsync(string paymentStorageNo, List<StoragePaymentLineInputDto> items);
+    Task<object?> RemoveStoragePaymentLineAsync(string paymentStorageNo, string vin);
+    Task<object?> RemoveStoragePaymentAsync(string paymentStorageNo);
+    Task<object> GetStoragePaymentSummaryAsync(string? storageCode, string? pmtMonth);
+    Task<object?> GetVehicleStoragePaymentInfoAsync(string vin);
+    Task<object?> GetVehicleStoragePaymentHistoryAsync(string vin);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -27313,5 +27327,795 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             currentCavity,
             recentLogs
         );
+    }
+
+    // ===== Bảng kê & Quyết toán chi phí Lưu kho bãi xe ô tô tồn kho OEM (BizHTC.Payment / Pmt_PaymentStorage & StoragePayment) =====
+
+    public async Task<object> CreateStoragePaymentAsync(CreateStoragePaymentDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.PmtMonth))
+            throw new InvalidOperationException("Cần tháng/kỳ quyết toán PmtMonth (YYYY-MM, ví dụ: 2026-03).");
+
+        var pmtMonth = dto.PmtMonth.Trim();
+        var storageCode = string.IsNullOrWhiteSpace(dto.StorageCode) ? "TCV_YARD" : dto.StorageCode.Trim().ToUpperInvariant();
+        var storageProvider = string.IsNullOrWhiteSpace(dto.StorageProvider) ? "TCMS - Thanh Cong Motor Services" : dto.StorageProvider.Trim();
+        var vatRate = dto.VatRate.HasValue && dto.VatRate.Value >= 0 ? dto.VatRate.Value : 10m;
+
+        var pmtNo = string.IsNullOrWhiteSpace(dto.PaymentStorageNo)
+            ? $"STP-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}"
+            : dto.PaymentStorageNo.Trim().ToUpperInvariant();
+
+        if (await db.StoragePayments.AnyAsync(p => p.OrgId == Org && p.PaymentStorageNo == pmtNo))
+            throw new InvalidOperationException($"Mã bảng kê quyết toán lưu kho {pmtNo} đã tồn tại.");
+
+        var payment = new StoragePayment
+        {
+            OrgId = Org,
+            PaymentStorageNo = pmtNo,
+            PaymentStorageNoUser = dto.PaymentStorageNoUser?.Trim(),
+            PmtMonth = pmtMonth,
+            StorageCode = storageCode,
+            StorageProvider = storageProvider,
+            VatRate = vatRate,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.StoragePayments.Add(payment);
+        await db.SaveChangesAsync();
+
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            var distinctItems = dto.Items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).ToList();
+            var vins = distinctItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+            var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+            int idx = 1;
+            int totalDays = 0;
+            decimal totalBeforeVat = 0;
+
+            foreach (var it in distinctItems)
+            {
+                var vin = it.Vin.Trim().ToUpperInvariant();
+                vehicles.TryGetValue(vin, out var v);
+
+                var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : (v?.Model ?? "Hyundai");
+                var specCode = it.SpecCode?.Trim() ?? v?.Model;
+                var engineNo = it.EngineNo?.Trim() ?? v?.EngineNo;
+                var color = it.Color?.Trim() ?? v?.Color;
+                var yardInit = it.StorageCodeInit?.Trim() ?? v?.StorageCode ?? storageCode;
+                var dealer = it.DealerCode?.Trim() ?? v?.DealerCode;
+
+                var inDate = it.InCostStorageDate ?? DateTime.Now.AddDays(-15);
+                var outDate = it.OutCostStorageDate ?? DateTime.Now;
+                if (outDate < inDate) outDate = inDate;
+
+                var storageDays = it.StorageDays.HasValue && it.StorageDays.Value > 0
+                    ? it.StorageDays.Value
+                    : Math.Max(1, (outDate.Date - inDate.Date).Days + 1);
+
+                decimal dailyRate = 35000;
+                if (it.DailyRate.HasValue && it.DailyRate.Value > 0)
+                {
+                    dailyRate = it.DailyRate.Value;
+                }
+                else
+                {
+                    var mUpper = model.ToUpperInvariant();
+                    if (mUpper.Contains("SANTAFE") || mUpper.Contains("PALISADE") || mUpper.Contains("CUSTIN")) dailyRate = 50000;
+                    else if (mUpper.Contains("TUCSON") || mUpper.Contains("CRETA") || mUpper.Contains("IONIQ")) dailyRate = 45000;
+                    else if (mUpper.Contains("PORTER") || mUpper.Contains("MIGHTY") || mUpper.Contains("TRUCK")) dailyRate = 60000;
+                    else dailyRate = 35000;
+                }
+
+                var coverDailyRate = it.CoverDailyRate.HasValue && it.CoverDailyRate.Value >= 0 ? it.CoverDailyRate.Value : 0m;
+                var storageCost = storageDays * dailyRate;
+                var coverCost = storageDays * coverDailyRate;
+                var lineTotal = storageCost + coverCost;
+
+                var level = !string.IsNullOrWhiteSpace(it.StorageLevel)
+                    ? it.StorageLevel.Trim()
+                    : (storageDays > 60 ? "Overdue" : (yardInit.Contains("PORT") ? "Port" : "Standard"));
+
+                var line = new StoragePaymentLine
+                {
+                    OrgId = Org,
+                    StoragePaymentId = payment.Id,
+                    PaymentStorageNo = pmtNo,
+                    LineIndex = idx++,
+                    Vin = vin,
+                    Model = model,
+                    SpecCode = specCode,
+                    EngineNo = engineNo,
+                    Color = color,
+                    StorageCodeInit = yardInit,
+                    StoreDate = it.StoreDate ?? inDate.AddDays(-5),
+                    DeliveryOutDate = it.DeliveryOutDate,
+                    DealerCode = dealer,
+                    InCostStorageDate = inDate,
+                    OutCostStorageDate = outDate,
+                    StorageDays = storageDays,
+                    DailyRate = dailyRate,
+                    CoverDailyRate = coverDailyRate,
+                    StorageCost = storageCost,
+                    CoverCost = coverCost,
+                    TotalAmount = lineTotal,
+                    StorageLevel = level,
+                    Status = "Pending",
+                    Remark = it.Remark?.Trim()
+                };
+
+                db.StoragePaymentLines.Add(line);
+                totalDays += storageDays;
+                totalBeforeVat += lineTotal;
+
+                Log(vin, "StoragePaymentLineAdded", $"{pmtNo} Thêm xe vào bảng kê lưu kho {storageCode} ({pmtMonth}). Số ngày: {storageDays}, Tổng phí: {lineTotal:N0} VNĐ");
+            }
+
+            payment.TotalVehicleCount = distinctItems.Count;
+            payment.TotalStorageDays = totalDays;
+            payment.TotalBeforeVAT = totalBeforeVat;
+            payment.TotalVatAmount = Math.Round(totalBeforeVat * (vatRate / 100m), 0);
+            payment.TotalAmount = totalBeforeVat + payment.TotalVatAmount;
+            await db.SaveChangesAsync();
+        }
+
+        return payment;
+    }
+
+    public async Task<object> ListStoragePaymentsAsync(string? status, string? storageCode, string? pmtMonth, string? storageProvider, string? pmtStorageNo, string? vin)
+    {
+        var q = db.StoragePayments.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(p => p.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(storageCode)) q = q.Where(p => p.StorageCode == storageCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(pmtMonth)) q = q.Where(p => p.PmtMonth == pmtMonth.Trim());
+        if (!string.IsNullOrWhiteSpace(storageProvider)) q = q.Where(p => p.StorageProvider != null && p.StorageProvider.Contains(storageProvider.Trim()));
+        if (!string.IsNullOrWhiteSpace(pmtStorageNo)) q = q.Where(p => p.PaymentStorageNo.Contains(pmtStorageNo.Trim().ToUpperInvariant()));
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.StoragePaymentLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.PaymentStorageNo).Distinct().ToListAsync();
+            q = q.Where(p => matchedNos.Contains(p.PaymentStorageNo));
+        }
+
+        var items = await q.OrderByDescending(p => p.Id).Take(500).Select(p => new
+        {
+            p.Id,
+            p.PaymentStorageNo,
+            p.PaymentStorageNoUser,
+            p.PmtMonth,
+            p.StorageCode,
+            p.StorageProvider,
+            p.TotalVehicleCount,
+            p.TotalStorageDays,
+            p.TotalBeforeVAT,
+            p.VatRate,
+            p.TotalVatAmount,
+            p.TotalAmount,
+            p.Status,
+            p.TCMSSignStatus,
+            p.TCMSSignDate,
+            p.TCMSSignBy,
+            p.HTVSignStatus,
+            p.HTVSignDate,
+            p.HTVSignBy,
+            p.BankRefNo,
+            p.PaymentDate,
+            p.FilePath,
+            p.Remark,
+            p.CreatedBy,
+            p.CreatedAt,
+            p.Approved1By,
+            p.Approved1At,
+            p.Approved2By,
+            p.Approved2At,
+            p.SettledBy,
+            p.SettledAt,
+            p.RejectedBy,
+            p.RejectedAt,
+            p.CancelledBy,
+            p.CancelledAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetStoragePaymentAsync(string paymentStorageNo)
+    {
+        paymentStorageNo = paymentStorageNo.Trim().ToUpperInvariant();
+        var payment = await db.StoragePayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentStorageNo == paymentStorageNo);
+        if (payment is null) return null;
+
+        var lines = await db.StoragePaymentLines.Where(l => l.OrgId == Org && l.StoragePaymentId == payment.Id).OrderBy(l => l.LineIndex).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.PaymentStorageNo,
+            l.LineIndex,
+            l.Vin,
+            l.Model,
+            l.SpecCode,
+            l.EngineNo,
+            l.Color,
+            l.StorageCodeInit,
+            l.StoreDate,
+            l.DeliveryOutDate,
+            l.DealerCode,
+            l.InCostStorageDate,
+            l.OutCostStorageDate,
+            l.StorageDays,
+            l.DailyRate,
+            l.CoverDailyRate,
+            l.StorageCost,
+            l.CoverCost,
+            l.TotalAmount,
+            l.StorageLevel,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.Model,
+                v.Color,
+                v.EngineNo,
+                status = v.Status.ToString(),
+                v.DealerCode,
+                v.StorageCode,
+                v.IsStoragePaid,
+                v.StoragePaidAmount,
+                v.LastStoragePaymentNo,
+                v.LastStoragePaymentDate
+            } : null
+        }).ToList();
+
+        return new
+        {
+            payment.Id,
+            payment.PaymentStorageNo,
+            payment.PaymentStorageNoUser,
+            payment.PmtMonth,
+            payment.StorageCode,
+            payment.StorageProvider,
+            payment.TotalVehicleCount,
+            payment.TotalStorageDays,
+            payment.TotalBeforeVAT,
+            payment.VatRate,
+            payment.TotalVatAmount,
+            payment.TotalAmount,
+            payment.Status,
+            payment.TCMSSignStatus,
+            payment.TCMSSignDate,
+            payment.TCMSSignBy,
+            payment.HTVSignStatus,
+            payment.HTVSignDate,
+            payment.HTVSignBy,
+            payment.BankRefNo,
+            payment.PaymentDate,
+            payment.FilePath,
+            payment.Remark,
+            payment.CreatedBy,
+            payment.CreatedAt,
+            payment.Approved1By,
+            payment.Approved1At,
+            payment.Approved2By,
+            payment.Approved2At,
+            payment.SettledBy,
+            payment.SettledAt,
+            payment.RejectedBy,
+            payment.RejectedAt,
+            payment.RejectReason,
+            payment.CancelledBy,
+            payment.CancelledAt,
+            payment.CancelReason,
+            lines = details
+        };
+    }
+
+    public async Task<object?> UpdateStoragePaymentHeaderAsync(string paymentStorageNo, UpdateStoragePaymentHeaderDto dto)
+    {
+        paymentStorageNo = paymentStorageNo.Trim().ToUpperInvariant();
+        var payment = await db.StoragePayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentStorageNo == paymentStorageNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể sửa bảng kê quyết toán lưu kho ở trạng thái {payment.Status}.");
+
+        if (dto.PaymentStorageNoUser != null) payment.PaymentStorageNoUser = dto.PaymentStorageNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PmtMonth)) payment.PmtMonth = dto.PmtMonth.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.StorageCode)) payment.StorageCode = dto.StorageCode.Trim().ToUpperInvariant();
+        if (dto.StorageProvider != null) payment.StorageProvider = dto.StorageProvider.Trim();
+        if (dto.BankRefNo != null) payment.BankRefNo = dto.BankRefNo.Trim();
+        if (dto.PaymentDate.HasValue) payment.PaymentDate = dto.PaymentDate.Value;
+        if (dto.FilePath != null) payment.FilePath = dto.FilePath.Trim();
+        if (dto.Remark != null) payment.Remark = dto.Remark.Trim();
+
+        if (dto.VatRate.HasValue && dto.VatRate.Value >= 0)
+        {
+            payment.VatRate = dto.VatRate.Value;
+            payment.TotalVatAmount = Math.Round(payment.TotalBeforeVAT * (payment.VatRate / 100m), 0);
+            payment.TotalAmount = payment.TotalBeforeVAT + payment.TotalVatAmount;
+        }
+
+        await db.SaveChangesAsync();
+        return payment;
+    }
+
+    public async Task<object?> StoragePaymentTransitionAsync(string paymentStorageNo, string action, StoragePaymentTransitionDto? dto)
+    {
+        paymentStorageNo = paymentStorageNo.Trim().ToUpperInvariant();
+        var payment = await db.StoragePayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentStorageNo == paymentStorageNo);
+        if (payment is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "StorageManager";
+        var lines = await db.StoragePaymentLines.Where(l => l.OrgId == Org && l.StoragePaymentId == payment.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToListAsync();
+
+        switch (action.ToLowerInvariant())
+        {
+            case "submit":
+            case "request":
+                if (payment.Status != "Draft") return null;
+                payment.Status = "Submitted";
+                foreach (var l in lines) l.Status = "Pending";
+                foreach (var v in vehicles) Log(v.Vin, "StoragePaymentSubmitted", $"{paymentStorageNo} Trình duyệt bảng kê lưu kho bãi {payment.StorageCode} kỳ {payment.PmtMonth}");
+                break;
+
+            case "approve1":
+            case "approve-step1":
+                if (payment.Status != "Submitted") return null;
+                payment.Status = "Approved1";
+                payment.Approved1By = actor;
+                payment.Approved1At = now;
+                foreach (var l in lines) l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "StoragePaymentApproved1", $"{paymentStorageNo} Kế toán chi phí đối soát số ngày lưu bãi đạt chuẩn. Duyệt bởi: {actor}");
+                break;
+
+            case "approve2":
+            case "approve":
+                if (payment.Status is not ("Submitted" or "Approved1")) return null;
+                if (string.IsNullOrWhiteSpace(payment.Approved1By))
+                {
+                    payment.Approved1By = actor;
+                    payment.Approved1At = now;
+                }
+                payment.Status = "Approved2";
+                payment.Approved2By = actor;
+                payment.Approved2At = now;
+                foreach (var l in lines) l.Status = "Approved";
+                foreach (var v in vehicles) Log(v.Vin, "StoragePaymentApproved2", $"{paymentStorageNo} Lãnh đạo Khối duyệt chi phí lưu kho bãi {payment.StorageCode}. Duyệt bởi: {actor}");
+                break;
+
+            case "tcms-sign":
+            case "tcmssign":
+            case "sign-tcms":
+                if (payment.Status is not ("Approved1" or "Approved2" or "Submitted")) return null;
+                payment.Status = "TCMSSigned";
+                payment.TCMSSignStatus = "Signed";
+                payment.TCMSSignDate = now;
+                payment.TCMSSignBy = actor;
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) payment.FilePath = dto.FilePath.Trim();
+                foreach (var v in vehicles) Log(v.Vin, "StoragePaymentTCMSSigned", $"{paymentStorageNo} Đại diện Ban Quản lý Bãi xe TCMS ký số biên bản quyết toán lưu kho. Ký bởi: {actor}");
+                break;
+
+            case "htv-sign":
+            case "htvsign":
+            case "sign-htv":
+                if (payment.Status is not ("TCMSSigned" or "Approved2" or "Approved1")) return null;
+                payment.Status = "HTVSigned";
+                payment.HTVSignStatus = "Signed";
+                payment.HTVSignDate = now;
+                payment.HTVSignBy = actor;
+                if (!string.IsNullOrWhiteSpace(dto?.FilePath)) payment.FilePath = dto.FilePath.Trim();
+                foreach (var v in vehicles) Log(v.Vin, "StoragePaymentHTVSigned", $"{paymentStorageNo} Đại diện Hãng xe HTV ký số hoàn tất quyết toán lưu bãi 2 bên. Ký bởi: {actor}");
+                break;
+
+            case "settle":
+            case "pay":
+            case "finish":
+            case "complete":
+                if (payment.Status is not ("HTVSigned" or "TCMSSigned" or "Approved2" or "Approved1")) return null;
+                payment.Status = "Settled";
+                payment.SettledBy = actor;
+                payment.SettledAt = now;
+                payment.PaymentDate = dto?.PaymentDate ?? now;
+                if (!string.IsNullOrWhiteSpace(dto?.BankRefNo)) payment.BankRefNo = dto.BankRefNo.Trim();
+
+                var lineDict = lines.ToDictionary(l => l.Vin);
+                foreach (var v in vehicles)
+                {
+                    v.IsStoragePaid = true;
+                    if (lineDict.TryGetValue(v.Vin, out var lineItem))
+                    {
+                        lineItem.Status = "Settled";
+                        v.StoragePaidAmount += lineItem.TotalAmount;
+                    }
+                    v.LastStoragePaymentNo = paymentStorageNo;
+                    v.LastStoragePaymentDate = payment.PaymentDate;
+                    v.StoragePaymentCount += 1;
+
+                    Log(v.Vin, "StoragePaymentSettled", $"{paymentStorageNo} Hoàn tất thanh toán tiền lưu kho bãi {payment.StorageCode} kỳ {payment.PmtMonth}. UNC: {payment.BankRefNo ?? "N/A"}. Tiền xe: {(lineDict.TryGetValue(v.Vin, out var li) ? li.TotalAmount.ToString("N0") : "0")} VNĐ");
+                }
+                break;
+
+            case "reject":
+                if (payment.Status is "Settled" or "Cancelled") return null;
+                payment.Status = "Rejected";
+                payment.RejectedBy = actor;
+                payment.RejectedAt = now;
+                payment.RejectReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+                foreach (var l in lines) l.Status = "Rejected";
+                foreach (var v in vehicles) Log(v.Vin, "StoragePaymentRejected", $"{paymentStorageNo} Từ chối duyệt bảng kê lưu kho. Lý do: {payment.RejectReason}");
+                break;
+
+            case "cancel":
+                if (payment.Status is "Settled") return null;
+                payment.Status = "Cancelled";
+                payment.CancelledBy = actor;
+                payment.CancelledAt = now;
+                payment.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+                foreach (var l in lines) l.Status = "Cancelled";
+                foreach (var v in vehicles) Log(v.Vin, "StoragePaymentCancelled", $"{paymentStorageNo} Hủy bảng kê lưu kho. Lý do: {payment.CancelReason}");
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+        return payment;
+    }
+
+    public async Task<object?> UpdateStoragePaymentLineAsync(string paymentStorageNo, string vin, UpdateStoragePaymentLineDto dto)
+    {
+        paymentStorageNo = paymentStorageNo.Trim().ToUpperInvariant();
+        var vVin = vin.Trim().ToUpperInvariant();
+
+        var payment = await db.StoragePayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentStorageNo == paymentStorageNo);
+        if (payment is null || payment.Status is "Settled" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.StoragePaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.StoragePaymentId == payment.Id && l.Vin == vVin);
+        if (line is null) return null;
+
+        if (dto.Model != null) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (dto.StorageCodeInit != null) line.StorageCodeInit = dto.StorageCodeInit.Trim();
+        if (dto.StoreDate.HasValue) line.StoreDate = dto.StoreDate.Value;
+        if (dto.DeliveryOutDate.HasValue) line.DeliveryOutDate = dto.DeliveryOutDate.Value;
+        if (dto.DealerCode != null) line.DealerCode = dto.DealerCode.Trim();
+        if (dto.InCostStorageDate.HasValue) line.InCostStorageDate = dto.InCostStorageDate.Value;
+        if (dto.OutCostStorageDate.HasValue) line.OutCostStorageDate = dto.OutCostStorageDate.Value;
+        if (dto.DailyRate.HasValue && dto.DailyRate.Value >= 0) line.DailyRate = dto.DailyRate.Value;
+        if (dto.CoverDailyRate.HasValue && dto.CoverDailyRate.Value >= 0) line.CoverDailyRate = dto.CoverDailyRate.Value;
+        if (dto.StorageLevel != null) line.StorageLevel = dto.StorageLevel.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        if (dto.StorageDays.HasValue && dto.StorageDays.Value > 0)
+        {
+            line.StorageDays = dto.StorageDays.Value;
+        }
+        else if (dto.InCostStorageDate.HasValue || dto.OutCostStorageDate.HasValue)
+        {
+            line.StorageDays = Math.Max(1, (line.OutCostStorageDate.Date - line.InCostStorageDate.Date).Days + 1);
+        }
+
+        line.StorageCost = line.StorageDays * line.DailyRate;
+        line.CoverCost = line.StorageDays * line.CoverDailyRate;
+        line.TotalAmount = line.StorageCost + line.CoverCost;
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.StoragePaymentLines.Where(l => l.OrgId == Org && l.StoragePaymentId == payment.Id).ToListAsync();
+        payment.TotalVehicleCount = allLines.Count;
+        payment.TotalStorageDays = allLines.Sum(l => l.StorageDays);
+        payment.TotalBeforeVAT = allLines.Sum(l => l.TotalAmount);
+        payment.TotalVatAmount = Math.Round(payment.TotalBeforeVAT * (payment.VatRate / 100m), 0);
+        payment.TotalAmount = payment.TotalBeforeVAT + payment.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> AddStoragePaymentLinesAsync(string paymentStorageNo, List<StoragePaymentLineInputDto> items)
+    {
+        paymentStorageNo = paymentStorageNo.Trim().ToUpperInvariant();
+        var payment = await db.StoragePayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentStorageNo == paymentStorageNo);
+        if (payment is null || payment.Status is "Settled" or "Cancelled" or "Rejected") return null;
+
+        var existingVins = await db.StoragePaymentLines.Where(l => l.OrgId == Org && l.StoragePaymentId == payment.Id).Select(l => l.Vin).ToListAsync();
+        var newItems = items.GroupBy(i => i.Vin.Trim().ToUpperInvariant()).Select(g => g.First()).Where(i => !existingVins.Contains(i.Vin.Trim().ToUpperInvariant())).ToList();
+        if (newItems.Count == 0) return null;
+
+        var newVins = newItems.Select(i => i.Vin.Trim().ToUpperInvariant()).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        int maxIdx = (await db.StoragePaymentLines.Where(l => l.OrgId == Org && l.StoragePaymentId == payment.Id).MaxAsync(l => (int?)l.LineIndex)) ?? 0;
+
+        foreach (var it in newItems)
+        {
+            var vin = it.Vin.Trim().ToUpperInvariant();
+            vehicles.TryGetValue(vin, out var v);
+
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : (v?.Model ?? "Hyundai");
+            var specCode = it.SpecCode?.Trim() ?? v?.Model;
+            var engineNo = it.EngineNo?.Trim() ?? v?.EngineNo;
+            var color = it.Color?.Trim() ?? v?.Color;
+            var yardInit = it.StorageCodeInit?.Trim() ?? v?.StorageCode ?? payment.StorageCode;
+            var dealer = it.DealerCode?.Trim() ?? v?.DealerCode;
+
+            var inDate = it.InCostStorageDate ?? DateTime.Now.AddDays(-15);
+            var outDate = it.OutCostStorageDate ?? DateTime.Now;
+            if (outDate < inDate) outDate = inDate;
+
+            var storageDays = it.StorageDays.HasValue && it.StorageDays.Value > 0
+                ? it.StorageDays.Value
+                : Math.Max(1, (outDate.Date - inDate.Date).Days + 1);
+
+            decimal dailyRate = 35000;
+            if (it.DailyRate.HasValue && it.DailyRate.Value > 0)
+            {
+                dailyRate = it.DailyRate.Value;
+            }
+            else
+            {
+                var mUpper = model.ToUpperInvariant();
+                if (mUpper.Contains("SANTAFE") || mUpper.Contains("PALISADE") || mUpper.Contains("CUSTIN")) dailyRate = 50000;
+                else if (mUpper.Contains("TUCSON") || mUpper.Contains("CRETA") || mUpper.Contains("IONIQ")) dailyRate = 45000;
+                else if (mUpper.Contains("PORTER") || mUpper.Contains("MIGHTY") || mUpper.Contains("TRUCK")) dailyRate = 60000;
+                else dailyRate = 35000;
+            }
+
+            var coverDailyRate = it.CoverDailyRate.HasValue && it.CoverDailyRate.Value >= 0 ? it.CoverDailyRate.Value : 0m;
+            var storageCost = storageDays * dailyRate;
+            var coverCost = storageDays * coverDailyRate;
+            var lineTotal = storageCost + coverCost;
+
+            var level = !string.IsNullOrWhiteSpace(it.StorageLevel)
+                ? it.StorageLevel.Trim()
+                : (storageDays > 60 ? "Overdue" : (yardInit.Contains("PORT") ? "Port" : "Standard"));
+
+            var line = new StoragePaymentLine
+            {
+                OrgId = Org,
+                StoragePaymentId = payment.Id,
+                PaymentStorageNo = paymentStorageNo,
+                LineIndex = ++maxIdx,
+                Vin = vin,
+                Model = model,
+                SpecCode = specCode,
+                EngineNo = engineNo,
+                Color = color,
+                StorageCodeInit = yardInit,
+                StoreDate = it.StoreDate ?? inDate.AddDays(-5),
+                DeliveryOutDate = it.DeliveryOutDate,
+                DealerCode = dealer,
+                InCostStorageDate = inDate,
+                OutCostStorageDate = outDate,
+                StorageDays = storageDays,
+                DailyRate = dailyRate,
+                CoverDailyRate = coverDailyRate,
+                StorageCost = storageCost,
+                CoverCost = coverCost,
+                TotalAmount = lineTotal,
+                StorageLevel = level,
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            db.StoragePaymentLines.Add(line);
+            Log(vin, "StoragePaymentLineAdded", $"{paymentStorageNo} Bổ sung xe vào bảng kê lưu kho {payment.StorageCode}. Phí: {lineTotal:N0} VNĐ");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.StoragePaymentLines.Where(l => l.OrgId == Org && l.StoragePaymentId == payment.Id).ToListAsync();
+        payment.TotalVehicleCount = allLines.Count;
+        payment.TotalStorageDays = allLines.Sum(l => l.StorageDays);
+        payment.TotalBeforeVAT = allLines.Sum(l => l.TotalAmount);
+        payment.TotalVatAmount = Math.Round(payment.TotalBeforeVAT * (payment.VatRate / 100m), 0);
+        payment.TotalAmount = payment.TotalBeforeVAT + payment.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            payment.PaymentStorageNo,
+            addedCount = newItems.Count,
+            payment.TotalVehicleCount,
+            payment.TotalStorageDays,
+            payment.TotalBeforeVAT,
+            payment.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveStoragePaymentLineAsync(string paymentStorageNo, string vin)
+    {
+        paymentStorageNo = paymentStorageNo.Trim().ToUpperInvariant();
+        var vVin = vin.Trim().ToUpperInvariant();
+
+        var payment = await db.StoragePayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentStorageNo == paymentStorageNo);
+        if (payment is null || payment.Status is "Settled" or "Cancelled" or "Rejected") return null;
+
+        var line = await db.StoragePaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.StoragePaymentId == payment.Id && l.Vin == vVin);
+        if (line is null) return null;
+
+        db.StoragePaymentLines.Remove(line);
+        Log(vVin, "StoragePaymentLineRemoved", $"{paymentStorageNo} Rút xe khỏi bảng kê quyết toán lưu kho {payment.StorageCode}");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.StoragePaymentLines.Where(l => l.OrgId == Org && l.StoragePaymentId == payment.Id).ToListAsync();
+        payment.TotalVehicleCount = allLines.Count;
+        payment.TotalStorageDays = allLines.Sum(l => l.StorageDays);
+        payment.TotalBeforeVAT = allLines.Sum(l => l.TotalAmount);
+        payment.TotalVatAmount = Math.Round(payment.TotalBeforeVAT * (payment.VatRate / 100m), 0);
+        payment.TotalAmount = payment.TotalBeforeVAT + payment.TotalVatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            payment.PaymentStorageNo,
+            vin = vVin,
+            payment.TotalVehicleCount,
+            payment.TotalStorageDays,
+            payment.TotalAmount
+        };
+    }
+
+    public async Task<object?> RemoveStoragePaymentAsync(string paymentStorageNo)
+    {
+        paymentStorageNo = paymentStorageNo.Trim().ToUpperInvariant();
+        var payment = await db.StoragePayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PaymentStorageNo == paymentStorageNo);
+        if (payment is null) return null;
+        if (payment.Status != "Draft")
+            throw new InvalidOperationException($"Chỉ có thể xóa bảng kê quyết toán lưu kho ở trạng thái Draft.");
+
+        var lines = await db.StoragePaymentLines.Where(l => l.OrgId == Org && l.StoragePaymentId == payment.Id).ToListAsync();
+        db.StoragePaymentLines.RemoveRange(lines);
+        db.StoragePayments.Remove(payment);
+        await db.SaveChangesAsync();
+
+        return new { paymentStorageNo, deleted = true };
+    }
+
+    public async Task<object> GetStoragePaymentSummaryAsync(string? storageCode, string? pmtMonth)
+    {
+        var query = db.StoragePayments.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(storageCode))
+            query = query.Where(p => p.StorageCode == storageCode.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(pmtMonth))
+            query = query.Where(p => p.PmtMonth == pmtMonth.Trim());
+
+        var payments = await query.ToListAsync();
+
+        int totalPayments = payments.Count;
+        int totalDraft = payments.Count(p => p.Status == "Draft");
+        int totalSubmitted = payments.Count(p => p.Status == "Submitted");
+        int totalApproved = payments.Count(p => p.Status is "Approved1" or "Approved2");
+        int totalSigned = payments.Count(p => p.Status is "TCMSSigned" or "HTVSigned");
+        int totalSettled = payments.Count(p => p.Status == "Settled");
+        int totalCancelled = payments.Count(p => p.Status is "Cancelled" or "Rejected");
+
+        int totalVehicles = payments.Sum(p => p.TotalVehicleCount);
+        int totalStorageDays = payments.Sum(p => p.TotalStorageDays);
+        decimal totalBeforeVat = payments.Sum(p => p.TotalBeforeVAT);
+        decimal totalVat = payments.Sum(p => p.TotalVatAmount);
+        decimal totalAmount = payments.Sum(p => p.TotalAmount);
+        decimal totalSettledAmount = payments.Where(p => p.Status == "Settled").Sum(p => p.TotalAmount);
+
+        var byYard = payments
+            .GroupBy(p => new { p.StorageCode, StorageProvider = p.StorageProvider ?? "N/A" })
+            .Select(g => new StoragePaymentYardStatsDto(
+                g.Key.StorageCode,
+                g.Key.StorageProvider,
+                g.Count(),
+                g.Sum(x => x.TotalVehicleCount),
+                g.Sum(x => x.TotalStorageDays),
+                g.Sum(x => x.TotalAmount),
+                g.Where(x => x.Status == "Settled").Sum(x => x.TotalAmount)
+            ))
+            .OrderByDescending(x => x.TotalAmount)
+            .ToList();
+
+        var byMonth = payments
+            .GroupBy(p => p.PmtMonth)
+            .Select(g => new StoragePaymentMonthStatsDto(
+                g.Key,
+                g.Count(),
+                g.Sum(x => x.TotalVehicleCount),
+                g.Sum(x => x.TotalStorageDays),
+                g.Sum(x => x.TotalAmount),
+                g.Where(x => x.Status == "Settled").Sum(x => x.TotalAmount)
+            ))
+            .OrderByDescending(x => x.PmtMonth)
+            .ToList();
+
+        return new StoragePaymentSummaryDto(
+            totalPayments,
+            totalDraft,
+            totalSubmitted,
+            totalApproved,
+            totalSigned,
+            totalSettled,
+            totalCancelled,
+            totalVehicles,
+            totalStorageDays,
+            totalBeforeVat,
+            totalVat,
+            totalAmount,
+            totalSettledAmount,
+            byYard,
+            byMonth
+        );
+    }
+
+    public async Task<object?> GetVehicleStoragePaymentInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.StoragePaymentLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new VehicleStoragePaymentInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.IsStoragePaid,
+            veh.StoragePaidAmount,
+            veh.LastStoragePaymentNo,
+            veh.LastStoragePaymentDate,
+            veh.StoragePaymentCount,
+            lines
+        );
+    }
+
+    public async Task<object?> GetVehicleStoragePaymentHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var lines = await db.StoragePaymentLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("StoragePayment")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle = new
+            {
+                veh.Vin,
+                veh.Model,
+                veh.PlateNo,
+                veh.EngineNo,
+                veh.Color,
+                veh.StorageCode,
+                veh.IsStoragePaid,
+                veh.StoragePaidAmount,
+                veh.LastStoragePaymentNo,
+                veh.LastStoragePaymentDate,
+                veh.StoragePaymentCount
+            },
+            paymentLines = lines,
+            events
+        };
     }
 }

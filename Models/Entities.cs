@@ -105,6 +105,11 @@ public sealed class Vehicle
     public string? LastCavityName { get; set; }     // Tên khoang/cầu sửa chữa gần nhất
     public DateTime? LastCavityDate { get; set; }   // Thời điểm vào khoang sửa chữa gần nhất
     public int CavityVisitCount { get; set; } = 0;   // Tổng số lượt xe đã vào khoang cầu làm dịch vụ
+    public bool IsStoragePaid { get; set; } = false; // Đã thanh toán / quyết toán chi phí lưu kho bãi OEM (BizHTC.Payment.Pmt_PaymentStorage)
+    public decimal StoragePaidAmount { get; set; } = 0; // Tổng tiền lưu kho đã thanh toán của xe (VNĐ)
+    public string? LastStoragePaymentNo { get; set; } // Mã bảng kê quyết toán lưu kho gần nhất (PaymentStorageNo)
+    public DateTime? LastStoragePaymentDate { get; set; } // Ngày quyết toán chi phí lưu kho gần nhất
+    public int StoragePaymentCount { get; set; } = 0; // Số lần xe phát sinh trong bảng kê quyết toán lưu kho
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -3507,6 +3512,189 @@ public sealed record VehicleCavityInfoDto(
     ServiceCavity? CurrentCavity,
     List<CavityDispatchLog> RecentDispatches
 );
+
+// ===== Bảng kê & Quyết toán chi phí Lưu kho bãi xe ô tô tồn kho OEM (BizHTC.Payment / Pmt_PaymentStorage, Pmt_PaymentStorageDetail / FrmQuanLyThanhToanLuuKho) =====
+
+/// <summary>Bảng kê & Quyết toán chi phí lưu kho bãi ô tô tồn bãi OEM / Cảng (BizHTC.Payment.Pmt_PaymentStorage / StoragePayment): quản lý thanh toán chi phí lưu bãi ô tô giữa Hãng xe OEM và Ban quản lý bãi/đơn vị kho bãi TCMS.</summary>
+public sealed class StoragePayment
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PaymentStorageNo { get; set; } = "";        // Mã bảng kê quyết toán lưu kho (STP202603-0001, STP...)
+    public string? PaymentStorageNoUser { get; set; }       // Mã số bảng kê do người dùng nhập / tham chiếu nội bộ
+    public string PmtMonth { get; set; } = "";              // Kỳ / tháng quyết toán chi phí (YYYY-MM, ví dụ: 2026-03)
+    public string StorageCode { get; set; } = "TCV_YARD";   // Mã kho bãi quyết toán (TCV_YARD, NINHBINH_FACTORY, HAIPHONG_PORT, CATLAI_PORT, DANANG_YARD...)
+    public string? StorageProvider { get; set; } = "TCMS - Thanh Cong Motor Services"; // Đơn vị quản lý / vận hành kho bãi
+    public int TotalVehicleCount { get; set; } = 0;         // Tổng số lượng xe tồn bãi trong kỳ quyết toán
+    public int TotalStorageDays { get; set; } = 0;          // Tổng số ngày lưu bãi của toàn bộ các xe trong kỳ
+    public decimal TotalBeforeVAT { get; set; } = 0;        // Tổng chi phí lưu kho trước thuế VAT (VNĐ)
+    public decimal VatRate { get; set; } = 10;              // Thuế suất VAT (%) (VD: 10% = 10)
+    public decimal TotalVatAmount { get; set; } = 0;        // Tiền thuế VAT = TotalBeforeVAT * VatRate / 100
+    public decimal TotalAmount { get; set; } = 0;           // Tổng số tiền thanh toán đã bao gồm VAT = TotalBeforeVAT + TotalVatAmount
+    public string Status { get; set; } = "Draft";           // Draft → Submitted → Approved1 → Approved2 → TCMSSigned → HTVSigned → Settled (hoặc Rejected / Cancelled)
+    public string? TCMSSignStatus { get; set; } = "Unsigned"; // Trạng thái ký số Ban Quản lý Bãi TCMS (Unsigned, Signed)
+    public DateTime? TCMSSignDate { get; set; }             // Ngày ký số TCMS
+    public string? TCMSSignBy { get; set; }                 // Người đại diện TCMS ký số
+    public string? HTVSignStatus { get; set; } = "Unsigned";  // Trạng thái ký số Hãng xe HTV (Unsigned, Signed)
+    public DateTime? HTVSignDate { get; set; }              // Ngày ký số HTV
+    public string? HTVSignBy { get; set; }                  // Người đại diện HTV ký số
+    public string? BankRefNo { get; set; }                  // Số chứng từ / Ủy nhiệm chi UNC ngân hàng giải ngân thanh toán
+    public DateTime? PaymentDate { get; set; }              // Ngày thực tế chuyển khoản thanh toán
+    public string? FilePath { get; set; }                   // Tệp đính kèm bảng kê có chữ ký số (PDF)
+    public string? Remark { get; set; }                     // Ghi chú đợt quyết toán
+    public string? CreatedBy { get; set; }                  // Người lập bảng kê
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? Approved1By { get; set; }                // Kế toán chi phí OEM sơ duyệt
+    public DateTime? Approved1At { get; set; }
+    public string? Approved2By { get; set; }                // Lãnh đạo Khối Tài chính / Bán hàng duyệt
+    public DateTime? Approved2At { get; set; }
+    public string? SettledBy { get; set; }                  // Kế toán trưởng / Thủ quỹ xác nhận giải ngân
+    public DateTime? SettledAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe trong Bảng kê quyết toán chi phí lưu kho (BizHTC.Payment.Pmt_PaymentStorageDetail / StoragePaymentLine): số khung VIN, model, ngày vào/ra kho bãi, số ngày tính phí, đơn giá lưu kho/ngày, phí bạt phủ và tổng chi phí.</summary>
+public sealed class StoragePaymentLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long StoragePaymentId { get; set; }
+    public string PaymentStorageNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;                 // Thứ tự dòng
+    public string Vin { get; set; } = "";                   // Số khung VIN xe lưu bãi
+    public string Model { get; set; } = "";                 // Dòng xe (Accent, Creta, Tucson, SantaFe, Grand i10, Custin...)
+    public string? SpecCode { get; set; }                   // Phiên bản xe
+    public string? EngineNo { get; set; }                   // Số máy
+    public string? Color { get; set; }                      // Màu sắc
+    public string? StorageCodeInit { get; set; }            // Vị trí bãi đỗ lưu xe ban đầu (TCV_YARD, YARD-A1, PORT_HP...)
+    public DateTime? StoreDate { get; set; }                // Ngày xe bắt đầu nhập kho bãi lưu giữ
+    public DateTime? DeliveryOutDate { get; set; }          // Ngày xuất bãi giao xe / hạ tải đại lý (nếu có trong kỳ)
+    public string? DealerCode { get; set; }                 // Đại lý phân bổ / nhận xe (nếu có)
+    public DateTime InCostStorageDate { get; set; } = DateTime.Now;  // Ngày bắt đầu tính phí lưu kho trong kỳ (From Date)
+    public DateTime OutCostStorageDate { get; set; } = DateTime.Now; // Ngày kết thúc tính phí lưu kho trong kỳ (To Date)
+    public int StorageDays { get; set; } = 1;               // Số ngày lưu bãi thực tế tính phí trong kỳ
+    public decimal DailyRate { get; set; } = 35000;         // Đơn giá lưu bãi theo ngày (VNĐ/xe/ngày)
+    public decimal CoverDailyRate { get; set; } = 0;        // Đơn giá bạt phủ che chắn ngoài trời / ngày (VNĐ/ngày)
+    public decimal StorageCost { get; set; } = 35000;       // Tiền phí lưu bãi cơ bản = StorageDays * DailyRate (VNĐ)
+    public decimal CoverCost { get; set; } = 0;             // Tiền phí bạt phủ = StorageDays * CoverDailyRate (VNĐ)
+    public decimal TotalAmount { get; set; } = 35000;       // Tổng tiền lưu bãi xe = StorageCost + CoverCost (VNĐ)
+    public string StorageLevel { get; set; } = "Standard";  // Mức lưu kho: Standard (Bãi tiêu chuẩn), Covered (Có mái che), Port (Cảng chờ thông quan), Overdue (Tồn bãi quá hạn > 60 ngày)
+    public string Status { get; set; } = "Pending";         // Pending → Approved → Settled (hoặc Cancelled)
+    public string? Remark { get; set; }                     // Ghi chú tình trạng xe
+}
+
+// ===== DTOs cho Bảng kê & Quyết toán chi phí Lưu kho bãi OEM (BizHTC.Payment / Pmt_PaymentStorage & StoragePayment) =====
+
+public sealed record CreateStoragePaymentDto(
+    string? PaymentStorageNo,
+    string? PaymentStorageNoUser,
+    string PmtMonth,
+    string? StorageCode,
+    string? StorageProvider,
+    decimal? VatRate,
+    string? Remark,
+    string? CreatedBy,
+    List<StoragePaymentLineInputDto>? Items
+);
+
+public sealed record StoragePaymentLineInputDto(
+    string Vin,
+    string? Model,
+    string? SpecCode,
+    string? EngineNo,
+    string? Color,
+    string? StorageCodeInit,
+    DateTime? StoreDate,
+    DateTime? DeliveryOutDate,
+    string? DealerCode,
+    DateTime? InCostStorageDate,
+    DateTime? OutCostStorageDate,
+    int? StorageDays,
+    decimal? DailyRate,
+    decimal? CoverDailyRate,
+    string? StorageLevel,
+    string? Remark
+);
+
+public sealed record UpdateStoragePaymentHeaderDto(
+    string? PaymentStorageNoUser,
+    string? PmtMonth,
+    string? StorageCode,
+    string? StorageProvider,
+    decimal? VatRate,
+    string? BankRefNo,
+    DateTime? PaymentDate,
+    string? FilePath,
+    string? Remark
+);
+
+public sealed record UpdateStoragePaymentLineDto(
+    string? Model,
+    string? SpecCode,
+    string? StorageCodeInit,
+    DateTime? StoreDate,
+    DateTime? DeliveryOutDate,
+    string? DealerCode,
+    DateTime? InCostStorageDate,
+    DateTime? OutCostStorageDate,
+    int? StorageDays,
+    decimal? DailyRate,
+    decimal? CoverDailyRate,
+    string? StorageLevel,
+    string? Status,
+    string? Remark
+);
+
+public sealed record StoragePaymentTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate,
+    string? BankRefNo,
+    DateTime? PaymentDate,
+    string? FilePath
+);
+
+public sealed record StoragePaymentSummaryDto(
+    int TotalPayments,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalApproved,
+    int TotalSigned,
+    int TotalSettled,
+    int TotalCancelled,
+    int TotalVehicles,
+    int TotalStorageDays,
+    decimal TotalBeforeVAT,
+    decimal TotalVatAmount,
+    decimal TotalAmount,
+    decimal TotalSettledAmount,
+    List<StoragePaymentYardStatsDto> ByYard,
+    List<StoragePaymentMonthStatsDto> ByMonth
+);
+
+public sealed record StoragePaymentYardStatsDto(string StorageCode, string StorageProvider, int PaymentCount, int VehicleCount, int StorageDays, decimal TotalAmount, decimal SettledAmount);
+public sealed record StoragePaymentMonthStatsDto(string PmtMonth, int PaymentCount, int VehicleCount, int StorageDays, decimal TotalAmount, decimal SettledAmount);
+
+public sealed record VehicleStoragePaymentInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    bool IsStoragePaid,
+    decimal StoragePaidAmount,
+    string? LastStoragePaymentNo,
+    DateTime? LastStoragePaymentDate,
+    int StoragePaymentCount,
+    List<StoragePaymentLine> PaymentLines
+);
+
 
 
 

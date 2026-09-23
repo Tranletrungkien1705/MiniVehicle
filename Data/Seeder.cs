@@ -3678,6 +3678,122 @@ public static class Seeder
                 v1Cavity.CavityVisitCount = 1;
             }
         }
+
+        if (!await db.StoragePayments.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var sp1 = new StoragePayment
+            {
+                OrgId = org,
+                PaymentStorageNo = "STP202603-001",
+                PaymentStorageNoUser = "BK-LK/2026/03/TCV-01",
+                PmtMonth = "2026-03",
+                StorageCode = "TCV_YARD",
+                StorageProvider = "TCMS - Thanh Cong Motor Services",
+                TotalVehicleCount = 2,
+                TotalStorageDays = 30,
+                TotalBeforeVAT = 1275000m,
+                VatRate = 10,
+                TotalVatAmount = 127500m,
+                TotalAmount = 1402500m,
+                Status = "Settled",
+                TCMSSignStatus = "Signed",
+                TCMSSignDate = DateTime.Now.AddDays(-2),
+                TCMSSignBy = "TCMS.Manager.PhamVanCuong",
+                HTVSignStatus = "Signed",
+                HTVSignDate = DateTime.Now.AddDays(-2),
+                HTVSignBy = "HTV.StorageDirector.LeNgocDuc",
+                BankRefNo = "UNC-VCB-20260315-7788",
+                PaymentDate = DateTime.Now.AddDays(-1),
+                FilePath = "https://doc.hyundai.thanhcong.vn/storage-payments/STP202603-001.pdf",
+                Remark = "Bảng kê quyết toán chi phí lưu bãi ô tô tồn kho OEM bãi TCV Ninh Bình kỳ tháng 03/2026",
+                CreatedBy = "storage.acc.oem",
+                CreatedAt = DateTime.Now.AddDays(-5),
+                Approved1By = "CostAccountant.NguyenThanhHa",
+                Approved1At = DateTime.Now.AddDays(-4),
+                Approved2By = "FinanceDirector.TranMinhDuc",
+                Approved2At = DateTime.Now.AddDays(-3),
+                SettledBy = "ChiefAccountant.VuThiLan",
+                SettledAt = DateTime.Now.AddDays(-1)
+            };
+            db.StoragePayments.Add(sp1);
+            await db.SaveChangesAsync();
+
+            db.StoragePaymentLines.AddRange(
+                new StoragePaymentLine
+                {
+                    OrgId = org,
+                    StoragePaymentId = sp1.Id,
+                    PaymentStorageNo = sp1.PaymentStorageNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    EngineNo = "G4LC0001",
+                    Color = "Trắng",
+                    StorageCodeInit = "YARD-A1",
+                    StoreDate = DateTime.Now.AddDays(-25),
+                    DealerCode = "DLR-HN01",
+                    InCostStorageDate = DateTime.Now.AddDays(-15),
+                    OutCostStorageDate = DateTime.Now.AddDays(-1),
+                    StorageDays = 15,
+                    DailyRate = 35000,
+                    CoverDailyRate = 5000,
+                    StorageCost = 525000m,
+                    CoverCost = 75000m,
+                    TotalAmount = 600000m,
+                    StorageLevel = "Standard",
+                    Status = "Settled",
+                    Remark = "Lưu bãi ô A1, có bạt phủ chống nắng mưa ngoài trời"
+                },
+                new StoragePaymentLine
+                {
+                    OrgId = org,
+                    StoragePaymentId = sp1.Id,
+                    PaymentStorageNo = sp1.PaymentStorageNo,
+                    LineIndex = 2,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    EngineNo = "G4FL0002",
+                    Color = "Đen",
+                    StorageCodeInit = "YARD-B2",
+                    StoreDate = DateTime.Now.AddDays(-25),
+                    DealerCode = "DLR-HN01",
+                    InCostStorageDate = DateTime.Now.AddDays(-15),
+                    OutCostStorageDate = DateTime.Now.AddDays(-1),
+                    StorageDays = 15,
+                    DailyRate = 45000,
+                    CoverDailyRate = 0,
+                    StorageCost = 675000m,
+                    CoverCost = 0,
+                    TotalAmount = 675000m,
+                    StorageLevel = "Standard",
+                    Status = "Settled",
+                    Remark = "Lưu bãi ô B2 tiêu chuẩn"
+                }
+            );
+
+            var v1Storage = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Storage != null)
+            {
+                v1Storage.IsStoragePaid = true;
+                v1Storage.StoragePaidAmount = 600000m;
+                v1Storage.LastStoragePaymentNo = sp1.PaymentStorageNo;
+                v1Storage.LastStoragePaymentDate = sp1.PaymentDate;
+                v1Storage.StoragePaymentCount = 1;
+            }
+
+            var v2Storage = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Storage != null)
+            {
+                v2Storage.IsStoragePaid = true;
+                v2Storage.StoragePaidAmount = 675000m;
+                v2Storage.LastStoragePaymentNo = sp1.PaymentStorageNo;
+                v2Storage.LastStoragePaymentDate = sp1.PaymentDate;
+                v2Storage.StoragePaymentCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -3866,7 +3982,14 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCavityDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"CavityVisitCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"ServiceCavities\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CavityNo\" text NOT NULL DEFAULT '', \"CavityNoUser\" text NULL, \"CavityName\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"CavityType\" text NOT NULL DEFAULT 'GeneralRepair', \"Status\" text NOT NULL DEFAULT 'Available', \"LiftType\" text NULL DEFAULT '2PostLift', \"MaxPayloadKg\" numeric NOT NULL DEFAULT 4000, \"CurrentVin\" text NULL, \"CurrentModel\" text NULL, \"CurrentPlateNo\" text NULL, \"CurrentRoNo\" text NULL, \"CurrentAppNo\" text NULL, \"CurrentTechnician\" text NULL, \"CurrentAdvisor\" text NULL, \"CurrentWorkItem\" text NULL, \"OccupiedAt\" timestamp NULL, \"EstimatedReleaseAt\" timestamp NULL, \"StartUseDate\" timestamp NULL, \"FinishUseDate\" timestamp NULL, \"IsActive\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"CavityDispatchLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CavityId\" bigint NOT NULL, \"CavityNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"DispatchNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"PlateNo\" text NULL, \"RoNo\" text NULL, \"AppNo\" text NULL, \"DispatchType\" text NOT NULL DEFAULT 'CheckIn', \"FromCavityNo\" text NULL, \"ToCavityNo\" text NULL, \"Technician\" text NULL, \"ServiceAdvisor\" text NULL, \"WorkDescription\" text NULL, \"CheckInTime\" timestamp NOT NULL DEFAULT now(), \"CheckOutTime\" timestamp NULL, \"DurationMinutes\" integer NULL, \"Status\" text NOT NULL DEFAULT 'InCavity', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())"
+            "CREATE TABLE IF NOT EXISTS public.\"CavityDispatchLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CavityId\" bigint NOT NULL, \"CavityNo\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT '', \"DispatchNo\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NULL, \"PlateNo\" text NULL, \"RoNo\" text NULL, \"AppNo\" text NULL, \"DispatchType\" text NOT NULL DEFAULT 'CheckIn', \"FromCavityNo\" text NULL, \"ToCavityNo\" text NULL, \"Technician\" text NULL, \"ServiceAdvisor\" text NULL, \"WorkDescription\" text NULL, \"CheckInTime\" timestamp NOT NULL DEFAULT now(), \"CheckOutTime\" timestamp NULL, \"DurationMinutes\" integer NULL, \"Status\" text NOT NULL DEFAULT 'InCavity', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsStoragePaid\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"StoragePaidAmount\" numeric NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastStoragePaymentNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastStoragePaymentDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"StoragePaymentCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"StoragePayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PaymentStorageNo\" text NOT NULL DEFAULT '', \"PaymentStorageNoUser\" text NULL, \"PmtMonth\" text NOT NULL DEFAULT '', \"StorageCode\" text NOT NULL DEFAULT 'TCV_YARD', \"StorageProvider\" text NULL DEFAULT 'TCMS - Thanh Cong Motor Services', \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalStorageDays\" integer NOT NULL DEFAULT 0, \"TotalBeforeVAT\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"TotalVatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"TCMSSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"TCMSSignDate\" timestamp NULL, \"TCMSSignBy\" text NULL, \"HTVSignStatus\" text NOT NULL DEFAULT 'Unsigned', \"HTVSignDate\" timestamp NULL, \"HTVSignBy\" text NULL, \"BankRefNo\" text NULL, \"PaymentDate\" timestamp NULL, \"FilePath\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"StoragePaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"StoragePaymentId\" bigint NOT NULL, \"PaymentStorageNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCodeInit\" text NULL, \"StoreDate\" timestamp NULL, \"DeliveryOutDate\" timestamp NULL, \"DealerCode\" text NULL, \"InCostStorageDate\" timestamp NOT NULL DEFAULT now(), \"OutCostStorageDate\" timestamp NOT NULL DEFAULT now(), \"StorageDays\" integer NOT NULL DEFAULT 1, \"DailyRate\" numeric NOT NULL DEFAULT 35000, \"CoverDailyRate\" numeric NOT NULL DEFAULT 0, \"StorageCost\" numeric NOT NULL DEFAULT 35000, \"CoverCost\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 35000, \"StorageLevel\" text NOT NULL DEFAULT 'Standard', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }
