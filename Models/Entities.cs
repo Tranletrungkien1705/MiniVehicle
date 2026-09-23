@@ -139,6 +139,10 @@ public sealed class Vehicle
     public string? InventoryAlertStatus { get; set; }   // Trạng thái sức khỏe tồn kho: Optimal, Shortage, CriticalShortage, Surplus, OutOfStock
     public string? LastThresholdNo { get; set; }        // Mã quyết định định mức tồn kho áp dụng gần nhất (DIT...)
     public int ThresholdAuditCount { get; set; } = 0;   // Tổng số lần xe được đối soát trong các đợt kiểm kê tồn kho đại lý
+    public string? LastServicePackageNo { get; set; }   // Mã gói dịch vụ gần nhất xe đăng ký (BizCarSv.ServicePackage / Ser_ServicePackage)
+    public string? LastPackageCardNo { get; set; }      // Mã thẻ bảo dưỡng trọn gói điện tử đang kích hoạt (PackageCardNo)
+    public int ActiveServicePackageCount { get; set; } = 0; // Số lượng thẻ / gói dịch vụ đang còn hiệu lực
+    public int PackageUsageCount { get; set; } = 0;     // Tổng số lượt xe đã sử dụng quyền lợi gói dịch vụ bảo dưỡng
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -5388,3 +5392,371 @@ public sealed record StaffEnrollmentHistoryDto(
     bool IsCertificateIssued,
     string? CertificateNo
 );
+
+// ===== Quản lý Gói Dịch Vụ & Thẻ Bảo Dưỡng Trọn Gói Xe Ô Tô (BizCarSv.ServicePackage / Ser_ServicePackage, Ser_ServicePackageServiceItem, Ser_ServicePackagePartItem & FrmMst_ServicePackage) =====
+
+/// <summary>Gói Dịch Vụ Bảo Dưỡng Định Kỳ Chuẩn Hãng OEM &amp; Đại Lý (BizCarSv.ServicePackage / Ser_ServicePackage / ServicePackage): định nghĩa cấu hình các gói bảo dưỡng mốc km (5.000km, 10.000km, 20.000km, 40.000km...), gói thay dầu nhớt trọn gói, chăm sóc làm đẹp xe, định mức giờ công chuẩn và phụ tùng Mobis tiêu hao kèm đơn giá ưu đãi combo.</summary>
+public sealed class ServicePackage
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PackageNo { get; set; } = "";             // Mã gói dịch vụ (PKG-5K-CARE, PKG-10K-CARE, PKG-20K-CARE, PKG-40K-MAJOR, PKG-OIL-3Y, PKG-SPA-GOLD...)
+    public string? PackageNoUser { get; set; }            // Mã hiệu nội bộ tham chiếu
+    public string PackageName { get; set; } = "";           // Tên gói dịch vụ (Gói bảo dưỡng cấp 1 - 5.000 km, Gói bảo dưỡng cấp 4 - 40.000 km, Gói thay dầu trọn gói 3 năm...)
+    public string DealerCode { get; set; } = "ALL";       // "ALL" (Hãng OEM áp dụng toàn quốc) hoặc mã đại lý cụ thể (DLR-HN01...)
+    public string? DealerName { get; set; } = "Hyundai Toàn Quốc OEM";
+    public string PackageType { get; set; } = "PeriodicMaintenance"; // PeriodicMaintenance (Bảo dưỡng định kỳ mốc km), OilService (Gói thay dầu nhớt trọn gói), BodyCare (Gói làm đẹp & chăm sóc xe Ceramic), BrakeTireService (Bảo dưỡng hệ thống phanh & lốp), AllInclusive (Gói bảo dưỡng toàn diện xe mới)
+    public string ApplicableModel { get; set; } = "ALL";  // Dòng xe áp dụng: ALL, Accent, Creta, Tucson, SantaFe, Custin, Stargazer, Palisade, Ioniq 5...
+    public int? MilestoneKm { get; set; } = 5000;         // Mốc số km áp dụng (5000, 10000, 20000, 40000, 80000, 100000...)
+    public int StandardTakingTimeMinutes { get; set; } = 60; // Thời gian tiêu chuẩn thực hiện dịch vụ (phút)
+    public int ValidityMonths { get; set; } = 12;         // Thời hạn hiệu lực của gói khi mua (12, 24, 36 tháng)
+    public int MaxUsageCount { get; set; } = 1;           // Số lượt sử dụng tối đa của thẻ/gói (1 lần cho mốc km, 3/6 lần cho gói năm)
+    public bool IsPublic { get; set; } = true;            // Gói công khai dùng chung toàn hệ thống hay riêng đại lý
+    public bool IsUseBasePrice { get; set; } = true;      // Dùng đơn giá niêm yết chuẩn của hãng
+    public decimal TotalLaborAmount { get; set; } = 0;    // Tổng tiền công định mức tiêu chuẩn (VNĐ)
+    public decimal TotalPartAmount { get; set; } = 0;     // Tổng tiền phụ tùng & dầu nhớt định mức tiêu chuẩn (VNĐ)
+    public decimal OriginalPrice { get; set; } = 0;       // Tổng giá trị gốc = TotalLaborAmount + TotalPartAmount
+    public decimal DiscountPercent { get; set; } = 15;    // % chiết khấu ưu đãi combo của gói (%)
+    public decimal PackagePrice { get; set; } = 0;        // Đơn giá bán trọn gói cho khách hàng = OriginalPrice * (1 - DiscountPercent/100)
+    public int TotalSubscribedCount { get; set; } = 0;    // Tổng số lượng thẻ/xe đã mua gói dịch vụ này
+    public int TotalUsedCount { get; set; } = 0;          // Tổng số lượt đã thực tế sử dụng dịch vụ theo gói này
+    public string Status { get; set; } = "Draft";         // Draft → Active → Suspended → Archived
+    public string? Description { get; set; }              // Mô tả chi tiết quyền lợi và quy cách gói
+    public string? Remark { get; set; }                   // Ghi chú
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }               // Giám đốc dịch vụ OEM / Đại lý duyệt ban hành
+    public DateTime? ApprovedAt { get; set; }
+    public string? ArchivedBy { get; set; }
+    public DateTime? ArchivedAt { get; set; }
+}
+
+/// <summary>Chi tiết Hạng mục Tiền công &amp; Công việc trong Gói Dịch Vụ (BizCarSv.ServicePackage / Ser_ServicePackageServiceItem / ServicePackageLaborLine): mã công việc, số giờ công tiêu chuẩn standard hours, đơn giá giờ công, % giảm giá và thành tiền công.</summary>
+public sealed class ServicePackageLaborLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ServicePackageId { get; set; }
+    public string PackageNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public string ServiceItemCode { get; set; } = "";     // Mã công việc (PM_OIL_CHANGE, PM_FILTER_REPLACE, PM_BRAKE_CLEAN, PM_TIRE_ROTATION, PM_DIAGNOSTIC_OBD, PM_BATTERY_TEST, PM_CAR_WASH...)
+    public string ServiceItemName { get; set; } = "";     // Tên công việc (Thay dầu động cơ & lọc nhớt, Vệ sinh phanh 4 bánh, Đảo lốp, Chẩn đoán OBD, Rửa xe hút bụi...)
+    public decimal StandardHours { get; set; } = 0.5m;    // Số giờ công định mức (0.3h, 0.5h, 1.0h, 1.5h...)
+    public decimal LaborPrice { get; set; } = 350000m;    // Đơn giá giờ công tiêu chuẩn (VNĐ/giờ)
+    public decimal DiscountPercent { get; set; } = 0m;    // % giảm giá tiền công trong gói
+    public decimal LaborAmount { get; set; } = 175000m;   // Tiền công = StandardHours * LaborPrice * (1 - DiscountPercent/100)
+    public bool IsMandatory { get; set; } = true;         // Bắt buộc thực hiện trong gói
+    public string? Remark { get; set; }
+}
+
+/// <summary>Chi tiết Phụ tùng &amp; Vật tư Phụ gia Mobis trong Gói Dịch Vụ (BizCarSv.ServicePackage / Ser_ServicePackagePartItem / ServicePackagePartLine): mã phụ tùng Mobis chính hãng, tên phụ tùng, đơn vị tính, số lượng định mức, đơn giá niêm yết, % giảm giá và thành tiền.</summary>
+public sealed class ServicePackagePartLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ServicePackageId { get; set; }
+    public string PackageNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public string PartCode { get; set; } = "";            // Mã phụ tùng chính hãng Mobis (26300-35505, 05100-00441, 28113-A5800, 97133-D3000, 58101-D3A00, 04500-00115...)
+    public string PartName { get; set; } = "";            // Tên phụ tùng (Lọc dầu động cơ, Dầu nhớt tổng hợp Hyundai Fully Synthetic 5W-30, Lọc gió động cơ, Lọc gió điều hòa than hoạt tính...)
+    public string Unit { get; set; } = "Cái";             // Đơn vị tính: Cái, Lít, Can 4L, Bình, Bộ, Chai
+    public decimal Quantity { get; set; } = 1.0m;         // Số lượng định mức tiêu chuẩn
+    public decimal UnitPrice { get; set; } = 0m;          // Đơn giá niêm yết Mobis (VNĐ)
+    public decimal DiscountPercent { get; set; } = 0m;    // % chiết khấu phụ tùng trong gói
+    public decimal PartAmount { get; set; } = 0m;         // Tiền phụ tùng = Quantity * UnitPrice * (1 - DiscountPercent/100)
+    public bool IsMandatory { get; set; } = true;         // Bắt buộc thay thế trong gói
+    public string? Remark { get; set; }
+}
+
+/// <summary>Hợp đồng Mua Thẻ / Gói Bảo Dưỡng Trọn Gói Gán Theo Xe VIN (BizCarSv.ServicePackage / ServicePackageSubscription): quản lý đăng ký thẻ bảo dưỡng điện tử, ngày kích hoạt, ngày hết hạn, tổng số lượt sử dụng được cấp, số lượt đã dùng, số lượt còn lại và giá trị hợp đồng.</summary>
+public sealed class ServicePackageSubscription
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SubscriptionNo { get; set; } = "";       // Mã hợp đồng đăng ký thẻ (SUB-2026-0001, SUB...)
+    public string? SubscriptionNoUser { get; set; }       // Số tham chiếu hợp đồng nội bộ
+    public string PackageCardNo { get; set; } = "";        // Mã thẻ dịch vụ / thẻ thành viên điện tử (CRD-HYUNDAI-001, CRD...)
+    public long ServicePackageId { get; set; }
+    public string PackageNo { get; set; } = "";            // Mã gói dịch vụ liên kết
+    public string PackageName { get; set; } = "";          // Tên gói dịch vụ
+    public string PackageType { get; set; } = "PeriodicMaintenance";
+    public string Vin { get; set; } = "";                  // Số khung xe VIN sở hữu thẻ
+    public string Model { get; set; } = "";                // Dòng xe
+    public string? EngineNo { get; set; }
+    public string? PlateNo { get; set; }                   // Biển số xe (nếu đã đăng ký)
+    public string CustomerName { get; set; } = "";         // Tên chủ xe / khách hàng
+    public string CustomerPhone { get; set; } = "";        // SĐT khách hàng
+    public string? CustomerEmail { get; set; }
+    public string DealerCode { get; set; } = "DLR-HN01";   // Đại lý phát hành / bán thẻ
+    public string? DealerName { get; set; } = "Hyundai Hà Nội 01";
+    public string? SalesAdvisor { get; set; }             // Tư vấn bán hàng / Cố vấn dịch vụ bán gói
+    public DateTime PurchaseDate { get; set; } = DateTime.Now; // Ngày mua thẻ
+    public DateTime StartDate { get; set; } = DateTime.Now;    // Ngày kích hoạt hiệu lực thẻ
+    public DateTime ExpiryDate { get; set; } = DateTime.Now.AddYears(1); // Ngày hết hạn thẻ
+    public decimal TotalPackagePrice { get; set; } = 0;    // Giá bán gói bảo dưỡng (VNĐ)
+    public decimal PaidAmount { get; set; } = 0;           // Số tiền thực tế khách đã thanh toán (VNĐ)
+    public bool IsPaid { get; set; } = true;               // Đã hoàn tất thanh toán
+    public string PaymentMethod { get; set; } = "Cash";    // Phương thức thanh toán: Cash, BankTransfer, CreditCard, FreeOEMBonus
+    public int MaxUsageCount { get; set; } = 1;            // Tổng số lượt sử dụng được cấp của gói
+    public int UsedCount { get; set; } = 0;                // Số lượt đã thực tế sử dụng dịch vụ tại xưởng
+    public int RemainingCount { get; set; } = 1;           // Số lượt còn lại = MaxUsageCount - UsedCount
+    public decimal TotalSavedAmount { get; set; } = 0;     // Tổng số tiền đã tiết kiệm được qua các lần sử dụng (VNĐ)
+    public string Status { get; set; } = "Active";         // Active (Đang hoạt động & còn lượt), Exhausted (Đã dùng hết lượt), Expired (Hết hạn thời gian), Suspended (Tạm khóa thẻ), Cancelled (Hủy / Hoàn tiền)
+    public string? Remark { get; set; }                    // Ghi chú hợp đồng
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Nhật ký Từng Lần Đưa Xe Vào Xưởng Sử Dụng Quyền Lợi Gói Bảo Dưỡng (BizCarSv.ServicePackage / ServicePackageUsage): ghi nhận xe VIN mang thẻ gói bảo dưỡng vào xưởng sử dụng, trừ 1 lượt sử dụng trên thẻ, liên kết với Lệnh sửa chữa RO, ODO, tiền tiết kiệm cho chủ xe và đánh giá CSI.</summary>
+public sealed class ServicePackageUsage
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string UsageNo { get; set; } = "";              // Mã lượt sử dụng (USG-2026-0001, USG...)
+    public long SubscriptionId { get; set; }
+    public string SubscriptionNo { get; set; } = "";       // Mã hợp đồng đăng ký thẻ
+    public string PackageCardNo { get; set; } = "";        // Mã thẻ dịch vụ
+    public string PackageNo { get; set; } = "";            // Mã gói dịch vụ
+    public string PackageName { get; set; } = "";          // Tên gói dịch vụ
+    public string Vin { get; set; } = "";                  // Số khung VIN sử dụng
+    public string Model { get; set; } = "";                // Dòng xe
+    public string? PlateNo { get; set; }                   // Biển số xe
+    public string DealerCode { get; set; } = "DLR-HN01";   // Đại lý tiếp nhận làm dịch vụ
+    public string? DealerName { get; set; } = "Hyundai Hà Nội 01";
+    public DateTime UsageDate { get; set; } = DateTime.Now; // Thời điểm xe vào xưởng
+    public int OdoKm { get; set; } = 5000;                 // Số km ODO ghi nhận tại xưởng khi dùng gói
+    public int? MilestoneUsed { get; set; } = 5000;        // Mốc bảo dưỡng được thực hiện lần này (km)
+    public string? RoNo { get; set; }                      // Mã Lệnh sửa chữa xưởng liên kết (Ser_RO / RepairOrder)
+    public string? CavityNo { get; set; }                  // Mã khoang/cầu sửa chữa thực hiện (BAY-01...)
+    public string? Technician { get; set; }                // Kỹ thuật viên chính thực hiện
+    public string? ServiceAdvisor { get; set; }            // Cố vấn dịch vụ tiếp nhận
+    public decimal LaborSavedAmount { get; set; } = 0;     // Tiền công được miễn phí theo gói (VNĐ)
+    public decimal PartSavedAmount { get; set; } = 0;      // Tiền phụ tùng & dầu nhớt được miễn phí theo gói (VNĐ)
+    public decimal TotalSavedAmount { get; set; } = 0;     // Tổng số tiền khách hàng được khấu trừ miễn phí = LaborSavedAmount + PartSavedAmount
+    public string Status { get; set; } = "Confirmed";      // Pending → Confirmed → Completed (hoặc Cancelled)
+    public decimal? CustomerRating { get; set; } = 5.0m;   // Điểm đánh giá hài lòng CSI của khách (1.0 - 5.0 sao)
+    public string? CustomerFeedback { get; set; }          // Ý kiến nhận xét của chủ xe
+    public string? Remark { get; set; }                    // Ghi chú lượt sử dụng
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ConfirmedBy { get; set; }               // Cố vấn dịch vụ / Thủ quỹ xác nhận trừ lượt
+    public DateTime? ConfirmedAt { get; set; }
+}
+
+// ===== DTOs cho Quản lý Gói Dịch Vụ & Thẻ Bảo Dưỡng Trọn Gói (BizCarSv.ServicePackage / Ser_ServicePackage) =====
+
+public sealed record CreateServicePackageDto(
+    string? PackageNo,
+    string? PackageNoUser,
+    string PackageName,
+    string? DealerCode,
+    string? DealerName,
+    string? PackageType,
+    string? ApplicableModel,
+    int? MilestoneKm,
+    int? StandardTakingTimeMinutes,
+    int? ValidityMonths,
+    int? MaxUsageCount,
+    bool? IsPublic,
+    bool? IsUseBasePrice,
+    decimal? DiscountPercent,
+    decimal? PackagePrice,
+    string? Description,
+    string? Remark,
+    string? CreatedBy,
+    List<ServicePackageLaborLineInputDto>? LaborLines,
+    List<ServicePackagePartLineInputDto>? PartLines
+);
+
+public sealed record ServicePackageLaborLineInputDto(
+    string ServiceItemCode,
+    string ServiceItemName,
+    decimal StandardHours,
+    decimal LaborPrice,
+    decimal? DiscountPercent,
+    bool? IsMandatory,
+    string? Remark
+);
+
+public sealed record ServicePackagePartLineInputDto(
+    string PartCode,
+    string PartName,
+    string Unit,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal? DiscountPercent,
+    bool? IsMandatory,
+    string? Remark
+);
+
+public sealed record UpdateServicePackageHeaderDto(
+    string? PackageNoUser,
+    string? PackageName,
+    string? DealerCode,
+    string? DealerName,
+    string? PackageType,
+    string? ApplicableModel,
+    int? MilestoneKm,
+    int? StandardTakingTimeMinutes,
+    int? ValidityMonths,
+    int? MaxUsageCount,
+    bool? IsPublic,
+    bool? IsUseBasePrice,
+    decimal? DiscountPercent,
+    decimal? PackagePrice,
+    string? Description,
+    string? Remark
+);
+
+public sealed record UpdateServicePackageLaborLineDto(
+    string? ServiceItemCode,
+    string? ServiceItemName,
+    decimal? StandardHours,
+    decimal? LaborPrice,
+    decimal? DiscountPercent,
+    bool? IsMandatory,
+    string? Remark
+);
+
+public sealed record UpdateServicePackagePartLineDto(
+    string? PartCode,
+    string? PartName,
+    string? Unit,
+    decimal? Quantity,
+    decimal? UnitPrice,
+    decimal? DiscountPercent,
+    bool? IsMandatory,
+    string? Remark
+);
+
+public sealed record ServicePackageTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record SubscribeServicePackageDto(
+    string PackageNo,
+    string Vin,
+    string? PackageCardNo,
+    string? SubscriptionNoUser,
+    string? CustomerName,
+    string? CustomerPhone,
+    string? CustomerEmail,
+    string? DealerCode,
+    string? DealerName,
+    string? SalesAdvisor,
+    DateTime? PurchaseDate,
+    DateTime? StartDate,
+    DateTime? ExpiryDate,
+    decimal? TotalPackagePrice,
+    decimal? PaidAmount,
+    string? PaymentMethod,
+    int? MaxUsageCount,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record UpdateServicePackageSubscriptionDto(
+    string? SubscriptionNoUser,
+    string? PackageCardNo,
+    string? CustomerName,
+    string? CustomerPhone,
+    string? CustomerEmail,
+    string? DealerCode,
+    string? DealerName,
+    string? SalesAdvisor,
+    DateTime? StartDate,
+    DateTime? ExpiryDate,
+    decimal? TotalPackagePrice,
+    decimal? PaidAmount,
+    bool? IsPaid,
+    string? PaymentMethod,
+    int? MaxUsageCount,
+    string? Status,
+    string? Remark
+);
+
+public sealed record ServicePackageSubscriptionTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? ExpiryDate,
+    DateTime? TransitionDate
+);
+
+public sealed record RecordServicePackageUsageDto(
+    string SubscriptionNo,
+    string? PackageCardNo,
+    string? Vin,
+    int OdoKm,
+    int? MilestoneUsed,
+    string? DealerCode,
+    string? DealerName,
+    string? RoNo,
+    string? CavityNo,
+    string? Technician,
+    string? ServiceAdvisor,
+    decimal? LaborSavedAmount,
+    decimal? PartSavedAmount,
+    decimal? CustomerRating,
+    string? CustomerFeedback,
+    string? Remark,
+    string? CreatedBy,
+    DateTime? UsageDate
+);
+
+public sealed record ServicePackageUsageTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record RecordServicePackageUsageFeedbackDto(
+    decimal CustomerRating,
+    string? CustomerFeedback,
+    string? Actor
+);
+
+public sealed record ServicePackageSummaryDto(
+    int TotalPackages,
+    int TotalActivePackages,
+    int TotalDraftPackages,
+    int TotalArchivedPackages,
+    int TotalSubscriptions,
+    int TotalActiveSubscriptions,
+    int TotalExhaustedSubscriptions,
+    int TotalExpiredSubscriptions,
+    int TotalUsages,
+    decimal TotalSubscriptionRevenue,
+    decimal TotalCustomerSavings,
+    decimal PackageUtilizationRatePercent,
+    List<ServicePackageTypeStatsDto> ByPackageType,
+    List<ServicePackageDealerStatsDto> ByDealer,
+    List<ServicePackageModelStatsDto> ByModel
+);
+
+public sealed record ServicePackageTypeStatsDto(string PackageType, int PackageCount, int SubscriptionsCount, int UsagesCount, decimal Revenue);
+public sealed record ServicePackageDealerStatsDto(string DealerCode, string DealerName, int SubscriptionsCount, int UsagesCount, decimal Revenue);
+public sealed record ServicePackageModelStatsDto(string Model, int SubscriptionsCount, int UsagesCount, decimal Savings);
+
+public sealed record VehicleServicePackageInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    string? LastServicePackageNo,
+    string? LastPackageCardNo,
+    int ActiveServicePackageCount,
+    int PackageUsageCount,
+    List<ServicePackageSubscription> Subscriptions,
+    List<ServicePackageUsage> RecentUsages
+);
+

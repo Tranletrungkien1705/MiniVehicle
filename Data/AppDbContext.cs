@@ -123,6 +123,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<TrainingCourse> TrainingCourses => Set<TrainingCourse>();
     public DbSet<TrainingEnrollment> TrainingEnrollments => Set<TrainingEnrollment>();
     public DbSet<StaffCertificate> StaffCertificates => Set<StaffCertificate>();
+    public DbSet<ServicePackage> ServicePackages => Set<ServicePackage>();
+    public DbSet<ServicePackageLaborLine> ServicePackageLaborLines => Set<ServicePackageLaborLine>();
+    public DbSet<ServicePackagePartLine> ServicePackagePartLines => Set<ServicePackagePartLine>();
+    public DbSet<ServicePackageSubscription> ServicePackageSubscriptions => Set<ServicePackageSubscription>();
+    public DbSet<ServicePackageUsage> ServicePackageUsages => Set<ServicePackageUsage>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -210,5 +215,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<StaffCertificate>().HasIndex(x => new { x.OrgId, x.StaffCode });
         b.Entity<StaffCertificate>().HasIndex(x => new { x.OrgId, x.DealerCode });
         b.Entity<StaffCertificate>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<ServicePackage>().HasIndex(x => new { x.OrgId, x.PackageNo }).IsUnique();
+        b.Entity<ServicePackage>().HasIndex(x => new { x.OrgId, x.PackageType });
+        b.Entity<ServicePackage>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<ServicePackageLaborLine>().HasIndex(x => new { x.OrgId, x.PackageNo });
+        b.Entity<ServicePackagePartLine>().HasIndex(x => new { x.OrgId, x.PackageNo });
+        b.Entity<ServicePackageSubscription>().HasIndex(x => new { x.OrgId, x.SubscriptionNo }).IsUnique();
+        b.Entity<ServicePackageSubscription>().HasIndex(x => new { x.OrgId, x.PackageCardNo }).IsUnique();
+        b.Entity<ServicePackageSubscription>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<ServicePackageSubscription>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<ServicePackageSubscription>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<ServicePackageUsage>().HasIndex(x => new { x.OrgId, x.UsageNo }).IsUnique();
+        b.Entity<ServicePackageUsage>().HasIndex(x => new { x.OrgId, x.SubscriptionNo });
+        b.Entity<ServicePackageUsage>().HasIndex(x => new { x.OrgId, x.PackageCardNo });
+        b.Entity<ServicePackageUsage>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<ServicePackageUsage>().HasIndex(x => new { x.OrgId, x.DealerCode });
     }
 }

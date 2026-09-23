@@ -5495,6 +5495,366 @@ public static class Seeder
 
             db.StaffCertificates.AddRange(cert1, cert2, cert3, cert4, cert5, cert6);
         }
+
+        if (!await db.ServicePackages.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+
+            // 1. Gói bảo dưỡng cấp 1 (5.000 km)
+            var pkg5k = new ServicePackage
+            {
+                OrgId = org,
+                PackageNo = "PKG-5K-CARE",
+                PackageNoUser = "GÓI-BD01-5K",
+                PackageName = "Gói Bảo Dưỡng Cấp 1 Tiêu Chuẩn (5.000 KM)",
+                DealerCode = "ALL",
+                DealerName = "Hyundai Toàn Quốc OEM",
+                PackageType = "PeriodicMaintenance",
+                ApplicableModel = "ALL",
+                MilestoneKm = 5000,
+                StandardTakingTimeMinutes = 60,
+                ValidityMonths = 12,
+                MaxUsageCount = 1,
+                IsPublic = true,
+                IsUseBasePrice = true,
+                TotalLaborAmount = 250000m,
+                TotalPartAmount = 750000m,
+                OriginalPrice = 1000000m,
+                DiscountPercent = 15m,
+                PackagePrice = 850000m,
+                TotalSubscribedCount = 2,
+                TotalUsedCount = 1,
+                Status = "Active",
+                Description = "Gói bảo dưỡng định kỳ cấp nhỏ 5.000 km: Thay dầu động cơ nhớt tổng hợp, thay lọc dầu, kiểm tra vệ sinh phanh 4 bánh, kiểm tra ắc quy & quét lỗi ECU.",
+                Remark = "Áp dụng cho tất cả dòng xe du lịch và SUV Hyundai",
+                CreatedBy = "htv.aftersales",
+                CreatedAt = DateTime.Now.AddMonths(-2),
+                ApprovedBy = "aftersales.director",
+                ApprovedAt = DateTime.Now.AddMonths(-2)
+            };
+
+            // 2. Gói bảo dưỡng cấp 2 & 3 (20.000 km)
+            var pkg20k = new ServicePackage
+            {
+                OrgId = org,
+                PackageNo = "PKG-20K-CARE",
+                PackageNoUser = "GÓI-BD03-20K",
+                PackageName = "Gói Bảo Dưỡng Cấp Trung 20.000 KM / 1 Năm",
+                DealerCode = "ALL",
+                DealerName = "Hyundai Toàn Quốc OEM",
+                PackageType = "PeriodicMaintenance",
+                ApplicableModel = "ALL",
+                MilestoneKm = 20000,
+                StandardTakingTimeMinutes = 90,
+                ValidityMonths = 12,
+                MaxUsageCount = 1,
+                IsPublic = true,
+                IsUseBasePrice = true,
+                TotalLaborAmount = 550000m,
+                TotalPartAmount = 1450000m,
+                OriginalPrice = 2000000m,
+                DiscountPercent = 15m,
+                PackagePrice = 1700000m,
+                TotalSubscribedCount = 1,
+                TotalUsedCount = 0,
+                Status = "Active",
+                Description = "Gói bảo dưỡng cấp trung 20.000 km: Thay dầu, thay lọc dầu, thay lọc gió động cơ & điều hòa than hoạt tính, bảo dưỡng phanh, cân bằng động bánh xe.",
+                Remark = "Chuẩn bảo dưỡng định kỳ cấp trung",
+                CreatedBy = "htv.aftersales",
+                CreatedAt = DateTime.Now.AddMonths(-2),
+                ApprovedBy = "aftersales.director",
+                ApprovedAt = DateTime.Now.AddMonths(-2)
+            };
+
+            // 3. Gói bảo dưỡng lớn toàn diện cấp 4 (40.000 km)
+            var pkg40k = new ServicePackage
+            {
+                OrgId = org,
+                PackageNo = "PKG-40K-MAJOR",
+                PackageNoUser = "GÓI-BD04-40K",
+                PackageName = "Gói Đại Tu Bảo Dưỡng Lớn Cấp 4 (40.000 KM)",
+                DealerCode = "ALL",
+                DealerName = "Hyundai Toàn Quốc OEM",
+                PackageType = "PeriodicMaintenance",
+                ApplicableModel = "ALL",
+                MilestoneKm = 40000,
+                StandardTakingTimeMinutes = 180,
+                ValidityMonths = 24,
+                MaxUsageCount = 1,
+                IsPublic = true,
+                IsUseBasePrice = true,
+                TotalLaborAmount = 1200000m,
+                TotalPartAmount = 3800000m,
+                OriginalPrice = 5000000m,
+                DiscountPercent = 20m,
+                PackagePrice = 4000000m,
+                TotalSubscribedCount = 0,
+                TotalUsedCount = 0,
+                Status = "Active",
+                Description = "Gói đại tu bảo dưỡng 40.000 km: Thay dầu động cơ, dầu hộp số tự động ATF, dầu phanh DOT4, nước làm mát Coolant, thay toàn bộ lọc, vệ sinh kim phun buồng đốt.",
+                Remark = "Đại tu định kỳ chuyên sâu bảo toàn giá trị xe",
+                CreatedBy = "htv.aftersales",
+                CreatedAt = DateTime.Now.AddMonths(-2),
+                ApprovedBy = "aftersales.director",
+                ApprovedAt = DateTime.Now.AddMonths(-2)
+            };
+
+            // 4. Gói thay dầu trọn gói 3 năm (6 lượt)
+            var pkgOil3y = new ServicePackage
+            {
+                OrgId = org,
+                PackageNo = "PKG-OIL-3Y",
+                PackageNoUser = "THẺ-DẦU-3N",
+                PackageName = "Thẻ Thay Dầu & Lọc Dầu Trọn Gói 3 Năm (6 Lượt)",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                PackageType = "OilService",
+                ApplicableModel = "Accent 1.4 AT",
+                MilestoneKm = null,
+                StandardTakingTimeMinutes = 45,
+                ValidityMonths = 36,
+                MaxUsageCount = 6,
+                IsPublic = true,
+                IsUseBasePrice = true,
+                TotalLaborAmount = 900000m,
+                TotalPartAmount = 3600000m,
+                OriginalPrice = 4500000m,
+                DiscountPercent = 25m,
+                PackagePrice = 3375000m,
+                TotalSubscribedCount = 1,
+                TotalUsedCount = 1,
+                Status = "Active",
+                Description = "Thẻ trả trước 6 lượt thay dầu động cơ chính hãng Fully Synthetic 5W-30 và 6 lọc dầu Mobis trong vòng 36 tháng cho xe Accent.",
+                Remark = "Gói bán kèm xe mới lúc bàn giao Deal bán lẻ",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddMonths(-1),
+                ApprovedBy = "dlr.servicemanager",
+                ApprovedAt = DateTime.Now.AddMonths(-1)
+            };
+
+            db.ServicePackages.AddRange(pkg5k, pkg20k, pkg40k, pkgOil3y);
+            await db.SaveChangesAsync();
+
+            // Dòng công việc & phụ tùng cho PKG-5K-CARE
+            db.ServicePackageLaborLines.AddRange(
+                new ServicePackageLaborLine
+                {
+                    OrgId = org,
+                    ServicePackageId = pkg5k.Id,
+                    PackageNo = pkg5k.PackageNo,
+                    LineIndex = 1,
+                    ServiceItemCode = "PM_OIL_CHANGE",
+                    ServiceItemName = "Thay dầu động cơ & lọc dầu nhớt",
+                    StandardHours = 0.3m,
+                    LaborPrice = 350000m,
+                    DiscountPercent = 15m,
+                    LaborAmount = 89250m,
+                    IsMandatory = true,
+                    Remark = "Nổ máy xả dầu đáy các-te"
+                },
+                new ServicePackageLaborLine
+                {
+                    OrgId = org,
+                    ServicePackageId = pkg5k.Id,
+                    PackageNo = pkg5k.PackageNo,
+                    LineIndex = 2,
+                    ServiceItemCode = "PM_BRAKE_CLEAN",
+                    ServiceItemName = "Kiểm tra và vệ sinh phanh 4 bánh",
+                    StandardHours = 0.3m,
+                    LaborPrice = 350000m,
+                    DiscountPercent = 15m,
+                    LaborAmount = 89250m,
+                    IsMandatory = true,
+                    Remark = "Vệ sinh má phanh & đĩa phanh"
+                },
+                new ServicePackageLaborLine
+                {
+                    OrgId = org,
+                    ServicePackageId = pkg5k.Id,
+                    PackageNo = pkg5k.PackageNo,
+                    LineIndex = 3,
+                    ServiceItemCode = "PM_DIAGNOSTIC_OBD",
+                    ServiceItemName = "Quét chẩn đoán lỗi chuyên sâu ECU/GDS Mobile",
+                    StandardHours = 0.2m,
+                    LaborPrice = 350000m,
+                    DiscountPercent = 15m,
+                    LaborAmount = 59500m,
+                    IsMandatory = true,
+                    Remark = "Kiểm tra hệ thống điện tử"
+                }
+            );
+
+            db.ServicePackagePartLines.AddRange(
+                new ServicePackagePartLine
+                {
+                    OrgId = org,
+                    ServicePackageId = pkg5k.Id,
+                    PackageNo = pkg5k.PackageNo,
+                    LineIndex = 1,
+                    PartCode = "05100-00441",
+                    PartName = "Dầu nhớt tổng hợp Hyundai Fully Synthetic 5W-30",
+                    Unit = "Can 4L",
+                    Quantity = 1.0m,
+                    UnitPrice = 650000m,
+                    DiscountPercent = 15m,
+                    PartAmount = 552500m,
+                    IsMandatory = true,
+                    Remark = "Dầu động cơ xăng cao cấp tiêu chuẩn API SP / ILSAC GF-6"
+                },
+                new ServicePackagePartLine
+                {
+                    OrgId = org,
+                    ServicePackageId = pkg5k.Id,
+                    PackageNo = pkg5k.PackageNo,
+                    LineIndex = 2,
+                    PartCode = "26300-35505",
+                    PartName = "Lọc dầu động cơ Mobis chính hãng",
+                    Unit = "Cái",
+                    Quantity = 1.0m,
+                    UnitPrice = 100000m,
+                    DiscountPercent = 15m,
+                    PartAmount = 85000m,
+                    IsMandatory = true,
+                    Remark = "Lọc nhớt cao cấp chống cặn bẩn"
+                }
+            );
+
+            // Thẻ đăng ký gói cho xe Accent DEMOVIN00000001
+            var sub1 = new ServicePackageSubscription
+            {
+                OrgId = org,
+                SubscriptionNo = "SUB-2026-0001",
+                SubscriptionNoUser = "HĐTG-2026/03/HN01-001",
+                PackageCardNo = "CRD-HYUNDAI-2026-001",
+                ServicePackageId = pkgOil3y.Id,
+                PackageNo = pkgOil3y.PackageNo,
+                PackageName = pkgOil3y.PackageName,
+                PackageType = pkgOil3y.PackageType,
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                EngineNo = "G4LC0001",
+                PlateNo = "30K-999.88",
+                CustomerName = "Nguyễn Văn An",
+                CustomerPhone = "0901234567",
+                CustomerEmail = "an.nguyen@gmail.com",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                SalesAdvisor = "TVBH-01",
+                PurchaseDate = DateTime.Now.AddDays(-20),
+                StartDate = DateTime.Now.AddDays(-20),
+                ExpiryDate = DateTime.Now.AddDays(-20).AddYears(3),
+                TotalPackagePrice = 3375000m,
+                PaidAmount = 3375000m,
+                IsPaid = true,
+                PaymentMethod = "Cash",
+                MaxUsageCount = 6,
+                UsedCount = 1,
+                RemainingCount = 5,
+                TotalSavedAmount = 750000m,
+                Status = "Active",
+                Remark = "Thẻ bảo dưỡng trọn gói 3 năm kích hoạt kèm bàn giao xe",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-20)
+            };
+
+            var sub2 = new ServicePackageSubscription
+            {
+                OrgId = org,
+                SubscriptionNo = "SUB-2026-0002",
+                SubscriptionNoUser = "HĐTG-2026/03/HN01-002",
+                PackageCardNo = "CRD-HYUNDAI-2026-002",
+                ServicePackageId = pkg5k.Id,
+                PackageNo = pkg5k.PackageNo,
+                PackageName = pkg5k.PackageName,
+                PackageType = pkg5k.PackageType,
+                Vin = "DEMOVIN00000002",
+                Model = "Creta 1.5 Cao cấp",
+                EngineNo = "G4FL0002",
+                PlateNo = "30K-888.66",
+                CustomerName = "Trần Thị Mai",
+                CustomerPhone = "0912345678",
+                CustomerEmail = "mai.tran@gmail.com",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Đông Đô",
+                SalesAdvisor = "TVBH-02",
+                PurchaseDate = DateTime.Now.AddDays(-5),
+                StartDate = DateTime.Now.AddDays(-5),
+                ExpiryDate = DateTime.Now.AddDays(-5).AddYears(1),
+                TotalPackagePrice = 850000m,
+                PaidAmount = 850000m,
+                IsPaid = true,
+                PaymentMethod = "BankTransfer",
+                MaxUsageCount = 1,
+                UsedCount = 0,
+                RemainingCount = 1,
+                TotalSavedAmount = 0m,
+                Status = "Active",
+                Remark = "Khách hàng mua voucher bảo dưỡng cấp 1",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-5)
+            };
+
+            db.ServicePackageSubscriptions.AddRange(sub1, sub2);
+            await db.SaveChangesAsync();
+
+            // Nhật ký sử dụng gói cho sub1
+            var usage1 = new ServicePackageUsage
+            {
+                OrgId = org,
+                UsageNo = "USG-2026-0001",
+                SubscriptionId = sub1.Id,
+                SubscriptionNo = sub1.SubscriptionNo,
+                PackageCardNo = sub1.PackageCardNo,
+                PackageNo = sub1.PackageNo,
+                PackageName = sub1.PackageName,
+                Vin = sub1.Vin,
+                Model = sub1.Model,
+                PlateNo = sub1.PlateNo,
+                DealerCode = sub1.DealerCode,
+                DealerName = sub1.DealerName,
+                UsageDate = DateTime.Now.AddDays(-5),
+                OdoKm = 5120,
+                MilestoneUsed = 5000,
+                RoNo = "RO-2026-0001",
+                CavityNo = "BAY-01",
+                Technician = "KTV-03 (Bùi Văn Thắng)",
+                ServiceAdvisor = "CVDV-01 (Trần Văn Bình)",
+                LaborSavedAmount = 150000m,
+                PartSavedAmount = 600000m,
+                TotalSavedAmount = 750000m,
+                Status = "Confirmed",
+                CustomerRating = 5.0m,
+                CustomerFeedback = "Dịch vụ nhanh chóng, trừ lượt trên thẻ điện tử thuận tiện, xe chạy êm ái.",
+                Remark = "Lượt thay dầu số 1/6 hoàn tất",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-5),
+                ConfirmedBy = "dlr.serviceadvisor",
+                ConfirmedAt = DateTime.Now.AddDays(-5)
+            };
+
+            db.ServicePackageUsages.Add(usage1);
+
+            // Cập nhật Vehicle DEMOVIN00000001
+            var veh1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (veh1 != null)
+            {
+                veh1.LastServicePackageNo = sub1.PackageNo;
+                veh1.LastPackageCardNo = sub1.PackageCardNo;
+                veh1.ActiveServicePackageCount = 1;
+                veh1.PackageUsageCount = 1;
+            }
+
+            // Cập nhật Vehicle DEMOVIN00000002
+            var veh2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (veh2 != null)
+            {
+                veh2.LastServicePackageNo = sub2.PackageNo;
+                veh2.LastPackageCardNo = sub2.PackageCardNo;
+                veh2.ActiveServicePackageCount = 1;
+                veh2.PackageUsageCount = 0;
+            }
+        }
+
         await db.SaveChangesAsync();
     }
 
@@ -5733,7 +6093,16 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"InventoryAuditRecords\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AuditNo\" text NOT NULL DEFAULT '', \"ThresholdId\" bigint NULL, \"ThresholdNo\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RegionCode\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"MinInvQty\" integer NOT NULL DEFAULT 5, \"TargetInvQty\" integer NOT NULL DEFAULT 10, \"MaxInvQty\" integer NOT NULL DEFAULT 25, \"InStockCount\" integer NOT NULL DEFAULT 0, \"AllocatedCount\" integer NOT NULL DEFAULT 0, \"InTransitCount\" integer NOT NULL DEFAULT 0, \"TotalOnHand\" integer NOT NULL DEFAULT 0, \"VarianceQty\" integer NOT NULL DEFAULT 0, \"StockFulfillmentRate\" numeric NOT NULL DEFAULT 0, \"DaysOfSupply\" numeric NOT NULL DEFAULT 0, \"HealthStatus\" text NOT NULL DEFAULT 'Optimal', \"RebalanceAction\" text NULL, \"RecommendedTransferDealer\" text NULL, \"RecommendedTransferQty\" integer NOT NULL DEFAULT 0, \"AuditDate\" timestamp NOT NULL DEFAULT now(), \"AuditedBy\" text NULL, \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"TrainingCourses\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TrainingCode\" text NOT NULL DEFAULT '', \"TrainingCodeUser\" text NULL, \"CourseName\" text NOT NULL DEFAULT '', \"TrainingType\" text NOT NULL DEFAULT 'SalesConsultant', \"Level\" text NOT NULL DEFAULT 'Intermediate', \"Format\" text NOT NULL DEFAULT 'OfflineInClass', \"TrainerName\" text NULL, \"Location\" text NULL, \"StartDate\" timestamp NOT NULL DEFAULT now(), \"EndDate\" timestamp NOT NULL DEFAULT now(), \"MaxCapacity\" integer NOT NULL DEFAULT 30, \"TotalEnrolled\" integer NOT NULL DEFAULT 0, \"TotalPassed\" integer NOT NULL DEFAULT 0, \"TotalFailed\" integer NOT NULL DEFAULT 0, \"PassingScore\" numeric NOT NULL DEFAULT 70.0, \"BudgetAmount\" numeric NOT NULL DEFAULT 0, \"ActualCost\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"TrainingEnrollments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"TrainingCourseId\" bigint NOT NULL, \"TrainingCode\" text NOT NULL DEFAULT '', \"EnrollmentNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"StaffCode\" text NOT NULL DEFAULT '', \"StaffName\" text NOT NULL DEFAULT '', \"StaffEmail\" text NULL, \"StaffPhone\" text NULL, \"Position\" text NOT NULL DEFAULT 'SalesConsultant', \"AttendancePercent\" numeric NOT NULL DEFAULT 100, \"TheoryScore\" numeric NOT NULL DEFAULT 0, \"PracticeScore\" numeric NOT NULL DEFAULT 0, \"FinalScore\" numeric NOT NULL DEFAULT 0, \"EvaluationGrade\" text NOT NULL DEFAULT 'Pending', \"ResultStatus\" text NOT NULL DEFAULT 'Registered', \"IsCertificateIssued\" boolean NOT NULL DEFAULT false, \"CertificateNo\" text NULL, \"CertificateIssueDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"StaffCertificates\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CertificateNo\" text NOT NULL DEFAULT '', \"CertificateNoUser\" text NULL, \"StaffCode\" text NOT NULL DEFAULT '', \"StaffName\" text NOT NULL DEFAULT '', \"StaffEmail\" text NULL, \"StaffPhone\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Position\" text NOT NULL DEFAULT 'SalesConsultant', \"CertificateType\" text NOT NULL DEFAULT 'SalesConsultant', \"Level\" text NOT NULL DEFAULT 'Certified', \"IssueDate\" timestamp NOT NULL DEFAULT now(), \"ExpiryDate\" timestamp NOT NULL DEFAULT now(), \"IssuedBy\" text NOT NULL DEFAULT 'HTV Training Center', \"Status\" text NOT NULL DEFAULT 'Active', \"LinkedTrainingCode\" text NULL, \"LinkedEnrollmentNo\" text NULL, \"ScoreAchieved\" numeric NOT NULL DEFAULT 0, \"Grade\" text NULL, \"RevokeReason\" text NULL, \"RevokedBy\" text NULL, \"RevokedAt\" timestamp NULL, \"FileUrl\" text NULL, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"StaffCertificates\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CertificateNo\" text NOT NULL DEFAULT '', \"CertificateNoUser\" text NULL, \"StaffCode\" text NOT NULL DEFAULT '', \"StaffName\" text NOT NULL DEFAULT '', \"StaffEmail\" text NULL, \"StaffPhone\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Position\" text NOT NULL DEFAULT 'SalesConsultant', \"CertificateType\" text NOT NULL DEFAULT 'SalesConsultant', \"Level\" text NOT NULL DEFAULT 'Certified', \"IssueDate\" timestamp NOT NULL DEFAULT now(), \"ExpiryDate\" timestamp NOT NULL DEFAULT now(), \"IssuedBy\" text NOT NULL DEFAULT 'HTV Training Center', \"Status\" text NOT NULL DEFAULT 'Active', \"LinkedTrainingCode\" text NULL, \"LinkedEnrollmentNo\" text NULL, \"ScoreAchieved\" numeric NOT NULL DEFAULT 0, \"Grade\" text NULL, \"RevokeReason\" text NULL, \"RevokedBy\" text NULL, \"RevokedAt\" timestamp NULL, \"FileUrl\" text NULL, \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"UpdatedAt\" timestamp NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastServicePackageNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastPackageCardNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"ActiveServicePackageCount\" integer NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PackageUsageCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"ServicePackages\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PackageNo\" text NOT NULL DEFAULT '', \"PackageNoUser\" text NULL, \"PackageName\" text NOT NULL DEFAULT '', \"DealerCode\" text NOT NULL DEFAULT 'ALL', \"DealerName\" text NULL DEFAULT 'Hyundai Toàn Quốc OEM', \"PackageType\" text NOT NULL DEFAULT 'PeriodicMaintenance', \"ApplicableModel\" text NOT NULL DEFAULT 'ALL', \"MilestoneKm\" integer NULL DEFAULT 5000, \"StandardTakingTimeMinutes\" integer NOT NULL DEFAULT 60, \"ValidityMonths\" integer NOT NULL DEFAULT 12, \"MaxUsageCount\" integer NOT NULL DEFAULT 1, \"IsPublic\" boolean NOT NULL DEFAULT true, \"IsUseBasePrice\" boolean NOT NULL DEFAULT true, \"TotalLaborAmount\" numeric NOT NULL DEFAULT 0, \"TotalPartAmount\" numeric NOT NULL DEFAULT 0, \"OriginalPrice\" numeric NOT NULL DEFAULT 0, \"DiscountPercent\" numeric NOT NULL DEFAULT 15, \"PackagePrice\" numeric NOT NULL DEFAULT 0, \"TotalSubscribedCount\" integer NOT NULL DEFAULT 0, \"TotalUsedCount\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Description\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"ArchivedBy\" text NULL, \"ArchivedAt\" timestamp NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ServicePackageLaborLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServicePackageId\" bigint NOT NULL, \"PackageNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"ServiceItemCode\" text NOT NULL DEFAULT '', \"ServiceItemName\" text NOT NULL DEFAULT '', \"StandardHours\" numeric NOT NULL DEFAULT 0.5, \"LaborPrice\" numeric NOT NULL DEFAULT 350000, \"DiscountPercent\" numeric NOT NULL DEFAULT 0, \"LaborAmount\" numeric NOT NULL DEFAULT 175000, \"IsMandatory\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ServicePackagePartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServicePackageId\" bigint NOT NULL, \"PackageNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1.0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"DiscountPercent\" numeric NOT NULL DEFAULT 0, \"PartAmount\" numeric NOT NULL DEFAULT 0, \"IsMandatory\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ServicePackageSubscriptions\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SubscriptionNo\" text NOT NULL DEFAULT '', \"SubscriptionNoUser\" text NULL, \"PackageCardNo\" text NOT NULL DEFAULT '', \"ServicePackageId\" bigint NOT NULL, \"PackageNo\" text NOT NULL DEFAULT '', \"PackageName\" text NOT NULL DEFAULT '', \"PackageType\" text NOT NULL DEFAULT 'PeriodicMaintenance', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"CustomerEmail\" text NULL, \"DealerCode\" text NOT NULL DEFAULT 'DLR-HN01', \"DealerName\" text NULL DEFAULT 'Hyundai Hà Nội 01', \"SalesAdvisor\" text NULL, \"PurchaseDate\" timestamp NOT NULL DEFAULT now(), \"StartDate\" timestamp NOT NULL DEFAULT now(), \"ExpiryDate\" timestamp NOT NULL DEFAULT now(), \"TotalPackagePrice\" numeric NOT NULL DEFAULT 0, \"PaidAmount\" numeric NOT NULL DEFAULT 0, \"IsPaid\" boolean NOT NULL DEFAULT true, \"PaymentMethod\" text NOT NULL DEFAULT 'Cash', \"MaxUsageCount\" integer NOT NULL DEFAULT 1, \"UsedCount\" integer NOT NULL DEFAULT 0, \"RemainingCount\" integer NOT NULL DEFAULT 1, \"TotalSavedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Active', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ServicePackageUsages\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"UsageNo\" text NOT NULL DEFAULT '', \"SubscriptionId\" bigint NOT NULL, \"SubscriptionNo\" text NOT NULL DEFAULT '', \"PackageCardNo\" text NOT NULL DEFAULT '', \"PackageNo\" text NOT NULL DEFAULT '', \"PackageName\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"PlateNo\" text NULL, \"DealerCode\" text NOT NULL DEFAULT 'DLR-HN01', \"DealerName\" text NULL DEFAULT 'Hyundai Hà Nội 01', \"UsageDate\" timestamp NOT NULL DEFAULT now(), \"OdoKm\" integer NOT NULL DEFAULT 5000, \"MilestoneUsed\" integer NULL DEFAULT 5000, \"RoNo\" text NULL, \"CavityNo\" text NULL, \"Technician\" text NULL, \"ServiceAdvisor\" text NULL, \"LaborSavedAmount\" numeric NOT NULL DEFAULT 0, \"PartSavedAmount\" numeric NOT NULL DEFAULT 0, \"TotalSavedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Confirmed', \"CustomerRating\" numeric NULL DEFAULT 5.0, \"CustomerFeedback\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ConfirmedBy\" text NULL, \"ConfirmedAt\" timestamp NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

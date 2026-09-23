@@ -2125,6 +2125,34 @@ public interface IVehicleService
     Task<object?> GetDealerTrainingMatrixAsync(string? dealerCode);
     Task<object?> GetStaffTrainingProfileAsync(string staffCode);
     Task<object> GetTrainingSummaryAsync(int? year, string? trainingType);
+
+    // ===== Quản lý Gói Dịch Vụ & Thẻ Bảo Dưỡng Trọn Gói Xe Ô Tô (BizCarSv.ServicePackage / Ser_ServicePackage) =====
+    Task<object> CreateServicePackageAsync(CreateServicePackageDto dto);
+    Task<object> ListServicePackagesAsync(string? status, string? dealer, string? packageType, string? model, string? packageNo);
+    Task<object?> GetServicePackageAsync(string packageNo);
+    Task<object?> UpdateServicePackageHeaderAsync(string packageNo, UpdateServicePackageHeaderDto dto);
+    Task<object?> ServicePackageTransitionAsync(string packageNo, string action, ServicePackageTransitionDto? dto);
+    Task<object?> AddServicePackageLaborLinesAsync(string packageNo, List<ServicePackageLaborLineInputDto> items);
+    Task<object?> UpdateServicePackageLaborLineAsync(string packageNo, long lineId, UpdateServicePackageLaborLineDto dto);
+    Task<object?> RemoveServicePackageLaborLineAsync(string packageNo, long lineId);
+    Task<object?> AddServicePackagePartLinesAsync(string packageNo, List<ServicePackagePartLineInputDto> items);
+    Task<object?> UpdateServicePackagePartLineAsync(string packageNo, long lineId, UpdateServicePackagePartLineDto dto);
+    Task<object?> RemoveServicePackagePartLineAsync(string packageNo, long lineId);
+    Task<object?> RemoveServicePackageAsync(string packageNo);
+    Task<object> SubscribeServicePackageAsync(SubscribeServicePackageDto dto);
+    Task<object> ListServicePackageSubscriptionsAsync(string? status, string? dealer, string? packageNo, string? vin, string? cardNo, string? subNo);
+    Task<object?> GetServicePackageSubscriptionAsync(string subNo);
+    Task<object?> UpdateServicePackageSubscriptionAsync(string subNo, UpdateServicePackageSubscriptionDto dto);
+    Task<object?> ServicePackageSubscriptionTransitionAsync(string subNo, string action, ServicePackageSubscriptionTransitionDto? dto);
+    Task<object?> RemoveServicePackageSubscriptionAsync(string subNo);
+    Task<object> RecordServicePackageUsageAsync(RecordServicePackageUsageDto dto);
+    Task<object> ListServicePackageUsagesAsync(string? status, string? dealer, string? packageNo, string? vin, string? cardNo, string? usageNo, string? roNo);
+    Task<object?> GetServicePackageUsageAsync(string usageNo);
+    Task<object?> ServicePackageUsageTransitionAsync(string usageNo, string action, ServicePackageUsageTransitionDto? dto);
+    Task<object?> RecordServicePackageUsageFeedbackAsync(string usageNo, RecordServicePackageUsageFeedbackDto dto);
+    Task<object?> GetVehicleServicePackageInfoAsync(string vin);
+    Task<object?> GetVehicleServicePackageHistoryAsync(string vin);
+    Task<object> GetServicePackageSummaryAsync(string? dealerCode, string? packageType);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -34284,4 +34312,1120 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byLevel
         );
     }
+
+    // ===== QUẢN LÝ GÓI DỊCH VỤ & THẺ BẢO DƯỠNG TRỌN GÓI XE Ô TÔ (BizCarSv.ServicePackage / Ser_ServicePackage) =====
+
+    public async Task<object> CreateServicePackageAsync(CreateServicePackageDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.PackageName))
+            throw new InvalidOperationException("Cần tên gói dịch vụ PackageName.");
+
+        var now = DateTime.Now;
+        var pkgType = string.IsNullOrWhiteSpace(dto.PackageType) ? "PeriodicMaintenance" : dto.PackageType.Trim();
+        var model = string.IsNullOrWhiteSpace(dto.ApplicableModel) ? "ALL" : dto.ApplicableModel.Trim().ToUpperInvariant();
+        var dealerCode = string.IsNullOrWhiteSpace(dto.DealerCode) ? "ALL" : dto.DealerCode.Trim().ToUpperInvariant();
+
+        var packageNo = string.IsNullOrWhiteSpace(dto.PackageNo)
+            ? $"PKG-{now:yyyy}-{(await db.ServicePackages.CountAsync(p => p.OrgId == Org) + 1):D4}"
+            : dto.PackageNo.Trim().ToUpperInvariant();
+
+        if (await db.ServicePackages.AnyAsync(p => p.OrgId == Org && p.PackageNo == packageNo))
+            throw new InvalidOperationException($"Mã gói dịch vụ {packageNo} đã tồn tại trong hệ thống.");
+
+        var package = new ServicePackage
+        {
+            OrgId = Org,
+            PackageNo = packageNo,
+            PackageNoUser = dto.PackageNoUser?.Trim() ?? $"GDV-{now:yyyy}/{packageNo}",
+            PackageName = dto.PackageName.Trim(),
+            DealerCode = dealerCode,
+            DealerName = dto.DealerName?.Trim() ?? (dealerCode == "ALL" ? "Hyundai Toàn Quốc OEM" : dealerCode),
+            PackageType = pkgType,
+            ApplicableModel = model,
+            MilestoneKm = dto.MilestoneKm ?? 5000,
+            StandardTakingTimeMinutes = dto.StandardTakingTimeMinutes ?? 60,
+            ValidityMonths = dto.ValidityMonths ?? 12,
+            MaxUsageCount = dto.MaxUsageCount ?? 1,
+            IsPublic = dto.IsPublic ?? true,
+            IsUseBasePrice = dto.IsUseBasePrice ?? true,
+            DiscountPercent = dto.DiscountPercent ?? 15m,
+            Status = "Draft",
+            Description = dto.Description?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = now
+        };
+
+        decimal totalLabor = 0;
+        decimal totalPart = 0;
+
+        var laborLines = new List<ServicePackageLaborLine>();
+        if (dto.LaborLines != null && dto.LaborLines.Count > 0)
+        {
+            int idx = 1;
+            foreach (var item in dto.LaborLines)
+            {
+                if (string.IsNullOrWhiteSpace(item.ServiceItemCode) || string.IsNullOrWhiteSpace(item.ServiceItemName)) continue;
+                var stdHours = item.StandardHours > 0 ? item.StandardHours : 0.5m;
+                var price = item.LaborPrice >= 0 ? item.LaborPrice : 350000m;
+                var disc = item.DiscountPercent ?? 0m;
+                var amount = Math.Round(stdHours * price * (1 - disc / 100), 0);
+                totalLabor += amount;
+
+                laborLines.Add(new ServicePackageLaborLine
+                {
+                    OrgId = Org,
+                    PackageNo = packageNo,
+                    LineIndex = idx++,
+                    ServiceItemCode = item.ServiceItemCode.Trim().ToUpperInvariant(),
+                    ServiceItemName = item.ServiceItemName.Trim(),
+                    StandardHours = stdHours,
+                    LaborPrice = price,
+                    DiscountPercent = disc,
+                    LaborAmount = amount,
+                    IsMandatory = item.IsMandatory ?? true,
+                    Remark = item.Remark?.Trim()
+                });
+            }
+        }
+
+        var partLines = new List<ServicePackagePartLine>();
+        if (dto.PartLines != null && dto.PartLines.Count > 0)
+        {
+            int idx = 1;
+            foreach (var item in dto.PartLines)
+            {
+                if (string.IsNullOrWhiteSpace(item.PartCode) || string.IsNullOrWhiteSpace(item.PartName)) continue;
+                var qty = item.Quantity > 0 ? item.Quantity : 1.0m;
+                var price = item.UnitPrice >= 0 ? item.UnitPrice : 0m;
+                var disc = item.DiscountPercent ?? 0m;
+                var amount = Math.Round(qty * price * (1 - disc / 100), 0);
+                totalPart += amount;
+
+                partLines.Add(new ServicePackagePartLine
+                {
+                    OrgId = Org,
+                    PackageNo = packageNo,
+                    LineIndex = idx++,
+                    PartCode = item.PartCode.Trim().ToUpperInvariant(),
+                    PartName = item.PartName.Trim(),
+                    Unit = string.IsNullOrWhiteSpace(item.Unit) ? "Cái" : item.Unit.Trim(),
+                    Quantity = qty,
+                    UnitPrice = price,
+                    DiscountPercent = disc,
+                    PartAmount = amount,
+                    IsMandatory = item.IsMandatory ?? true,
+                    Remark = item.Remark?.Trim()
+                });
+            }
+        }
+
+        package.TotalLaborAmount = totalLabor;
+        package.TotalPartAmount = totalPart;
+        package.OriginalPrice = totalLabor + totalPart;
+        package.PackagePrice = dto.PackagePrice.HasValue && dto.PackagePrice.Value > 0
+            ? dto.PackagePrice.Value
+            : Math.Round(package.OriginalPrice * (1 - package.DiscountPercent / 100), 0);
+
+        db.ServicePackages.Add(package);
+        await db.SaveChangesAsync();
+
+        foreach (var l in laborLines) l.ServicePackageId = package.Id;
+        foreach (var p in partLines) p.ServicePackageId = package.Id;
+
+        if (laborLines.Count > 0) db.ServicePackageLaborLines.AddRange(laborLines);
+        if (partLines.Count > 0) db.ServicePackagePartLines.AddRange(partLines);
+        if (laborLines.Count > 0 || partLines.Count > 0) await db.SaveChangesAsync();
+
+        return new
+        {
+            package,
+            laborLines,
+            partLines
+        };
+    }
+
+    public async Task<object> ListServicePackagesAsync(string? status, string? dealer, string? packageType, string? model, string? packageNo)
+    {
+        var q = db.ServicePackages.Where(p => p.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            q = q.Where(p => p.Status == status.Trim());
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(p => p.DealerCode == d || p.DealerCode == "ALL");
+        }
+
+        if (!string.IsNullOrWhiteSpace(packageType))
+            q = q.Where(p => p.PackageType == packageType.Trim());
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var m = model.Trim().ToUpperInvariant();
+            q = q.Where(p => p.ApplicableModel == m || p.ApplicableModel == "ALL");
+        }
+
+        if (!string.IsNullOrWhiteSpace(packageNo))
+        {
+            var no = packageNo.Trim().ToUpperInvariant();
+            q = q.Where(p => p.PackageNo.Contains(no) || (p.PackageNoUser != null && p.PackageNoUser.Contains(no)) || p.PackageName.Contains(packageNo.Trim()));
+        }
+
+        var items = await q.OrderByDescending(p => p.CreatedAt).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetServicePackageAsync(string packageNo)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        var laborLines = await db.ServicePackageLaborLines.Where(l => l.OrgId == Org && l.ServicePackageId == package.Id).OrderBy(l => l.LineIndex).ToListAsync();
+        var partLines = await db.ServicePackagePartLines.Where(p => p.OrgId == Org && p.ServicePackageId == package.Id).OrderBy(p => p.LineIndex).ToListAsync();
+        var recentSubscriptions = await db.ServicePackageSubscriptions.Where(s => s.OrgId == Org && s.PackageNo == package.PackageNo).OrderByDescending(s => s.CreatedAt).Take(10).ToListAsync();
+
+        return new
+        {
+            package,
+            laborLines,
+            partLines,
+            recentSubscriptions
+        };
+    }
+
+    public async Task<object?> UpdateServicePackageHeaderAsync(string packageNo, UpdateServicePackageHeaderDto dto)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        if (dto.PackageNoUser != null) package.PackageNoUser = dto.PackageNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PackageName)) package.PackageName = dto.PackageName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) package.DealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        if (dto.DealerName != null) package.DealerName = dto.DealerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PackageType)) package.PackageType = dto.PackageType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.ApplicableModel)) package.ApplicableModel = dto.ApplicableModel.Trim().ToUpperInvariant();
+        if (dto.MilestoneKm.HasValue) package.MilestoneKm = dto.MilestoneKm.Value;
+        if (dto.StandardTakingTimeMinutes.HasValue) package.StandardTakingTimeMinutes = dto.StandardTakingTimeMinutes.Value;
+        if (dto.ValidityMonths.HasValue) package.ValidityMonths = dto.ValidityMonths.Value;
+        if (dto.MaxUsageCount.HasValue) package.MaxUsageCount = dto.MaxUsageCount.Value;
+        if (dto.IsPublic.HasValue) package.IsPublic = dto.IsPublic.Value;
+        if (dto.IsUseBasePrice.HasValue) package.IsUseBasePrice = dto.IsUseBasePrice.Value;
+        if (dto.DiscountPercent.HasValue)
+        {
+            package.DiscountPercent = dto.DiscountPercent.Value;
+            if (!dto.PackagePrice.HasValue)
+                package.PackagePrice = Math.Round(package.OriginalPrice * (1 - package.DiscountPercent / 100), 0);
+        }
+        if (dto.PackagePrice.HasValue) package.PackagePrice = dto.PackagePrice.Value;
+        if (dto.Description != null) package.Description = dto.Description.Trim();
+        if (dto.Remark != null) package.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return package;
+    }
+
+    public async Task<object?> ServicePackageTransitionAsync(string packageNo, string action, ServicePackageTransitionDto? dto)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        var now = DateTime.Now;
+        var act = action.Trim().ToLowerInvariant();
+
+        switch (act)
+        {
+            case "approve" or "activate" or "active":
+                package.Status = "Active";
+                package.ApprovedBy = dto?.Actor?.Trim() ?? "ServiceManager";
+                package.ApprovedAt = dto?.TransitionDate ?? now;
+                break;
+
+            case "suspend":
+                package.Status = "Suspended";
+                break;
+
+            case "resume" or "reactivate":
+                package.Status = "Active";
+                break;
+
+            case "archive":
+                package.Status = "Archived";
+                package.ArchivedBy = dto?.Actor?.Trim() ?? "ServiceManager";
+                package.ArchivedAt = dto?.TransitionDate ?? now;
+                break;
+
+            case "draft":
+                package.Status = "Draft";
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không hợp lệ cho gói dịch vụ.");
+        }
+
+        if (dto?.Note != null) package.Remark = (package.Remark + " | " + dto.Note).Trim(' ', '|');
+        await db.SaveChangesAsync();
+
+        return package;
+    }
+
+    public async Task<object?> AddServicePackageLaborLinesAsync(string packageNo, List<ServicePackageLaborLineInputDto> items)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        var currentMaxIndex = await db.ServicePackageLaborLines.Where(l => l.OrgId == Org && l.ServicePackageId == package.Id).MaxAsync(l => (int?)l.LineIndex) ?? 0;
+
+        var newLines = new List<ServicePackageLaborLine>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.ServiceItemCode) || string.IsNullOrWhiteSpace(item.ServiceItemName)) continue;
+            var stdHours = item.StandardHours > 0 ? item.StandardHours : 0.5m;
+            var price = item.LaborPrice >= 0 ? item.LaborPrice : 350000m;
+            var disc = item.DiscountPercent ?? 0m;
+            var amount = Math.Round(stdHours * price * (1 - disc / 100), 0);
+
+            newLines.Add(new ServicePackageLaborLine
+            {
+                OrgId = Org,
+                ServicePackageId = package.Id,
+                PackageNo = package.PackageNo,
+                LineIndex = ++currentMaxIndex,
+                ServiceItemCode = item.ServiceItemCode.Trim().ToUpperInvariant(),
+                ServiceItemName = item.ServiceItemName.Trim(),
+                StandardHours = stdHours,
+                LaborPrice = price,
+                DiscountPercent = disc,
+                LaborAmount = amount,
+                IsMandatory = item.IsMandatory ?? true,
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        if (newLines.Count > 0)
+        {
+            db.ServicePackageLaborLines.AddRange(newLines);
+            await db.SaveChangesAsync();
+
+            package.TotalLaborAmount = await db.ServicePackageLaborLines.Where(l => l.OrgId == Org && l.ServicePackageId == package.Id).SumAsync(l => l.LaborAmount);
+            package.OriginalPrice = package.TotalLaborAmount + package.TotalPartAmount;
+            package.PackagePrice = Math.Round(package.OriginalPrice * (1 - package.DiscountPercent / 100), 0);
+            await db.SaveChangesAsync();
+        }
+
+        return await GetServicePackageAsync(package.PackageNo);
+    }
+
+    public async Task<object?> UpdateServicePackageLaborLineAsync(string packageNo, long lineId, UpdateServicePackageLaborLineDto dto)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        var line = await db.ServicePackageLaborLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ServicePackageId == package.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.ServiceItemCode)) line.ServiceItemCode = dto.ServiceItemCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.ServiceItemName)) line.ServiceItemName = dto.ServiceItemName.Trim();
+        if (dto.StandardHours.HasValue) line.StandardHours = dto.StandardHours.Value;
+        if (dto.LaborPrice.HasValue) line.LaborPrice = dto.LaborPrice.Value;
+        if (dto.DiscountPercent.HasValue) line.DiscountPercent = dto.DiscountPercent.Value;
+        if (dto.IsMandatory.HasValue) line.IsMandatory = dto.IsMandatory.Value;
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        line.LaborAmount = Math.Round(line.StandardHours * line.LaborPrice * (1 - line.DiscountPercent / 100), 0);
+        await db.SaveChangesAsync();
+
+        package.TotalLaborAmount = await db.ServicePackageLaborLines.Where(l => l.OrgId == Org && l.ServicePackageId == package.Id).SumAsync(l => l.LaborAmount);
+        package.OriginalPrice = package.TotalLaborAmount + package.TotalPartAmount;
+        package.PackagePrice = Math.Round(package.OriginalPrice * (1 - package.DiscountPercent / 100), 0);
+        await db.SaveChangesAsync();
+
+        return line;
+    }
+
+    public async Task<object?> RemoveServicePackageLaborLineAsync(string packageNo, long lineId)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        var line = await db.ServicePackageLaborLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ServicePackageId == package.Id && l.Id == lineId);
+        if (line is null) return null;
+
+        db.ServicePackageLaborLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        package.TotalLaborAmount = await db.ServicePackageLaborLines.Where(l => l.OrgId == Org && l.ServicePackageId == package.Id).SumAsync(l => (decimal?)l.LaborAmount) ?? 0;
+        package.OriginalPrice = package.TotalLaborAmount + package.TotalPartAmount;
+        package.PackagePrice = Math.Round(package.OriginalPrice * (1 - package.DiscountPercent / 100), 0);
+        await db.SaveChangesAsync();
+
+        return new { success = true, lineId, packageNo = package.PackageNo };
+    }
+
+    public async Task<object?> AddServicePackagePartLinesAsync(string packageNo, List<ServicePackagePartLineInputDto> items)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        var currentMaxIndex = await db.ServicePackagePartLines.Where(p => p.OrgId == Org && p.ServicePackageId == package.Id).MaxAsync(p => (int?)p.LineIndex) ?? 0;
+
+        var newLines = new List<ServicePackagePartLine>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.PartCode) || string.IsNullOrWhiteSpace(item.PartName)) continue;
+            var qty = item.Quantity > 0 ? item.Quantity : 1.0m;
+            var price = item.UnitPrice >= 0 ? item.UnitPrice : 0m;
+            var disc = item.DiscountPercent ?? 0m;
+            var amount = Math.Round(qty * price * (1 - disc / 100), 0);
+
+            newLines.Add(new ServicePackagePartLine
+            {
+                OrgId = Org,
+                ServicePackageId = package.Id,
+                PackageNo = package.PackageNo,
+                LineIndex = ++currentMaxIndex,
+                PartCode = item.PartCode.Trim().ToUpperInvariant(),
+                PartName = item.PartName.Trim(),
+                Unit = string.IsNullOrWhiteSpace(item.Unit) ? "Cái" : item.Unit.Trim(),
+                Quantity = qty,
+                UnitPrice = price,
+                DiscountPercent = disc,
+                PartAmount = amount,
+                IsMandatory = item.IsMandatory ?? true,
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        if (newLines.Count > 0)
+        {
+            db.ServicePackagePartLines.AddRange(newLines);
+            await db.SaveChangesAsync();
+
+            package.TotalPartAmount = await db.ServicePackagePartLines.Where(p => p.OrgId == Org && p.ServicePackageId == package.Id).SumAsync(p => p.PartAmount);
+            package.OriginalPrice = package.TotalLaborAmount + package.TotalPartAmount;
+            package.PackagePrice = Math.Round(package.OriginalPrice * (1 - package.DiscountPercent / 100), 0);
+            await db.SaveChangesAsync();
+        }
+
+        return await GetServicePackageAsync(package.PackageNo);
+    }
+
+    public async Task<object?> UpdateServicePackagePartLineAsync(string packageNo, long lineId, UpdateServicePackagePartLineDto dto)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        var line = await db.ServicePackagePartLines.FirstOrDefaultAsync(p => p.OrgId == Org && p.ServicePackageId == package.Id && p.Id == lineId);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.PartCode)) line.PartCode = dto.PartCode.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.PartName)) line.PartName = dto.PartName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Unit)) line.Unit = dto.Unit.Trim();
+        if (dto.Quantity.HasValue) line.Quantity = dto.Quantity.Value;
+        if (dto.UnitPrice.HasValue) line.UnitPrice = dto.UnitPrice.Value;
+        if (dto.DiscountPercent.HasValue) line.DiscountPercent = dto.DiscountPercent.Value;
+        if (dto.IsMandatory.HasValue) line.IsMandatory = dto.IsMandatory.Value;
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        line.PartAmount = Math.Round(line.Quantity * line.UnitPrice * (1 - line.DiscountPercent / 100), 0);
+        await db.SaveChangesAsync();
+
+        package.TotalPartAmount = await db.ServicePackagePartLines.Where(p => p.OrgId == Org && p.ServicePackageId == package.Id).SumAsync(p => p.PartAmount);
+        package.OriginalPrice = package.TotalLaborAmount + package.TotalPartAmount;
+        package.PackagePrice = Math.Round(package.OriginalPrice * (1 - package.DiscountPercent / 100), 0);
+        await db.SaveChangesAsync();
+
+        return line;
+    }
+
+    public async Task<object?> RemoveServicePackagePartLineAsync(string packageNo, long lineId)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        var line = await db.ServicePackagePartLines.FirstOrDefaultAsync(p => p.OrgId == Org && p.ServicePackageId == package.Id && p.Id == lineId);
+        if (line is null) return null;
+
+        db.ServicePackagePartLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        package.TotalPartAmount = await db.ServicePackagePartLines.Where(p => p.OrgId == Org && p.ServicePackageId == package.Id).SumAsync(p => (decimal?)p.PartAmount) ?? 0;
+        package.OriginalPrice = package.TotalLaborAmount + package.TotalPartAmount;
+        package.PackagePrice = Math.Round(package.OriginalPrice * (1 - package.DiscountPercent / 100), 0);
+        await db.SaveChangesAsync();
+
+        return new { success = true, lineId, packageNo = package.PackageNo };
+    }
+
+    public async Task<object?> RemoveServicePackageAsync(string packageNo)
+    {
+        packageNo = packageNo.Trim().ToUpperInvariant();
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null) return null;
+
+        var hasSubscriptions = await db.ServicePackageSubscriptions.AnyAsync(s => s.OrgId == Org && s.PackageNo == package.PackageNo);
+        if (hasSubscriptions)
+            throw new InvalidOperationException($"Gói dịch vụ {packageNo} đã phát sinh hợp đồng đăng ký thẻ cho xe, không thể xóa trực tiếp.");
+
+        var laborLines = await db.ServicePackageLaborLines.Where(l => l.OrgId == Org && l.ServicePackageId == package.Id).ToListAsync();
+        var partLines = await db.ServicePackagePartLines.Where(p => p.OrgId == Org && p.ServicePackageId == package.Id).ToListAsync();
+
+        if (laborLines.Count > 0) db.ServicePackageLaborLines.RemoveRange(laborLines);
+        if (partLines.Count > 0) db.ServicePackagePartLines.RemoveRange(partLines);
+        db.ServicePackages.Remove(package);
+
+        await db.SaveChangesAsync();
+        return new { success = true, packageNo = package.PackageNo, message = $"Đã xóa gói dịch vụ {packageNo} thành công." };
+    }
+
+    public async Task<object> SubscribeServicePackageAsync(SubscribeServicePackageDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.PackageNo))
+            throw new InvalidOperationException("Cần mã gói dịch vụ PackageNo.");
+
+        if (string.IsNullOrWhiteSpace(dto.Vin))
+            throw new InvalidOperationException("Cần số khung VIN của xe để đăng ký thẻ gói dịch vụ.");
+
+        var packageNo = dto.PackageNo.Trim().ToUpperInvariant();
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && (p.PackageNo == packageNo || p.PackageNoUser == packageNo));
+        if (package is null)
+            throw new InvalidOperationException($"Không tìm thấy gói dịch vụ {packageNo}.");
+
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null)
+            throw new InvalidOperationException($"Không tìm thấy xe mang số khung VIN {vin}.");
+
+        var now = DateTime.Now;
+        var subNo = $"SUB-{now:yyyy}-{(await db.ServicePackageSubscriptions.CountAsync(s => s.OrgId == Org) + 1):D4}";
+        var cardNo = !string.IsNullOrWhiteSpace(dto.PackageCardNo)
+            ? dto.PackageCardNo.Trim().ToUpperInvariant()
+            : $"CRD-{now:yyyy}-{(await db.ServicePackageSubscriptions.CountAsync(s => s.OrgId == Org) + 1):D4}";
+
+        var startDate = dto.StartDate ?? now;
+        var expiryDate = dto.ExpiryDate ?? startDate.AddMonths(package.ValidityMonths > 0 ? package.ValidityMonths : 12);
+        var maxUsage = dto.MaxUsageCount ?? (package.MaxUsageCount > 0 ? package.MaxUsageCount : 1);
+        var price = dto.TotalPackagePrice ?? package.PackagePrice;
+        var paidAmount = dto.PaidAmount ?? price;
+        var dealerCode = !string.IsNullOrWhiteSpace(dto.DealerCode) ? dto.DealerCode.Trim().ToUpperInvariant() : (!string.IsNullOrWhiteSpace(vehicle.DealerCode) ? vehicle.DealerCode : "DLR-HN01");
+
+        var subscription = new ServicePackageSubscription
+        {
+            OrgId = Org,
+            SubscriptionNo = subNo,
+            SubscriptionNoUser = dto.SubscriptionNoUser?.Trim() ?? $"HD-GDV/{now:yyyy}/{subNo}",
+            PackageCardNo = cardNo,
+            ServicePackageId = package.Id,
+            PackageNo = package.PackageNo,
+            PackageName = package.PackageName,
+            PackageType = package.PackageType,
+            Vin = vehicle.Vin,
+            Model = vehicle.Model,
+            EngineNo = vehicle.EngineNo,
+            PlateNo = vehicle.PlateNo,
+            CustomerName = !string.IsNullOrWhiteSpace(dto.CustomerName) ? dto.CustomerName.Trim() : (vehicle.OwnerName ?? "Khách hàng mua xe"),
+            CustomerPhone = !string.IsNullOrWhiteSpace(dto.CustomerPhone) ? dto.CustomerPhone.Trim() : (vehicle.OwnerPhone ?? "0901234567"),
+            CustomerEmail = dto.CustomerEmail?.Trim(),
+            DealerCode = dealerCode,
+            DealerName = dto.DealerName?.Trim() ?? (dealerCode == "ALL" ? "Hyundai Toàn Quốc OEM" : dealerCode),
+            SalesAdvisor = dto.SalesAdvisor?.Trim(),
+            PurchaseDate = dto.PurchaseDate ?? now,
+            StartDate = startDate,
+            ExpiryDate = expiryDate,
+            TotalPackagePrice = price,
+            PaidAmount = paidAmount,
+            IsPaid = paidAmount >= price,
+            PaymentMethod = string.IsNullOrWhiteSpace(dto.PaymentMethod) ? "Cash" : dto.PaymentMethod.Trim(),
+            MaxUsageCount = maxUsage,
+            UsedCount = 0,
+            RemainingCount = maxUsage,
+            TotalSavedAmount = 0,
+            Status = "Active",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = now
+        };
+
+        db.ServicePackageSubscriptions.Add(subscription);
+
+        package.TotalSubscribedCount++;
+
+        vehicle.LastServicePackageNo = package.PackageNo;
+        vehicle.LastPackageCardNo = cardNo;
+        vehicle.ActiveServicePackageCount++;
+
+        Log(vehicle.Vin, "ServicePackageSubscribed", $"Đăng ký thành công gói {package.PackageName} ({package.PackageNo}), thẻ số {cardNo}, hạn dùng {expiryDate:dd/MM/yyyy}");
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            subscription,
+            vehicle = new
+            {
+                vehicle.Vin,
+                vehicle.Model,
+                vehicle.LastServicePackageNo,
+                vehicle.LastPackageCardNo,
+                vehicle.ActiveServicePackageCount
+            }
+        };
+    }
+
+    public async Task<object> ListServicePackageSubscriptionsAsync(string? status, string? dealer, string? packageNo, string? vin, string? cardNo, string? subNo)
+    {
+        var now = DateTime.Now;
+        var q = db.ServicePackageSubscriptions.Where(s => s.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            q = q.Where(s => s.Status == status.Trim());
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(s => s.DealerCode == d);
+        }
+
+        if (!string.IsNullOrWhiteSpace(packageNo))
+        {
+            var p = packageNo.Trim().ToUpperInvariant();
+            q = q.Where(s => s.PackageNo == p);
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            q = q.Where(s => s.Vin.Contains(v));
+        }
+
+        if (!string.IsNullOrWhiteSpace(cardNo))
+        {
+            var c = cardNo.Trim().ToUpperInvariant();
+            q = q.Where(s => s.PackageCardNo.Contains(c));
+        }
+
+        if (!string.IsNullOrWhiteSpace(subNo))
+        {
+            var sNo = subNo.Trim().ToUpperInvariant();
+            q = q.Where(s => s.SubscriptionNo.Contains(sNo) || (s.SubscriptionNoUser != null && s.SubscriptionNoUser.Contains(sNo)));
+        }
+
+        var items = await q.OrderByDescending(s => s.CreatedAt).ToListAsync();
+
+        bool hasChanges = false;
+        foreach (var s in items)
+        {
+            if (s.Status == "Active" && s.ExpiryDate < now)
+            {
+                s.Status = "Expired";
+                hasChanges = true;
+            }
+        }
+        if (hasChanges) await db.SaveChangesAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetServicePackageSubscriptionAsync(string subNo)
+    {
+        subNo = subNo.Trim().ToUpperInvariant();
+        var sub = await db.ServicePackageSubscriptions.FirstOrDefaultAsync(s => s.OrgId == Org && (s.SubscriptionNo == subNo || s.PackageCardNo == subNo || s.SubscriptionNoUser == subNo));
+        if (sub is null) return null;
+
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && p.PackageNo == sub.PackageNo);
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == sub.Vin);
+        var usages = await db.ServicePackageUsages.Where(u => u.OrgId == Org && u.SubscriptionId == sub.Id).OrderByDescending(u => u.UsageDate).ToListAsync();
+
+        return new
+        {
+            subscription = sub,
+            package,
+            vehicle,
+            usages
+        };
+    }
+
+    public async Task<object?> UpdateServicePackageSubscriptionAsync(string subNo, UpdateServicePackageSubscriptionDto dto)
+    {
+        subNo = subNo.Trim().ToUpperInvariant();
+        var sub = await db.ServicePackageSubscriptions.FirstOrDefaultAsync(s => s.OrgId == Org && (s.SubscriptionNo == subNo || s.PackageCardNo == subNo || s.SubscriptionNoUser == subNo));
+        if (sub is null) return null;
+
+        if (dto.SubscriptionNoUser != null) sub.SubscriptionNoUser = dto.SubscriptionNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PackageCardNo)) sub.PackageCardNo = dto.PackageCardNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerName)) sub.CustomerName = dto.CustomerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerPhone)) sub.CustomerPhone = dto.CustomerPhone.Trim();
+        if (dto.CustomerEmail != null) sub.CustomerEmail = dto.CustomerEmail.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) sub.DealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        if (dto.DealerName != null) sub.DealerName = dto.DealerName.Trim();
+        if (dto.SalesAdvisor != null) sub.SalesAdvisor = dto.SalesAdvisor.Trim();
+        if (dto.StartDate.HasValue) sub.StartDate = dto.StartDate.Value;
+        if (dto.ExpiryDate.HasValue) sub.ExpiryDate = dto.ExpiryDate.Value;
+        if (dto.TotalPackagePrice.HasValue) sub.TotalPackagePrice = dto.TotalPackagePrice.Value;
+        if (dto.PaidAmount.HasValue) sub.PaidAmount = dto.PaidAmount.Value;
+        if (dto.IsPaid.HasValue) sub.IsPaid = dto.IsPaid.Value;
+        if (!string.IsNullOrWhiteSpace(dto.PaymentMethod)) sub.PaymentMethod = dto.PaymentMethod.Trim();
+        if (dto.MaxUsageCount.HasValue)
+        {
+            sub.MaxUsageCount = dto.MaxUsageCount.Value;
+            sub.RemainingCount = Math.Max(0, sub.MaxUsageCount - sub.UsedCount);
+            if (sub.RemainingCount == 0 && sub.Status == "Active") sub.Status = "Exhausted";
+        }
+        if (!string.IsNullOrWhiteSpace(dto.Status)) sub.Status = dto.Status.Trim();
+        if (dto.Remark != null) sub.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return sub;
+    }
+
+    public async Task<object?> ServicePackageSubscriptionTransitionAsync(string subNo, string action, ServicePackageSubscriptionTransitionDto? dto)
+    {
+        subNo = subNo.Trim().ToUpperInvariant();
+        var sub = await db.ServicePackageSubscriptions.FirstOrDefaultAsync(s => s.OrgId == Org && (s.SubscriptionNo == subNo || s.PackageCardNo == subNo || s.SubscriptionNoUser == subNo));
+        if (sub is null) return null;
+
+        var now = DateTime.Now;
+        var act = action.Trim().ToLowerInvariant();
+
+        switch (act)
+        {
+            case "activate" or "active":
+                sub.Status = "Active";
+                break;
+
+            case "suspend":
+                sub.Status = "Suspended";
+                break;
+
+            case "resume" or "reactivate":
+                sub.Status = sub.RemainingCount > 0 ? "Active" : "Exhausted";
+                break;
+
+            case "renew" or "extend":
+                sub.ExpiryDate = dto?.ExpiryDate ?? sub.ExpiryDate.AddYears(1);
+                if (sub.Status == "Expired") sub.Status = sub.RemainingCount > 0 ? "Active" : "Exhausted";
+                break;
+
+            case "cancel":
+                sub.Status = "Cancelled";
+                sub.CancelledBy = dto?.Actor?.Trim() ?? "ServiceAdvisor";
+                sub.CancelledAt = dto?.TransitionDate ?? now;
+                sub.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+
+                var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == sub.Vin);
+                if (vehicle != null && vehicle.ActiveServicePackageCount > 0)
+                {
+                    vehicle.ActiveServicePackageCount = Math.Max(0, vehicle.ActiveServicePackageCount - 1);
+                    Log(vehicle.Vin, "ServicePackageCancelled", $"Hủy thẻ gói dịch vụ {sub.PackageCardNo} ({sub.PackageName}). Lý do: {sub.CancelReason}");
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không hợp lệ cho hợp đồng đăng ký thẻ.");
+        }
+
+        if (dto?.Note != null) sub.Remark = (sub.Remark + " | " + dto.Note).Trim(' ', '|');
+        await db.SaveChangesAsync();
+
+        return sub;
+    }
+
+    public async Task<object?> RemoveServicePackageSubscriptionAsync(string subNo)
+    {
+        subNo = subNo.Trim().ToUpperInvariant();
+        var sub = await db.ServicePackageSubscriptions.FirstOrDefaultAsync(s => s.OrgId == Org && (s.SubscriptionNo == subNo || s.PackageCardNo == subNo || s.SubscriptionNoUser == subNo));
+        if (sub is null) return null;
+
+        var hasUsages = await db.ServicePackageUsages.AnyAsync(u => u.OrgId == Org && u.SubscriptionId == sub.Id);
+        if (hasUsages)
+            throw new InvalidOperationException($"Thẻ {sub.PackageCardNo} đã có lượt đưa xe vào xưởng sử dụng, không thể xóa trực tiếp.");
+
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == sub.Vin);
+        if (vehicle != null && vehicle.ActiveServicePackageCount > 0)
+        {
+            vehicle.ActiveServicePackageCount = Math.Max(0, vehicle.ActiveServicePackageCount - 1);
+        }
+
+        var pkg = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && p.PackageNo == sub.PackageNo);
+        if (pkg != null && pkg.TotalSubscribedCount > 0)
+        {
+            pkg.TotalSubscribedCount = Math.Max(0, pkg.TotalSubscribedCount - 1);
+        }
+
+        db.ServicePackageSubscriptions.Remove(sub);
+        await db.SaveChangesAsync();
+
+        return new { success = true, subNo = sub.SubscriptionNo, cardNo = sub.PackageCardNo, message = "Đã xóa hợp đồng thẻ bảo dưỡng thành công." };
+    }
+
+    public async Task<object> RecordServicePackageUsageAsync(RecordServicePackageUsageDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.SubscriptionNo) && string.IsNullOrWhiteSpace(dto.PackageCardNo))
+            throw new InvalidOperationException("Cần mã hợp đồng SubscriptionNo hoặc mã thẻ PackageCardNo.");
+
+        var subKey = (!string.IsNullOrWhiteSpace(dto.SubscriptionNo) ? dto.SubscriptionNo : dto.PackageCardNo!).Trim().ToUpperInvariant();
+        var sub = await db.ServicePackageSubscriptions.FirstOrDefaultAsync(s => s.OrgId == Org && (s.SubscriptionNo == subKey || s.PackageCardNo == subKey || s.SubscriptionNoUser == subKey));
+        if (sub is null)
+            throw new InvalidOperationException($"Không tìm thấy thẻ gói dịch vụ {subKey}.");
+
+        var now = DateTime.Now;
+        if (sub.Status == "Expired" || sub.ExpiryDate < now)
+            throw new InvalidOperationException($"Thẻ {sub.PackageCardNo} đã hết hạn hiệu lực vào ngày {sub.ExpiryDate:dd/MM/yyyy}.");
+
+        if (sub.Status == "Cancelled" || sub.Status == "Suspended")
+            throw new InvalidOperationException($"Thẻ {sub.PackageCardNo} đang ở trạng thái {sub.Status}, không thể sử dụng.");
+
+        if (sub.RemainingCount <= 0)
+            throw new InvalidOperationException($"Thẻ {sub.PackageCardNo} đã hết số lượt sử dụng ({sub.UsedCount}/{sub.MaxUsageCount}).");
+
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && p.PackageNo == sub.PackageNo);
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == sub.Vin);
+
+        var usageNo = $"USG-{now:yyyy}-{(await db.ServicePackageUsages.CountAsync(u => u.OrgId == Org) + 1):D4}";
+        var dealerCode = !string.IsNullOrWhiteSpace(dto.DealerCode) ? dto.DealerCode.Trim().ToUpperInvariant() : sub.DealerCode;
+
+        var laborSaved = dto.LaborSavedAmount ?? (package?.TotalLaborAmount ?? 350000m);
+        var partSaved = dto.PartSavedAmount ?? (package?.TotalPartAmount ?? 850000m);
+        var totalSaved = laborSaved + partSaved;
+
+        var usage = new ServicePackageUsage
+        {
+            OrgId = Org,
+            UsageNo = usageNo,
+            SubscriptionId = sub.Id,
+            SubscriptionNo = sub.SubscriptionNo,
+            PackageCardNo = sub.PackageCardNo,
+            PackageNo = sub.PackageNo,
+            PackageName = sub.PackageName,
+            Vin = sub.Vin,
+            Model = sub.Model,
+            PlateNo = dto.Vin != null && vehicle != null ? vehicle.PlateNo : sub.PlateNo,
+            DealerCode = dealerCode,
+            DealerName = dto.DealerName?.Trim() ?? (dealerCode == "ALL" ? "Hyundai Toàn Quốc OEM" : dealerCode),
+            UsageDate = dto.UsageDate ?? now,
+            OdoKm = dto.OdoKm > 0 ? dto.OdoKm : (vehicle?.LastOdoKm ?? 5000),
+            MilestoneUsed = dto.MilestoneUsed ?? (package?.MilestoneKm ?? 5000),
+            RoNo = dto.RoNo?.Trim().ToUpperInvariant(),
+            CavityNo = dto.CavityNo?.Trim().ToUpperInvariant(),
+            Technician = dto.Technician?.Trim(),
+            ServiceAdvisor = dto.ServiceAdvisor?.Trim(),
+            LaborSavedAmount = laborSaved,
+            PartSavedAmount = partSaved,
+            TotalSavedAmount = totalSaved,
+            Status = "Confirmed",
+            CustomerRating = dto.CustomerRating ?? 5.0m,
+            CustomerFeedback = dto.CustomerFeedback?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = now,
+            ConfirmedBy = dto.CreatedBy?.Trim() ?? "ServiceAdvisor",
+            ConfirmedAt = now
+        };
+
+        db.ServicePackageUsages.Add(usage);
+
+        sub.UsedCount++;
+        sub.RemainingCount = Math.Max(0, sub.MaxUsageCount - sub.UsedCount);
+        sub.TotalSavedAmount += totalSaved;
+        if (sub.RemainingCount == 0) sub.Status = "Exhausted";
+
+        if (package != null) package.TotalUsedCount++;
+
+        if (vehicle != null)
+        {
+            vehicle.PackageUsageCount++;
+            vehicle.LastOdoKm = usage.OdoKm;
+            Log(vehicle.Vin, "ServicePackageUsed", $"Sử dụng quyền lợi gói {sub.PackageName} ({usage.UsageNo}) tại ODO {usage.OdoKm:N0} km, tiết kiệm {totalSaved:N0} VNĐ. Thẻ {sub.PackageCardNo} còn lại {sub.RemainingCount} lượt.");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            usage,
+            subscription = new
+            {
+                sub.SubscriptionNo,
+                sub.PackageCardNo,
+                sub.UsedCount,
+                sub.RemainingCount,
+                sub.Status,
+                sub.TotalSavedAmount
+            }
+        };
+    }
+
+    public async Task<object> ListServicePackageUsagesAsync(string? status, string? dealer, string? packageNo, string? vin, string? cardNo, string? usageNo, string? roNo)
+    {
+        var q = db.ServicePackageUsages.Where(u => u.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            q = q.Where(u => u.Status == status.Trim());
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            q = q.Where(u => u.DealerCode == d);
+        }
+
+        if (!string.IsNullOrWhiteSpace(packageNo))
+        {
+            var p = packageNo.Trim().ToUpperInvariant();
+            q = q.Where(u => u.PackageNo == p);
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            q = q.Where(u => u.Vin.Contains(v));
+        }
+
+        if (!string.IsNullOrWhiteSpace(cardNo))
+        {
+            var c = cardNo.Trim().ToUpperInvariant();
+            q = q.Where(u => u.PackageCardNo.Contains(c));
+        }
+
+        if (!string.IsNullOrWhiteSpace(usageNo))
+        {
+            var uNo = usageNo.Trim().ToUpperInvariant();
+            q = q.Where(u => u.UsageNo.Contains(uNo));
+        }
+
+        if (!string.IsNullOrWhiteSpace(roNo))
+        {
+            var r = roNo.Trim().ToUpperInvariant();
+            q = q.Where(u => u.RoNo != null && u.RoNo.Contains(r));
+        }
+
+        var items = await q.OrderByDescending(u => u.UsageDate).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetServicePackageUsageAsync(string usageNo)
+    {
+        usageNo = usageNo.Trim().ToUpperInvariant();
+        var usage = await db.ServicePackageUsages.FirstOrDefaultAsync(u => u.OrgId == Org && u.UsageNo == usageNo);
+        if (usage is null) return null;
+
+        var sub = await db.ServicePackageSubscriptions.FirstOrDefaultAsync(s => s.OrgId == Org && s.Id == usage.SubscriptionId);
+        var package = await db.ServicePackages.FirstOrDefaultAsync(p => p.OrgId == Org && p.PackageNo == usage.PackageNo);
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == usage.Vin);
+
+        return new
+        {
+            usage,
+            subscription = sub,
+            package,
+            vehicle
+        };
+    }
+
+    public async Task<object?> ServicePackageUsageTransitionAsync(string usageNo, string action, ServicePackageUsageTransitionDto? dto)
+    {
+        usageNo = usageNo.Trim().ToUpperInvariant();
+        var usage = await db.ServicePackageUsages.FirstOrDefaultAsync(u => u.OrgId == Org && u.UsageNo == usageNo);
+        if (usage is null) return null;
+
+        var now = DateTime.Now;
+        var act = action.Trim().ToLowerInvariant();
+
+        switch (act)
+        {
+            case "confirm":
+                usage.Status = "Confirmed";
+                usage.ConfirmedBy = dto?.Actor?.Trim() ?? "ServiceAdvisor";
+                usage.ConfirmedAt = dto?.TransitionDate ?? now;
+                break;
+
+            case "complete":
+                usage.Status = "Completed";
+                break;
+
+            case "cancel":
+                if (usage.Status != "Cancelled")
+                {
+                    usage.Status = "Cancelled";
+                    var sub = await db.ServicePackageSubscriptions.FirstOrDefaultAsync(s => s.OrgId == Org && s.Id == usage.SubscriptionId);
+                    if (sub != null && sub.UsedCount > 0)
+                    {
+                        sub.UsedCount = Math.Max(0, sub.UsedCount - 1);
+                        sub.RemainingCount = Math.Max(0, sub.MaxUsageCount - sub.UsedCount);
+                        sub.TotalSavedAmount = Math.Max(0, sub.TotalSavedAmount - usage.TotalSavedAmount);
+                        if (sub.RemainingCount > 0 && sub.Status == "Exhausted") sub.Status = "Active";
+                    }
+
+                    var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == usage.Vin);
+                    if (vehicle != null && vehicle.PackageUsageCount > 0)
+                    {
+                        vehicle.PackageUsageCount = Math.Max(0, vehicle.PackageUsageCount - 1);
+                        Log(vehicle.Vin, "ServicePackageUsageCancelled", $"Hủy lượt sử dụng gói {usage.UsageNo}. Khôi phục 1 lượt cho thẻ {usage.PackageCardNo}.");
+                    }
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không hợp lệ cho lượt sử dụng gói.");
+        }
+
+        if (dto?.Note != null) usage.Remark = (usage.Remark + " | " + dto.Note).Trim(' ', '|');
+        await db.SaveChangesAsync();
+
+        return usage;
+    }
+
+    public async Task<object?> RecordServicePackageUsageFeedbackAsync(string usageNo, RecordServicePackageUsageFeedbackDto dto)
+    {
+        usageNo = usageNo.Trim().ToUpperInvariant();
+        var usage = await db.ServicePackageUsages.FirstOrDefaultAsync(u => u.OrgId == Org && u.UsageNo == usageNo);
+        if (usage is null) return null;
+
+        usage.CustomerRating = dto.CustomerRating;
+        if (!string.IsNullOrWhiteSpace(dto.CustomerFeedback)) usage.CustomerFeedback = dto.CustomerFeedback.Trim();
+
+        await db.SaveChangesAsync();
+        return usage;
+    }
+
+    public async Task<object?> GetVehicleServicePackageInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null) return null;
+
+        var subscriptions = await db.ServicePackageSubscriptions.Where(s => s.OrgId == Org && s.Vin == vin).OrderByDescending(s => s.CreatedAt).ToListAsync();
+        var usages = await db.ServicePackageUsages.Where(u => u.OrgId == Org && u.Vin == vin).OrderByDescending(u => u.UsageDate).Take(20).ToListAsync();
+
+        return new VehicleServicePackageInfoDto(
+            vehicle.Vin,
+            vehicle.Model,
+            vehicle.EngineNo,
+            vehicle.Color,
+            vehicle.StorageCode,
+            vehicle.DealerCode,
+            vehicle.LastServicePackageNo,
+            vehicle.LastPackageCardNo,
+            vehicle.ActiveServicePackageCount,
+            vehicle.PackageUsageCount,
+            subscriptions,
+            usages
+        );
+    }
+
+    public async Task<object?> GetVehicleServicePackageHistoryAsync(string vin)
+    {
+        return await GetVehicleServicePackageInfoAsync(vin);
+    }
+
+    public async Task<object> GetServicePackageSummaryAsync(string? dealerCode, string? packageType)
+    {
+        var packagesQ = db.ServicePackages.Where(p => p.OrgId == Org);
+        var subQ = db.ServicePackageSubscriptions.Where(s => s.OrgId == Org);
+        var usageQ = db.ServicePackageUsages.Where(u => u.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+        {
+            var d = dealerCode.Trim().ToUpperInvariant();
+            subQ = subQ.Where(s => s.DealerCode == d);
+            usageQ = usageQ.Where(u => u.DealerCode == d);
+        }
+
+        if (!string.IsNullOrWhiteSpace(packageType))
+        {
+            var pt = packageType.Trim();
+            packagesQ = packagesQ.Where(p => p.PackageType == pt);
+            subQ = subQ.Where(s => s.PackageType == pt);
+        }
+
+        var packages = await packagesQ.ToListAsync();
+        var subs = await subQ.ToListAsync();
+        var usages = await usageQ.ToListAsync();
+
+        var totalPackages = packages.Count;
+        var totalActivePackages = packages.Count(p => p.Status == "Active");
+        var totalDraftPackages = packages.Count(p => p.Status == "Draft");
+        var totalArchivedPackages = packages.Count(p => p.Status == "Archived");
+
+        var totalSubscriptions = subs.Count;
+        var totalActiveSubscriptions = subs.Count(s => s.Status == "Active");
+        var totalExhaustedSubscriptions = subs.Count(s => s.Status == "Exhausted");
+        var totalExpiredSubscriptions = subs.Count(s => s.Status == "Expired");
+
+        var totalUsages = usages.Count;
+        var totalSubscriptionRevenue = subs.Sum(s => s.PaidAmount);
+        var totalCustomerSavings = usages.Sum(u => u.TotalSavedAmount);
+
+        var totalGrantedUsageCount = subs.Sum(s => s.MaxUsageCount);
+        var totalActualUsedCount = subs.Sum(s => s.UsedCount);
+        var packageUtilizationRatePercent = totalGrantedUsageCount > 0
+            ? Math.Round((decimal)totalActualUsedCount / totalGrantedUsageCount * 100, 1)
+            : 0m;
+
+        var byPackageType = packages.GroupBy(p => p.PackageType).Select(g =>
+        {
+            var pNos = g.Select(x => x.PackageNo).ToList();
+            var pSubs = subs.Where(s => pNos.Contains(s.PackageNo)).ToList();
+            var pUsages = usages.Where(u => pNos.Contains(u.PackageNo)).ToList();
+            return new ServicePackageTypeStatsDto(
+                g.Key,
+                g.Count(),
+                pSubs.Count,
+                pUsages.Count,
+                pSubs.Sum(s => s.PaidAmount)
+            );
+        }).OrderByDescending(t => t.Revenue).ToList();
+
+        var byDealer = subs.GroupBy(s => s.DealerCode).Select(g =>
+        {
+            var dUsages = usages.Where(u => u.DealerCode == g.Key).ToList();
+            return new ServicePackageDealerStatsDto(
+                g.Key,
+                g.First().DealerName ?? g.Key,
+                g.Count(),
+                dUsages.Count,
+                g.Sum(s => s.PaidAmount)
+            );
+        }).OrderByDescending(d => d.Revenue).ToList();
+
+        var byModel = subs.GroupBy(s => s.Model).Select(g =>
+        {
+            var mUsages = usages.Where(u => u.Model == g.Key).ToList();
+            return new ServicePackageModelStatsDto(
+                g.Key,
+                g.Count(),
+                mUsages.Count,
+                mUsages.Sum(u => u.TotalSavedAmount)
+            );
+        }).OrderByDescending(m => m.SubscriptionsCount).ToList();
+
+        return new ServicePackageSummaryDto(
+            totalPackages,
+            totalActivePackages,
+            totalDraftPackages,
+            totalArchivedPackages,
+            totalSubscriptions,
+            totalActiveSubscriptions,
+            totalExhaustedSubscriptions,
+            totalExpiredSubscriptions,
+            totalUsages,
+            totalSubscriptionRevenue,
+            totalCustomerSavings,
+            packageUtilizationRatePercent,
+            byPackageType,
+            byDealer,
+            byModel
+        );
+    }
 }
+

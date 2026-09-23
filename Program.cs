@@ -4645,6 +4645,273 @@ app.MapPost("/api/certificates/{certNo}/{action}", async (string certNo, string 
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).RequireAuthorization();
 
+// ===== Quản lý Gói Dịch Vụ & Thẻ Bảo Dưỡng Trọn Gói Xe Ô Tô (BizCarSv.ServicePackage / Ser_ServicePackage) =====
+
+app.MapPost("/api/service-packages", async (CreateServicePackageDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.PackageName))
+        return Results.BadRequest(new { error = "Cần tên gói dịch vụ PackageName." });
+    try { return Results.Ok(await svc.CreateServicePackageAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/service-packages", async (IVehicleService svc, string? status, string? dealer, string? packageType, string? model, string? packageNo) =>
+    Results.Ok(await svc.ListServicePackagesAsync(status, dealer, packageType, model, packageNo))).RequireAuthorization();
+
+app.MapGet("/api/service-packages/summary", async (IVehicleService svc, string? dealerCode, string? packageType) =>
+    Results.Ok(await svc.GetServicePackageSummaryAsync(dealerCode, packageType))).RequireAuthorization();
+
+app.MapGet("/api/reports/service-packages/summary", async (IVehicleService svc, string? dealerCode, string? packageType) =>
+    Results.Ok(await svc.GetServicePackageSummaryAsync(dealerCode, packageType))).RequireAuthorization();
+
+app.MapGet("/api/service-packages/{packageNo}", async (string packageNo, IVehicleService svc) =>
+{
+    var r = await svc.GetServicePackageAsync(packageNo);
+    return r is null ? Results.NotFound(new { packageNo, error = "Không tìm thấy gói dịch vụ." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/service-packages/{packageNo}", async (string packageNo, UpdateServicePackageHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServicePackageHeaderAsync(packageNo, dto);
+        return r is null ? Results.NotFound(new { packageNo, error = "Không tìm thấy gói dịch vụ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/{packageNo}/update", async (string packageNo, UpdateServicePackageHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServicePackageHeaderAsync(packageNo, dto);
+        return r is null ? Results.NotFound(new { packageNo, error = "Không tìm thấy gói dịch vụ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/{packageNo}/{action}", async (string packageNo, string action, ServicePackageTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "activate" or "active" or "suspend" or "resume" or "reactivate" or "archive" or "draft"))
+        return Results.BadRequest(new { error = "action = approve|activate|suspend|resume|archive|draft" });
+    try
+    {
+        var r = await svc.ServicePackageTransitionAsync(packageNo, action, dto);
+        return r is null ? Results.NotFound(new { packageNo, error = "Không tìm thấy gói dịch vụ hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/service-packages/{packageNo}", async (string packageNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveServicePackageAsync(packageNo);
+        return r is null ? Results.NotFound(new { packageNo, error = "Không tìm thấy gói dịch vụ hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/{packageNo}/labor-lines", async (string packageNo, List<ServicePackageLaborLineInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách hạng mục công việc labor lines." });
+    try
+    {
+        var r = await svc.AddServicePackageLaborLinesAsync(packageNo, items);
+        return r is null ? Results.NotFound(new { packageNo, error = "Không tìm thấy gói dịch vụ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/{packageNo}/labor-lines/{lineId:long}/update", async (string packageNo, long lineId, UpdateServicePackageLaborLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServicePackageLaborLineAsync(packageNo, lineId, dto);
+        return r is null ? Results.NotFound(new { packageNo, lineId, error = "Không tìm thấy dòng công việc trong gói dịch vụ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/service-packages/{packageNo}/labor-lines/{lineId:long}", async (string packageNo, long lineId, UpdateServicePackageLaborLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServicePackageLaborLineAsync(packageNo, lineId, dto);
+        return r is null ? Results.NotFound(new { packageNo, lineId, error = "Không tìm thấy dòng công việc trong gói dịch vụ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/service-packages/{packageNo}/labor-lines/{lineId:long}", async (string packageNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveServicePackageLaborLineAsync(packageNo, lineId);
+        return r is null ? Results.NotFound(new { packageNo, lineId, error = "Không tìm thấy dòng công việc." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/{packageNo}/part-lines", async (string packageNo, List<ServicePackagePartLineInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách phụ tùng part lines." });
+    try
+    {
+        var r = await svc.AddServicePackagePartLinesAsync(packageNo, items);
+        return r is null ? Results.NotFound(new { packageNo, error = "Không tìm thấy gói dịch vụ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/{packageNo}/part-lines/{lineId:long}/update", async (string packageNo, long lineId, UpdateServicePackagePartLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServicePackagePartLineAsync(packageNo, lineId, dto);
+        return r is null ? Results.NotFound(new { packageNo, lineId, error = "Không tìm thấy dòng phụ tùng trong gói dịch vụ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/service-packages/{packageNo}/part-lines/{lineId:long}", async (string packageNo, long lineId, UpdateServicePackagePartLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServicePackagePartLineAsync(packageNo, lineId, dto);
+        return r is null ? Results.NotFound(new { packageNo, lineId, error = "Không tìm thấy dòng phụ tùng trong gói dịch vụ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/service-packages/{packageNo}/part-lines/{lineId:long}", async (string packageNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveServicePackagePartLineAsync(packageNo, lineId);
+        return r is null ? Results.NotFound(new { packageNo, lineId, error = "Không tìm thấy dòng phụ tùng." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/subscriptions", async (SubscribeServicePackageDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.PackageNo) || string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần mã gói PackageNo và số khung VIN của xe." });
+    try { return Results.Ok(await svc.SubscribeServicePackageAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/service-packages/subscriptions", async (IVehicleService svc, string? status, string? dealer, string? packageNo, string? vin, string? cardNo, string? subNo) =>
+    Results.Ok(await svc.ListServicePackageSubscriptionsAsync(status, dealer, packageNo, vin, cardNo, subNo))).RequireAuthorization();
+
+app.MapGet("/api/service-packages/subscriptions/{subNo}", async (string subNo, IVehicleService svc) =>
+{
+    var r = await svc.GetServicePackageSubscriptionAsync(subNo);
+    return r is null ? Results.NotFound(new { subNo, error = "Không tìm thấy hợp đồng thẻ bảo dưỡng." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/service-packages/subscriptions/{subNo}", async (string subNo, UpdateServicePackageSubscriptionDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServicePackageSubscriptionAsync(subNo, dto);
+        return r is null ? Results.NotFound(new { subNo, error = "Không tìm thấy hợp đồng thẻ bảo dưỡng." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/subscriptions/{subNo}/update", async (string subNo, UpdateServicePackageSubscriptionDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateServicePackageSubscriptionAsync(subNo, dto);
+        return r is null ? Results.NotFound(new { subNo, error = "Không tìm thấy hợp đồng thẻ bảo dưỡng." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/subscriptions/{subNo}/{action}", async (string subNo, string action, ServicePackageSubscriptionTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("activate" or "active" or "suspend" or "resume" or "reactivate" or "renew" or "extend" or "cancel"))
+        return Results.BadRequest(new { error = "action = activate|suspend|resume|renew|cancel" });
+    try
+    {
+        var r = await svc.ServicePackageSubscriptionTransitionAsync(subNo, action, dto);
+        return r is null ? Results.NotFound(new { subNo, error = "Không tìm thấy hợp đồng thẻ hoặc sai trạng thái." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/service-packages/subscriptions/{subNo}", async (string subNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveServicePackageSubscriptionAsync(subNo);
+        return r is null ? Results.NotFound(new { subNo, error = "Không tìm thấy hợp đồng thẻ hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/usages", async (RecordServicePackageUsageDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.SubscriptionNo) && string.IsNullOrWhiteSpace(dto.PackageCardNo))
+        return Results.BadRequest(new { error = "Cần mã hợp đồng SubscriptionNo hoặc mã thẻ PackageCardNo." });
+    try { return Results.Ok(await svc.RecordServicePackageUsageAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/service-packages/usages", async (IVehicleService svc, string? status, string? dealer, string? packageNo, string? vin, string? cardNo, string? usageNo, string? roNo) =>
+    Results.Ok(await svc.ListServicePackageUsagesAsync(status, dealer, packageNo, vin, cardNo, usageNo, roNo))).RequireAuthorization();
+
+app.MapGet("/api/service-packages/usages/{usageNo}", async (string usageNo, IVehicleService svc) =>
+{
+    var r = await svc.GetServicePackageUsageAsync(usageNo);
+    return r is null ? Results.NotFound(new { usageNo, error = "Không tìm thấy lượt sử dụng gói dịch vụ." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/usages/{usageNo}/{action}", async (string usageNo, string action, ServicePackageUsageTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("confirm" or "complete" or "cancel"))
+        return Results.BadRequest(new { error = "action = confirm|complete|cancel" });
+    try
+    {
+        var r = await svc.ServicePackageUsageTransitionAsync(usageNo, action, dto);
+        return r is null ? Results.NotFound(new { usageNo, error = "Không tìm thấy lượt sử dụng hoặc sai trạng thái." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/service-packages/usages/{usageNo}/feedback", async (string usageNo, RecordServicePackageUsageFeedbackDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RecordServicePackageUsageFeedbackAsync(usageNo, dto);
+        return r is null ? Results.NotFound(new { usageNo, error = "Không tìm thấy lượt sử dụng gói." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/service-packages", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleServicePackageHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/service-package-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleServicePackageInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/service-package-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleServicePackageHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
