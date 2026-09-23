@@ -2177,6 +2177,24 @@ public interface IVehicleService
     Task<object?> GetVehicleAutoDoInfoAsync(string vin);
     Task<object?> GetVehicleAutoDoHistoryAsync(string vin);
     Task<object> GetAutoDeliveryOrderSummaryAsync(string? conditionCode, DateTime? fromDate, DateTime? toDate);
+
+    // ===== Khảo sát Chỉ số Hài lòng Bán hàng SSI (BizHTC.DealerSales / DLS_VINSurvey, RptSSI_ICIC, DlsVINSurvey_Update) =====
+    Task<object> CreateSalesSatisfactionSurveyAsync(CreateSalesSatisfactionSurveyDto dto);
+    Task<object> ListSalesSatisfactionSurveysAsync(string? status, string? dealer, string? model, string? npsCategory, bool? hasComplaint, string? surveyNo, string? vin, string? q);
+    Task<object?> GetSalesSatisfactionSurveyAsync(string surveyNo);
+    Task<object?> UpdateSalesSatisfactionSurveyHeaderAsync(string surveyNo, UpdateSalesSatisfactionSurveyDto dto);
+    Task<object?> CompleteSalesSatisfactionSurveyAsync(string surveyNo, CompleteSalesSatisfactionSurveyDto dto);
+    Task<object?> RecordSsiContactAttemptAsync(string surveyNo, RecordSsiContactAttemptDto dto);
+    Task<object?> EscalateSsiSurveyAsync(string surveyNo, EscalateSsiSurveyDto dto);
+    Task<object?> ResolveSsiComplaintAsync(string surveyNo, ResolveSsiComplaintDto dto);
+    Task<object?> SalesSatisfactionSurveyTransitionAsync(string surveyNo, string action, SalesSatisfactionSurveyTransitionDto? dto);
+    Task<object?> RemoveSalesSatisfactionSurveyAsync(string surveyNo);
+    Task<object?> AddSsiQuestionLinesAsync(string surveyNo, List<SsiQuestionInputDto> items);
+    Task<object?> UpdateSsiQuestionLineAsync(string surveyNo, long lineId, UpdateSsiQuestionLineDto dto);
+    Task<object?> RemoveSsiQuestionLineAsync(string surveyNo, long lineId);
+    Task<object?> GetVehicleSsiInfoAsync(string vin);
+    Task<object?> GetVehicleSsiHistoryAsync(string vin);
+    Task<SalesSatisfactionSummaryDto> GetSalesSatisfactionSummaryAsync(string? dealerCode, string? model, DateTime? fromDate, DateTime? toDate);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -36514,6 +36532,909 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             successRate,
             byModel,
             byDealer
+        );
+    }
+
+    // ===== Khảo sát Chỉ số Hài lòng Bán hàng SSI (BizHTC.DealerSales / DLS_VINSurvey, RptSSI_ICIC, DlsVINSurvey_Update) =====
+
+    private static decimal CalculateWeightedSsi(
+        decimal scoreConsultant,
+        decimal scoreFacility,
+        decimal scoreDelivery,
+        decimal scorePaperwork,
+        decimal scoreTimeliness,
+        decimal scoreOverall)
+    {
+        // Trọng số chuẩn hóa tiêu chuẩn đánh giá SSI của OEM & J.D. Power:
+        // TVBH: 25%, Bàn giao xe: 25%, Giấy tờ & Tài chính: 20%, Cơ sở vật chất: 15%, Đúng hẹn: 15%
+        var weighted = (scoreConsultant * 0.25m) +
+                       (scoreDelivery * 0.25m) +
+                       (scorePaperwork * 0.20m) +
+                       (scoreFacility * 0.15m) +
+                       (scoreTimeliness * 0.15m);
+
+        if (scoreOverall > 0)
+        {
+            // Kết hợp điểm trải nghiệm tổng thể (80% điểm thành phần + 20% điểm tổng thể)
+            weighted = (weighted * 0.80m) + (scoreOverall * 0.20m);
+        }
+
+        return Math.Round(Math.Clamp(weighted, 1.0m, 5.0m), 2);
+    }
+
+    private static string GetNpsCategory(int npsScore)
+    {
+        return npsScore >= 9 ? "Promoter" : (npsScore >= 7 ? "Passive" : "Detractor");
+    }
+
+    public async Task<object> CreateSalesSatisfactionSurveyAsync(CreateSalesSatisfactionSurveyDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Vin))
+            throw new InvalidOperationException("Cần cung cấp số khung xe VIN để lập phiếu khảo sát SSI.");
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+
+        var surveyNo = string.IsNullOrWhiteSpace(dto.SurveyNo)
+            ? $"SSI-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}"
+            : dto.SurveyNo.Trim().ToUpperInvariant();
+
+        if (await db.SalesSatisfactionSurveys.AnyAsync(s => s.OrgId == Org && s.SurveyNo == surveyNo))
+            throw new InvalidOperationException($"Mã phiếu khảo sát SSI {surveyNo} đã tồn tại.");
+
+        DealerDeal? deal = null;
+        if (!string.IsNullOrWhiteSpace(dto.DealNo))
+        {
+            var dNo = dto.DealNo.Trim().ToUpperInvariant();
+            deal = await db.DealerDeals.FirstOrDefaultAsync(d => d.OrgId == Org && d.DealNo == dNo);
+        }
+        else
+        {
+            // Tự động tìm deal bán lẻ gần nhất của VIN nếu có
+            var dealLine = await db.DealerDealLines.Where(l => l.OrgId == Org && l.Vin == vin).OrderByDescending(l => l.Id).FirstOrDefaultAsync();
+            if (dealLine != null)
+            {
+                deal = await db.DealerDeals.FirstOrDefaultAsync(d => d.OrgId == Org && d.DealNo == dealLine.DealNo);
+            }
+        }
+
+        var model = !string.IsNullOrWhiteSpace(dto.Model) ? dto.Model.Trim() : (vehicle?.Model ?? "Hyundai Model");
+        var specCode = dto.SpecCode?.Trim() ?? vehicle?.Model;
+        var engineNo = dto.EngineNo?.Trim() ?? vehicle?.EngineNo;
+        var color = dto.Color?.Trim() ?? vehicle?.Color;
+        var plateNo = dto.PlateNo?.Trim() ?? vehicle?.PlateNo;
+        var dealerCode = !string.IsNullOrWhiteSpace(dto.DealerCode) ? dto.DealerCode.Trim().ToUpperInvariant() : (deal?.DealerCode ?? vehicle?.DealerCode ?? "DLR-HN01");
+        var customerName = !string.IsNullOrWhiteSpace(dto.CustomerName) ? dto.CustomerName.Trim() : (deal?.CustomerName ?? vehicle?.OwnerName ?? "Khách hàng");
+        var customerPhone = !string.IsNullOrWhiteSpace(dto.CustomerPhone) ? dto.CustomerPhone.Trim() : (deal?.CustomerPhone ?? vehicle?.OwnerPhone ?? "");
+        var customerEmail = dto.CustomerEmail?.Trim();
+        var customerType = dto.CustomerType?.Trim() ?? deal?.CustomerType ?? "Individual";
+        var salesConsultantCode = dto.SalesConsultantCode?.Trim() ?? deal?.SalesManCode;
+        var salesConsultantName = dto.SalesConsultantName?.Trim() ?? deal?.SalesManName;
+        var deliveryDate = dto.DeliveryDate ?? vehicle?.DeliveredAt ?? deal?.DeliveredAt ?? DateTime.Now.AddDays(-3);
+        var surveyDate = dto.SurveyDate ?? DateTime.Now;
+
+        var survey = new SalesSatisfactionSurvey
+        {
+            OrgId = Org,
+            SurveyNo = surveyNo,
+            SurveyNoUser = dto.SurveyNoUser?.Trim(),
+            DealNo = deal?.DealNo ?? dto.DealNo?.Trim().ToUpperInvariant(),
+            Vin = vin,
+            Model = model,
+            SpecCode = specCode,
+            EngineNo = engineNo,
+            Color = color,
+            PlateNo = plateNo,
+            CustomerName = customerName,
+            CustomerPhone = customerPhone,
+            CustomerEmail = customerEmail,
+            CustomerType = customerType,
+            DealerCode = dealerCode,
+            DealerName = dto.DealerName?.Trim() ?? dealerCode,
+            SalesConsultantCode = salesConsultantCode,
+            SalesConsultantName = salesConsultantName,
+            DeliveryDate = deliveryDate,
+            SurveyDate = surveyDate,
+            ContactChannel = dto.ContactChannel?.Trim() ?? "PhoneCall",
+            SurveyorStaff = dto.SurveyorStaff?.Trim() ?? "ICIC Center",
+            Status = "Pending",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now
+        };
+
+        db.SalesSatisfactionSurveys.Add(survey);
+        await db.SaveChangesAsync();
+
+        if (dto.Questions != null && dto.Questions.Count > 0)
+        {
+            int idx = 1;
+            foreach (var q in dto.Questions)
+            {
+                if (string.IsNullOrWhiteSpace(q.QuestionCode)) continue;
+                db.SalesSatisfactionSurveyQuestionLines.Add(new SalesSatisfactionSurveyQuestionLine
+                {
+                    OrgId = Org,
+                    SalesSatisfactionSurveyId = survey.Id,
+                    SurveyNo = survey.SurveyNo,
+                    LineIndex = idx++,
+                    QuestionCode = q.QuestionCode.Trim().ToUpperInvariant(),
+                    QuestionCategory = q.QuestionCategory?.Trim() ?? "SalesConsultant",
+                    QuestionText = q.QuestionText.Trim(),
+                    Score = q.Score > 0 ? q.Score : 5.0m,
+                    AnswerText = q.AnswerText?.Trim(),
+                    Weight = q.Weight > 0 ? q.Weight.Value : 1.0m,
+                    Remark = q.Remark?.Trim()
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        Log(vin, "SSISurveyCreated", $"{surveyNo} Tạo phiếu khảo sát hài lòng bán hàng SSI cho xe {model} (ĐL {dealerCode}). TVBH: {salesConsultantName ?? "N/A"}. Khách hàng: {customerName}");
+
+        return await GetSalesSatisfactionSurveyAsync(survey.SurveyNo) ?? survey;
+    }
+
+    public async Task<object> ListSalesSatisfactionSurveysAsync(
+        string? status,
+        string? dealer,
+        string? model,
+        string? npsCategory,
+        bool? hasComplaint,
+        string? surveyNo,
+        string? vin,
+        string? q)
+    {
+        var query = db.SalesSatisfactionSurveys.Where(s => s.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(s => s.Status == status.Trim());
+
+        if (!string.IsNullOrWhiteSpace(dealer))
+        {
+            var d = dealer.Trim().ToUpperInvariant();
+            query = query.Where(s => s.DealerCode == d);
+        }
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var m = model.Trim().ToLowerInvariant();
+            query = query.Where(s => s.Model.ToLower().Contains(m));
+        }
+
+        if (!string.IsNullOrWhiteSpace(npsCategory))
+            query = query.Where(s => s.NpsCategory == npsCategory.Trim());
+
+        if (hasComplaint.HasValue)
+            query = query.Where(s => s.HasComplaint == hasComplaint.Value);
+
+        if (!string.IsNullOrWhiteSpace(surveyNo))
+        {
+            var sn = surveyNo.Trim().ToUpperInvariant();
+            query = query.Where(s => s.SurveyNo.Contains(sn));
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var v = vin.Trim().ToUpperInvariant();
+            query = query.Where(s => s.Vin.Contains(v));
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var s = q.Trim().ToLowerInvariant();
+            query = query.Where(x => x.SurveyNo.ToLower().Contains(s) ||
+                                     x.Vin.ToLower().Contains(s) ||
+                                     x.CustomerName.ToLower().Contains(s) ||
+                                     x.CustomerPhone.ToLower().Contains(s) ||
+                                     (x.SalesConsultantName != null && x.SalesConsultantName.ToLower().Contains(s)) ||
+                                     (x.Remark != null && x.Remark.ToLower().Contains(s)));
+        }
+
+        var list = await query.OrderByDescending(s => s.SurveyDate).ThenByDescending(s => s.Id).ToListAsync();
+
+        var surveyIds = list.Select(s => s.Id).ToList();
+        var questionsCount = await db.SalesSatisfactionSurveyQuestionLines
+            .Where(qLine => qLine.OrgId == Org && surveyIds.Contains(qLine.SalesSatisfactionSurveyId))
+            .GroupBy(qLine => qLine.SalesSatisfactionSurveyId)
+            .ToDictionaryAsync(g => g.Key, g => g.Count());
+
+        var items = list.Select(s => new
+        {
+            s.Id,
+            s.SurveyNo,
+            s.SurveyNoUser,
+            s.DealNo,
+            s.Vin,
+            s.Model,
+            s.SpecCode,
+            s.Color,
+            s.PlateNo,
+            s.CustomerName,
+            s.CustomerPhone,
+            s.CustomerType,
+            s.DealerCode,
+            s.DealerName,
+            s.SalesConsultantCode,
+            s.SalesConsultantName,
+            s.DeliveryDate,
+            s.SurveyDate,
+            s.ContactChannel,
+            s.CallAttempts,
+            s.ScoreSalesConsultant,
+            s.ScoreDealershipFacility,
+            s.ScoreDeliveryProcess,
+            s.ScorePaperworkFinance,
+            s.ScoreTimeliness,
+            s.ScoreOverall,
+            s.CalculatedSsiScore,
+            s.SsiIndex1000,
+            s.IsCleanCarDelivered,
+            s.IsFeatureExplained,
+            s.IsAdasExplained,
+            s.IsAvnBluelinkSetup,
+            s.IsOriginalDocsHandedOver,
+            s.IsFollowUpCallPromised,
+            s.NpsScore,
+            s.NpsCategory,
+            s.CustomerFeedback,
+            s.HasComplaint,
+            s.ComplaintCategory,
+            s.IsComplaintResolved,
+            s.Status,
+            s.SurveyorStaff,
+            s.CompletedBy,
+            s.CompletedAt,
+            QuestionsCount = questionsCount.TryGetValue(s.Id, out var qc) ? qc : 0
+        }).ToList();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetSalesSatisfactionSurveyAsync(string surveyNo)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        var questions = await db.SalesSatisfactionSurveyQuestionLines
+            .Where(q => q.OrgId == Org && q.SalesSatisfactionSurveyId == s.Id)
+            .OrderBy(q => q.LineIndex)
+            .ToListAsync();
+
+        return new
+        {
+            s.Id,
+            s.SurveyNo,
+            s.SurveyNoUser,
+            s.DealNo,
+            s.Vin,
+            s.Model,
+            s.SpecCode,
+            s.EngineNo,
+            s.Color,
+            s.PlateNo,
+            s.CustomerName,
+            s.CustomerPhone,
+            s.CustomerEmail,
+            s.CustomerType,
+            s.DealerCode,
+            s.DealerName,
+            s.SalesConsultantCode,
+            s.SalesConsultantName,
+            s.DeliveryDate,
+            s.SurveyDate,
+            s.ContactChannel,
+            s.CallAttempts,
+            s.SurveyorStaff,
+            s.ScoreSalesConsultant,
+            s.ScoreDealershipFacility,
+            s.ScoreDeliveryProcess,
+            s.ScorePaperworkFinance,
+            s.ScoreTimeliness,
+            s.ScoreOverall,
+            s.CalculatedSsiScore,
+            s.SsiIndex1000,
+            s.IsCleanCarDelivered,
+            s.IsFeatureExplained,
+            s.IsAdasExplained,
+            s.IsAvnBluelinkSetup,
+            s.IsOriginalDocsHandedOver,
+            s.IsFollowUpCallPromised,
+            s.NpsScore,
+            s.NpsCategory,
+            s.CustomerFeedback,
+            s.HasComplaint,
+            s.ComplaintCategory,
+            s.ComplaintDetails,
+            s.RemedyAction,
+            s.IsComplaintResolved,
+            s.ResolvedBy,
+            s.ResolvedAt,
+            s.Status,
+            s.Remark,
+            s.CreatedBy,
+            s.CreatedAt,
+            s.CompletedBy,
+            s.CompletedAt,
+            s.EscalatedBy,
+            s.EscalatedAt,
+            s.EscalateReason,
+            s.CancelledBy,
+            s.CancelledAt,
+            s.CancelReason,
+            Questions = questions
+        };
+    }
+
+    public async Task<object?> UpdateSalesSatisfactionSurveyHeaderAsync(string surveyNo, UpdateSalesSatisfactionSurveyDto dto)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        if (s.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa phiếu khảo sát SSI đang ở trạng thái {s.Status}.");
+
+        if (!string.IsNullOrWhiteSpace(dto.SurveyNoUser)) s.SurveyNoUser = dto.SurveyNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerName)) s.CustomerName = dto.CustomerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerPhone)) s.CustomerPhone = dto.CustomerPhone.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerEmail)) s.CustomerEmail = dto.CustomerEmail.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PlateNo)) s.PlateNo = dto.PlateNo.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(dto.SalesConsultantCode)) s.SalesConsultantCode = dto.SalesConsultantCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SalesConsultantName)) s.SalesConsultantName = dto.SalesConsultantName.Trim();
+        if (dto.DeliveryDate.HasValue) s.DeliveryDate = dto.DeliveryDate.Value;
+        if (dto.SurveyDate.HasValue) s.SurveyDate = dto.SurveyDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.ContactChannel)) s.ContactChannel = dto.ContactChannel.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SurveyorStaff)) s.SurveyorStaff = dto.SurveyorStaff.Trim();
+
+        if (dto.ScoreSalesConsultant.HasValue && dto.ScoreSalesConsultant.Value >= 1) s.ScoreSalesConsultant = Math.Clamp(dto.ScoreSalesConsultant.Value, 1.0m, 5.0m);
+        if (dto.ScoreDealershipFacility.HasValue && dto.ScoreDealershipFacility.Value >= 1) s.ScoreDealershipFacility = Math.Clamp(dto.ScoreDealershipFacility.Value, 1.0m, 5.0m);
+        if (dto.ScoreDeliveryProcess.HasValue && dto.ScoreDeliveryProcess.Value >= 1) s.ScoreDeliveryProcess = Math.Clamp(dto.ScoreDeliveryProcess.Value, 1.0m, 5.0m);
+        if (dto.ScorePaperworkFinance.HasValue && dto.ScorePaperworkFinance.Value >= 1) s.ScorePaperworkFinance = Math.Clamp(dto.ScorePaperworkFinance.Value, 1.0m, 5.0m);
+        if (dto.ScoreTimeliness.HasValue && dto.ScoreTimeliness.Value >= 1) s.ScoreTimeliness = Math.Clamp(dto.ScoreTimeliness.Value, 1.0m, 5.0m);
+        if (dto.ScoreOverall.HasValue && dto.ScoreOverall.Value >= 1) s.ScoreOverall = Math.Clamp(dto.ScoreOverall.Value, 1.0m, 5.0m);
+
+        s.CalculatedSsiScore = CalculateWeightedSsi(s.ScoreSalesConsultant, s.ScoreDealershipFacility, s.ScoreDeliveryProcess, s.ScorePaperworkFinance, s.ScoreTimeliness, s.ScoreOverall);
+        s.SsiIndex1000 = (int)Math.Round((s.CalculatedSsiScore / 5.0m) * 1000m);
+
+        if (dto.IsCleanCarDelivered.HasValue) s.IsCleanCarDelivered = dto.IsCleanCarDelivered.Value;
+        if (dto.IsFeatureExplained.HasValue) s.IsFeatureExplained = dto.IsFeatureExplained.Value;
+        if (dto.IsAdasExplained.HasValue) s.IsAdasExplained = dto.IsAdasExplained.Value;
+        if (dto.IsAvnBluelinkSetup.HasValue) s.IsAvnBluelinkSetup = dto.IsAvnBluelinkSetup.Value;
+        if (dto.IsOriginalDocsHandedOver.HasValue) s.IsOriginalDocsHandedOver = dto.IsOriginalDocsHandedOver.Value;
+        if (dto.IsFollowUpCallPromised.HasValue) s.IsFollowUpCallPromised = dto.IsFollowUpCallPromised.Value;
+
+        if (dto.NpsScore.HasValue && dto.NpsScore.Value >= 0 && dto.NpsScore.Value <= 10)
+        {
+            s.NpsScore = dto.NpsScore.Value;
+            s.NpsCategory = GetNpsCategory(s.NpsScore);
+        }
+
+        if (dto.CustomerFeedback != null) s.CustomerFeedback = dto.CustomerFeedback.Trim();
+
+        if (dto.HasComplaint.HasValue) s.HasComplaint = dto.HasComplaint.Value;
+        if (dto.ComplaintCategory != null) s.ComplaintCategory = dto.ComplaintCategory.Trim();
+        if (dto.ComplaintDetails != null) s.ComplaintDetails = dto.ComplaintDetails.Trim();
+        if (dto.RemedyAction != null) s.RemedyAction = dto.RemedyAction.Trim();
+        if (dto.IsComplaintResolved.HasValue)
+        {
+            s.IsComplaintResolved = dto.IsComplaintResolved.Value;
+            if (s.IsComplaintResolved && s.ResolvedAt is null)
+            {
+                s.ResolvedAt = DateTime.Now;
+                s.ResolvedBy = s.SurveyorStaff ?? "Staff";
+            }
+        }
+        if (dto.Remark != null) s.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return await GetSalesSatisfactionSurveyAsync(surveyNo);
+    }
+
+    public async Task<object?> CompleteSalesSatisfactionSurveyAsync(string surveyNo, CompleteSalesSatisfactionSurveyDto dto)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        if (s.Status == "Cancelled")
+            throw new InvalidOperationException("Không thể hoàn tất phiếu khảo sát SSI đã bị hủy.");
+
+        if (dto.ScoreSalesConsultant.HasValue) s.ScoreSalesConsultant = Math.Clamp(dto.ScoreSalesConsultant.Value, 1.0m, 5.0m);
+        if (dto.ScoreDealershipFacility.HasValue) s.ScoreDealershipFacility = Math.Clamp(dto.ScoreDealershipFacility.Value, 1.0m, 5.0m);
+        if (dto.ScoreDeliveryProcess.HasValue) s.ScoreDeliveryProcess = Math.Clamp(dto.ScoreDeliveryProcess.Value, 1.0m, 5.0m);
+        if (dto.ScorePaperworkFinance.HasValue) s.ScorePaperworkFinance = Math.Clamp(dto.ScorePaperworkFinance.Value, 1.0m, 5.0m);
+        if (dto.ScoreTimeliness.HasValue) s.ScoreTimeliness = Math.Clamp(dto.ScoreTimeliness.Value, 1.0m, 5.0m);
+        if (dto.ScoreOverall.HasValue) s.ScoreOverall = Math.Clamp(dto.ScoreOverall.Value, 1.0m, 5.0m);
+
+        s.CalculatedSsiScore = CalculateWeightedSsi(s.ScoreSalesConsultant, s.ScoreDealershipFacility, s.ScoreDeliveryProcess, s.ScorePaperworkFinance, s.ScoreTimeliness, s.ScoreOverall);
+        s.SsiIndex1000 = (int)Math.Round((s.CalculatedSsiScore / 5.0m) * 1000m);
+
+        if (dto.IsCleanCarDelivered.HasValue) s.IsCleanCarDelivered = dto.IsCleanCarDelivered.Value;
+        if (dto.IsFeatureExplained.HasValue) s.IsFeatureExplained = dto.IsFeatureExplained.Value;
+        if (dto.IsAdasExplained.HasValue) s.IsAdasExplained = dto.IsAdasExplained.Value;
+        if (dto.IsAvnBluelinkSetup.HasValue) s.IsAvnBluelinkSetup = dto.IsAvnBluelinkSetup.Value;
+        if (dto.IsOriginalDocsHandedOver.HasValue) s.IsOriginalDocsHandedOver = dto.IsOriginalDocsHandedOver.Value;
+        if (dto.IsFollowUpCallPromised.HasValue) s.IsFollowUpCallPromised = dto.IsFollowUpCallPromised.Value;
+
+        if (dto.NpsScore.HasValue)
+        {
+            s.NpsScore = Math.Clamp(dto.NpsScore.Value, 0, 10);
+            s.NpsCategory = GetNpsCategory(s.NpsScore);
+        }
+
+        if (dto.CustomerFeedback != null) s.CustomerFeedback = dto.CustomerFeedback.Trim();
+        if (dto.HasComplaint.HasValue) s.HasComplaint = dto.HasComplaint.Value;
+        if (dto.ComplaintCategory != null) s.ComplaintCategory = dto.ComplaintCategory.Trim();
+        if (dto.ComplaintDetails != null) s.ComplaintDetails = dto.ComplaintDetails.Trim();
+        if (dto.RemedyAction != null) s.RemedyAction = dto.RemedyAction.Trim();
+        if (dto.IsComplaintResolved.HasValue)
+        {
+            s.IsComplaintResolved = dto.IsComplaintResolved.Value;
+            if (s.IsComplaintResolved && s.ResolvedAt is null)
+            {
+                s.ResolvedAt = DateTime.Now;
+                s.ResolvedBy = dto.CompletedBy?.Trim() ?? "Staff";
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(dto.SurveyorStaff)) s.SurveyorStaff = dto.SurveyorStaff.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Remark)) s.Remark = dto.Remark.Trim();
+
+        s.Status = "Completed";
+        s.CompletedBy = dto.CompletedBy?.Trim() ?? s.SurveyorStaff ?? "ICIC Staff";
+        s.CompletedAt = DateTime.Now;
+
+        // Cập nhật hồ sơ số khung VIN
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == s.Vin);
+        if (vehicle != null)
+        {
+            vehicle.LastSsiNo = s.SurveyNo;
+            vehicle.LastSsiDate = s.SurveyDate;
+            vehicle.LastSsiScore = s.CalculatedSsiScore;
+            vehicle.LastSsiIndex1000 = s.SsiIndex1000;
+            vehicle.SsiSurveyCount += 1;
+        }
+
+        Log(s.Vin, "SSISurveyCompleted", $"{s.SurveyNo} Hoàn tất khảo sát SSI: {s.CalculatedSsiScore:N1}/5.0 sao ({s.SsiIndex1000}/1000 điểm). NPS: {s.NpsScore}/10 ({s.NpsCategory}). TVBH: {s.SalesConsultantName ?? "N/A"}. Người thực hiện: {s.CompletedBy}");
+
+        await db.SaveChangesAsync();
+        return await GetSalesSatisfactionSurveyAsync(surveyNo);
+    }
+
+    public async Task<object?> RecordSsiContactAttemptAsync(string surveyNo, RecordSsiContactAttemptDto dto)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        s.CallAttempts += 1;
+        if (!string.IsNullOrWhiteSpace(dto.ContactChannel)) s.ContactChannel = dto.ContactChannel.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SurveyorStaff)) s.SurveyorStaff = dto.SurveyorStaff.Trim();
+
+        if (dto.IsReached)
+        {
+            if (s.Status == "Pending") s.Status = "InProgress";
+        }
+        else
+        {
+            if (s.CallAttempts >= 3)
+            {
+                s.Status = "Unreachable";
+            }
+            else
+            {
+                s.Status = "InProgress";
+            }
+        }
+
+        var note = dto.AttemptNote?.Trim() ?? (dto.IsReached ? "Đã liên hệ thành công" : $"Không nghe máy (Lần {s.CallAttempts})");
+        s.Remark = string.IsNullOrWhiteSpace(s.Remark) ? note : $"{s.Remark} | {note}";
+
+        Log(s.Vin, "SSISurveyContactAttempt", $"{surveyNo} Ghi nhận lần liên hệ SSI thứ {s.CallAttempts} qua {s.ContactChannel}. Kết quả: {(dto.IsReached ? "Thành công" : "Chưa gặp")}. Ghi chú: {note}");
+
+        await db.SaveChangesAsync();
+        return await GetSalesSatisfactionSurveyAsync(surveyNo);
+    }
+
+    public async Task<object?> EscalateSsiSurveyAsync(string surveyNo, EscalateSsiSurveyDto dto)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        s.Status = "Escalated";
+        s.HasComplaint = true;
+        s.ComplaintCategory = dto.ComplaintCategory.Trim();
+        s.ComplaintDetails = dto.ComplaintDetails.Trim();
+        s.EscalateReason = dto.EscalateReason.Trim();
+        s.EscalatedBy = dto.EscalatedBy?.Trim() ?? s.SurveyorStaff ?? "ICIC Manager";
+        s.EscalatedAt = DateTime.Now;
+
+        if (!string.IsNullOrWhiteSpace(dto.RecommendedRemedy))
+        {
+            s.RemedyAction = dto.RecommendedRemedy.Trim();
+        }
+
+        Log(s.Vin, "SSISurveyEscalated", $"{surveyNo} Chuyển tiếp khiếu nại SSI ({s.ComplaintCategory}) lên Ban Giám Đốc / Hãng OEM: {s.ComplaintDetails}. Lý do chuyển tiếp: {s.EscalateReason}");
+
+        await db.SaveChangesAsync();
+        return await GetSalesSatisfactionSurveyAsync(surveyNo);
+    }
+
+    public async Task<object?> ResolveSsiComplaintAsync(string surveyNo, ResolveSsiComplaintDto dto)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        s.IsComplaintResolved = true;
+        s.RemedyAction = dto.RemedyAction.Trim();
+        s.ResolvedBy = dto.ResolvedBy?.Trim() ?? "Manager";
+        s.ResolvedAt = dto.ResolvedAt ?? DateTime.Now;
+
+        if (!string.IsNullOrWhiteSpace(dto.CustomerAgreementNote))
+        {
+            s.CustomerFeedback = string.IsNullOrWhiteSpace(s.CustomerFeedback)
+                ? dto.CustomerAgreementNote.Trim()
+                : $"{s.CustomerFeedback} | Đồng thuận sau xử lý: {dto.CustomerAgreementNote.Trim()}";
+        }
+
+        if (s.Status == "Escalated")
+        {
+            s.Status = "Completed";
+            s.CompletedBy = s.ResolvedBy;
+            s.CompletedAt = DateTime.Now;
+        }
+
+        Log(s.Vin, "SSIComplaintResolved", $"{surveyNo} Đã xử lý thỏa đáng khiếu nại SSI ({s.ComplaintCategory}). Phương án: {s.RemedyAction}. Người xử lý: {s.ResolvedBy}");
+
+        await db.SaveChangesAsync();
+        return await GetSalesSatisfactionSurveyAsync(surveyNo);
+    }
+
+    public async Task<object?> SalesSatisfactionSurveyTransitionAsync(string surveyNo, string action, SalesSatisfactionSurveyTransitionDto? dto)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        var act = action.Trim().ToLowerInvariant();
+        var now = dto?.TransitionDate ?? DateTime.Now;
+
+        switch (act)
+        {
+            case "in-progress":
+            case "inprogress":
+            case "start":
+                if (s.Status is "Completed" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể chuyển sang InProgress từ trạng thái {s.Status}.");
+                s.Status = "InProgress";
+                break;
+
+            case "complete":
+            case "finish":
+                if (s.Status == "Cancelled")
+                    throw new InvalidOperationException("Không thể hoàn tất phiếu đã hủy.");
+                s.Status = "Completed";
+                s.CompletedBy = dto?.Actor?.Trim() ?? s.SurveyorStaff ?? "Staff";
+                s.CompletedAt = now;
+
+                var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == s.Vin);
+                if (v != null)
+                {
+                    v.LastSsiNo = s.SurveyNo;
+                    v.LastSsiDate = s.SurveyDate;
+                    v.LastSsiScore = s.CalculatedSsiScore;
+                    v.LastSsiIndex1000 = s.SsiIndex1000;
+                    v.SsiSurveyCount += 1;
+                }
+                Log(s.Vin, "SSISurveyCompleted", $"{surveyNo} Hoàn tất phiếu khảo sát SSI: {s.CalculatedSsiScore:N1} sao ({s.SsiIndex1000}/1000 điểm).");
+                break;
+
+            case "unreachable":
+                s.Status = "Unreachable";
+                break;
+
+            case "escalate":
+                s.Status = "Escalated";
+                s.HasComplaint = true;
+                s.EscalatedBy = dto?.Actor?.Trim() ?? "ICIC Staff";
+                s.EscalatedAt = now;
+                s.EscalateReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Khách hàng bức xúc yêu cầu khiếu nại cấp cao.";
+                Log(s.Vin, "SSISurveyEscalated", $"{surveyNo} Chuyển tiếp khiếu nại SSI: {s.EscalateReason}");
+                break;
+
+            case "cancel":
+                s.Status = "Cancelled";
+                s.CancelledBy = dto?.Actor?.Trim() ?? "User";
+                s.CancelledAt = now;
+                s.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+                Log(s.Vin, "SSISurveyCancelled", $"{surveyNo} Hủy phiếu khảo sát SSI: {s.CancelReason ?? "N/A"}");
+                break;
+
+            default:
+                throw new InvalidOperationException($"Action '{action}' không được hỗ trợ.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto?.Note))
+            s.Remark = string.IsNullOrWhiteSpace(s.Remark) ? dto.Note.Trim() : $"{s.Remark} | {dto.Note.Trim()}";
+
+        await db.SaveChangesAsync();
+        return await GetSalesSatisfactionSurveyAsync(surveyNo);
+    }
+
+    public async Task<object?> RemoveSalesSatisfactionSurveyAsync(string surveyNo)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        if (s.Status == "Completed")
+            throw new InvalidOperationException("Không thể xóa phiếu khảo sát SSI đã hoàn tất. Vui lòng Hủy (Cancel) nếu cần đóng.");
+
+        var questions = await db.SalesSatisfactionSurveyQuestionLines.Where(q => q.OrgId == Org && q.SalesSatisfactionSurveyId == s.Id).ToListAsync();
+        db.SalesSatisfactionSurveyQuestionLines.RemoveRange(questions);
+        db.SalesSatisfactionSurveys.Remove(s);
+
+        await db.SaveChangesAsync();
+        return new { success = true, surveyNo, message = "Đã xóa phiếu khảo sát SSI thành công." };
+    }
+
+    public async Task<object?> AddSsiQuestionLinesAsync(string surveyNo, List<SsiQuestionInputDto> items)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        if (s.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm câu hỏi vào phiếu khảo sát đang ở trạng thái {s.Status}.");
+
+        var maxIdx = await db.SalesSatisfactionSurveyQuestionLines.Where(q => q.OrgId == Org && q.SalesSatisfactionSurveyId == s.Id).MaxAsync(q => (int?)q.LineIndex) ?? 0;
+
+        foreach (var it in items)
+        {
+            if (string.IsNullOrWhiteSpace(it.QuestionCode)) continue;
+            db.SalesSatisfactionSurveyQuestionLines.Add(new SalesSatisfactionSurveyQuestionLine
+            {
+                OrgId = Org,
+                SalesSatisfactionSurveyId = s.Id,
+                SurveyNo = s.SurveyNo,
+                LineIndex = ++maxIdx,
+                QuestionCode = it.QuestionCode.Trim().ToUpperInvariant(),
+                QuestionCategory = it.QuestionCategory?.Trim() ?? "SalesConsultant",
+                QuestionText = it.QuestionText.Trim(),
+                Score = it.Score > 0 ? it.Score : 5.0m,
+                AnswerText = it.AnswerText?.Trim(),
+                Weight = it.Weight > 0 ? it.Weight.Value : 1.0m,
+                Remark = it.Remark?.Trim()
+            });
+        }
+
+        await db.SaveChangesAsync();
+        return await GetSalesSatisfactionSurveyAsync(surveyNo);
+    }
+
+    public async Task<object?> UpdateSsiQuestionLineAsync(string surveyNo, long lineId, UpdateSsiQuestionLineDto dto)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        if (s.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể chỉnh sửa câu hỏi trong phiếu đang ở trạng thái {s.Status}.");
+
+        var line = await db.SalesSatisfactionSurveyQuestionLines.FirstOrDefaultAsync(q => q.OrgId == Org && q.Id == lineId && q.SalesSatisfactionSurveyId == s.Id);
+        if (line is null) return null;
+
+        if (dto.Score.HasValue && dto.Score.Value >= 1) line.Score = Math.Clamp(dto.Score.Value, 1.0m, 5.0m);
+        if (dto.AnswerText != null) line.AnswerText = dto.AnswerText.Trim();
+        if (dto.Weight.HasValue && dto.Weight.Value > 0) line.Weight = dto.Weight.Value;
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> RemoveSsiQuestionLineAsync(string surveyNo, long lineId)
+    {
+        surveyNo = surveyNo.Trim().ToUpperInvariant();
+        var s = await db.SalesSatisfactionSurveys.FirstOrDefaultAsync(x => x.OrgId == Org && x.SurveyNo == surveyNo);
+        if (s is null) return null;
+
+        if (s.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa câu hỏi trong phiếu đang ở trạng thái {s.Status}.");
+
+        var line = await db.SalesSatisfactionSurveyQuestionLines.FirstOrDefaultAsync(q => q.OrgId == Org && q.Id == lineId && q.SalesSatisfactionSurveyId == s.Id);
+        if (line is null) return null;
+
+        db.SalesSatisfactionSurveyQuestionLines.Remove(line);
+        await db.SaveChangesAsync();
+        return new { success = true, message = "Đã xóa câu hỏi khảo sát thành công." };
+    }
+
+    public async Task<object?> GetVehicleSsiInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var surveys = await db.SalesSatisfactionSurveys.Where(s => s.OrgId == Org && s.Vin == vin).OrderByDescending(s => s.SurveyDate).ToListAsync();
+        var lastSurvey = surveys.FirstOrDefault();
+
+        return new VehicleSsiInfoDto(
+            v.Vin,
+            v.Model,
+            v.EngineNo,
+            v.Color,
+            v.PlateNo,
+            v.OwnerName,
+            v.DealerCode,
+            v.LastSsiNo,
+            v.LastSsiDate,
+            v.LastSsiScore,
+            v.LastSsiIndex1000,
+            v.SsiSurveyCount,
+            lastSurvey,
+            surveys
+        );
+    }
+
+    public async Task<object?> GetVehicleSsiHistoryAsync(string vin)
+    {
+        return await GetVehicleSsiInfoAsync(vin);
+    }
+
+    public async Task<SalesSatisfactionSummaryDto> GetSalesSatisfactionSummaryAsync(string? dealerCode, string? model, DateTime? fromDate, DateTime? toDate)
+    {
+        var q = db.SalesSatisfactionSurveys.Where(s => s.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(dealerCode))
+        {
+            var d = dealerCode.Trim().ToUpperInvariant();
+            q = q.Where(s => s.DealerCode == d);
+        }
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var m = model.Trim().ToLowerInvariant();
+            q = q.Where(s => s.Model.ToLower().Contains(m));
+        }
+
+        if (fromDate.HasValue)
+            q = q.Where(s => s.SurveyDate >= fromDate.Value);
+
+        if (toDate.HasValue)
+            q = q.Where(s => s.SurveyDate <= toDate.Value);
+
+        var list = await q.ToListAsync();
+
+        var totalSurveys = list.Count;
+        var totalCompleted = list.Count(s => s.Status == "Completed");
+        var totalPending = list.Count(s => s.Status == "Pending");
+        var totalInProgress = list.Count(s => s.Status == "InProgress");
+        var totalUnreachable = list.Count(s => s.Status == "Unreachable");
+        var totalEscalated = list.Count(s => s.Status == "Escalated");
+        var totalCancelled = list.Count(s => s.Status == "Cancelled");
+
+        var completedList = list.Where(s => s.Status == "Completed").ToList();
+
+        var avgSsi = completedList.Count > 0 ? Math.Round(completedList.Average(s => s.CalculatedSsiScore), 2) : 0m;
+        var avgIndex1000 = completedList.Count > 0 ? (int)Math.Round(completedList.Average(s => s.SsiIndex1000)) : 0;
+        var avgConsultant = completedList.Count > 0 ? Math.Round(completedList.Average(s => s.ScoreSalesConsultant), 2) : 0m;
+        var avgFacility = completedList.Count > 0 ? Math.Round(completedList.Average(s => s.ScoreDealershipFacility), 2) : 0m;
+        var avgDelivery = completedList.Count > 0 ? Math.Round(completedList.Average(s => s.ScoreDeliveryProcess), 2) : 0m;
+        var avgPaperwork = completedList.Count > 0 ? Math.Round(completedList.Average(s => s.ScorePaperworkFinance), 2) : 0m;
+        var avgTimeliness = completedList.Count > 0 ? Math.Round(completedList.Average(s => s.ScoreTimeliness), 2) : 0m;
+        var avgOverall = completedList.Count > 0 ? Math.Round(completedList.Average(s => s.ScoreOverall), 2) : 0m;
+
+        var promoters = completedList.Count(s => s.NpsCategory == "Promoter");
+        var passives = completedList.Count(s => s.NpsCategory == "Passive");
+        var detractors = completedList.Count(s => s.NpsCategory == "Detractor");
+
+        var npsPercent = completedList.Count > 0
+            ? Math.Round(((decimal)(promoters - detractors) / completedList.Count) * 100m, 1)
+            : 0m;
+
+        var csatSatisfied = completedList.Count(s => s.CalculatedSsiScore >= 4.0m);
+        var csatPercent = completedList.Count > 0
+            ? Math.Round(((decimal)csatSatisfied / completedList.Count) * 100m, 1)
+            : 0m;
+
+        var complaintsList = list.Where(s => s.HasComplaint).ToList();
+        var totalComplaints = complaintsList.Count;
+        var resolvedComplaints = complaintsList.Count(s => s.IsComplaintResolved);
+        var complaintResolutionRate = totalComplaints > 0
+            ? Math.Round(((decimal)resolvedComplaints / totalComplaints) * 100m, 1)
+            : 0m;
+
+        var byDealer = list.GroupBy(s => s.DealerCode).Select(g =>
+        {
+            var dName = g.First().DealerName ?? g.Key;
+            var dCompleted = g.Where(x => x.Status == "Completed").ToList();
+            var dAvg = dCompleted.Count > 0 ? Math.Round(dCompleted.Average(x => x.CalculatedSsiScore), 2) : 0m;
+            var dIndex = dCompleted.Count > 0 ? (int)Math.Round(dCompleted.Average(x => x.SsiIndex1000)) : 0;
+            var dProm = dCompleted.Count(x => x.NpsCategory == "Promoter");
+            var dDetr = dCompleted.Count(x => x.NpsCategory == "Detractor");
+            var dNps = dCompleted.Count > 0 ? Math.Round(((decimal)(dProm - dDetr) / dCompleted.Count) * 100m, 1) : 0m;
+            var dCsat = dCompleted.Count > 0 ? Math.Round(((decimal)dCompleted.Count(x => x.CalculatedSsiScore >= 4.0m) / dCompleted.Count) * 100m, 1) : 0m;
+            var dComplaints = g.Count(x => x.HasComplaint);
+
+            return new SsiDealerStatsDto(g.Key, dName, g.Count(), dCompleted.Count, dAvg, dIndex, dNps, dCsat, dComplaints);
+        }).OrderByDescending(d => d.AverageSsiScore).ToList();
+
+        var byModel = list.Where(s => !string.IsNullOrWhiteSpace(s.Model)).GroupBy(s => s.Model).Select(g =>
+        {
+            var mCompleted = g.Where(x => x.Status == "Completed").ToList();
+            var mAvg = mCompleted.Count > 0 ? Math.Round(mCompleted.Average(x => x.CalculatedSsiScore), 2) : 0m;
+            var mIndex = mCompleted.Count > 0 ? (int)Math.Round(mCompleted.Average(x => x.SsiIndex1000)) : 0;
+            var mProm = mCompleted.Count(x => x.NpsCategory == "Promoter");
+            var mDetr = mCompleted.Count(x => x.NpsCategory == "Detractor");
+            var mNps = mCompleted.Count > 0 ? Math.Round(((decimal)(mProm - mDetr) / mCompleted.Count) * 100m, 1) : 0m;
+            var mCsat = mCompleted.Count > 0 ? Math.Round(((decimal)mCompleted.Count(x => x.CalculatedSsiScore >= 4.0m) / mCompleted.Count) * 100m, 1) : 0m;
+
+            return new SsiModelStatsDto(g.Key, g.Count(), mCompleted.Count, mAvg, mIndex, mNps, mCsat);
+        }).OrderByDescending(m => m.AverageSsiScore).ToList();
+
+        var bySalesConsultant = list.Where(s => !string.IsNullOrWhiteSpace(s.SalesConsultantCode)).GroupBy(s => s.SalesConsultantCode!).Select(g =>
+        {
+            var scName = g.First().SalesConsultantName ?? g.Key;
+            var dCode = g.First().DealerCode;
+            var scCompleted = g.Where(x => x.Status == "Completed").ToList();
+            var scAvg = scCompleted.Count > 0 ? Math.Round(scCompleted.Average(x => x.CalculatedSsiScore), 2) : 0m;
+            var scIndex = scCompleted.Count > 0 ? (int)Math.Round(scCompleted.Average(x => x.SsiIndex1000)) : 0;
+            var scProm = scCompleted.Count(x => x.NpsCategory == "Promoter");
+            var scComplaints = g.Count(x => x.HasComplaint);
+
+            return new SsiSalesConsultantStatsDto(g.Key, scName, dCode, g.Count(), scAvg, scIndex, scProm, scComplaints);
+        }).OrderByDescending(sc => sc.AverageScore).ToList();
+
+        var byComplaintCategory = complaintsList.Where(s => !string.IsNullOrWhiteSpace(s.ComplaintCategory)).GroupBy(s => s.ComplaintCategory!).Select(g =>
+        {
+            var catName = g.Key switch
+            {
+                "DeliveryDelay" => "Chậm giao xe",
+                "PriceFinance" => "Bất đồng giá / chi phí / ngân hàng",
+                "SalesAttitude" => "Thái độ phục vụ của TVBH",
+                "CarDefect" => "Lỗi kỹ thuật ngoại quan / nội thất xe",
+                "MissingAccessories" => "Thiếu phụ kiện / quà tặng",
+                "PaperworkDelay" => "Chậm hồ sơ xe / giấy đăng kiểm",
+                _ => g.Key
+            };
+            var resolved = g.Count(x => x.IsComplaintResolved);
+            var rate = g.Count() > 0 ? Math.Round(((decimal)resolved / g.Count()) * 100m, 1) : 0m;
+
+            return new SsiComplaintCategoryStatsDto(g.Key, catName, g.Count(), resolved, rate);
+        }).OrderByDescending(c => c.TotalCount).ToList();
+
+        return new SalesSatisfactionSummaryDto(
+            totalSurveys,
+            totalCompleted,
+            totalPending,
+            totalInProgress,
+            totalUnreachable,
+            totalEscalated,
+            totalCancelled,
+            avgSsi,
+            avgIndex1000,
+            avgConsultant,
+            avgFacility,
+            avgDelivery,
+            avgPaperwork,
+            avgTimeliness,
+            avgOverall,
+            promoters,
+            passives,
+            detractors,
+            npsPercent,
+            csatPercent,
+            totalComplaints,
+            resolvedComplaints,
+            complaintResolutionRate,
+            byDealer,
+            byModel,
+            bySalesConsultant,
+            byComplaintCategory
         );
     }
 }

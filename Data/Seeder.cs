@@ -6155,6 +6155,213 @@ public static class Seeder
             }
         }
 
+        // ===== Khảo sát Chỉ số Hài lòng Bán hàng & Bàn giao xe mới SSI (BizHTC.DealerSales / DLS_VINSurvey, RptSSI_ICIC) =====
+        if (!await db.SalesSatisfactionSurveys.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+
+            var ssi1 = new SalesSatisfactionSurvey
+            {
+                OrgId = org,
+                SurveyNo = "SSI-20260320-0001",
+                SurveyNoUser = "KS-SSI-2026/03/HN01-01",
+                DealNo = "DEAL202603-001",
+                Vin = "DEMOVIN00000001",
+                Model = "Accent 1.4 AT",
+                SpecCode = "1.4 AT Đặc biệt",
+                EngineNo = "G4LC0001",
+                Color = "Trắng",
+                PlateNo = "30K-999.88",
+                CustomerName = "Nguyễn Văn An",
+                CustomerPhone = "0901234567",
+                CustomerEmail = "an.nguyen@gmail.com",
+                CustomerType = "Individual",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                SalesConsultantCode = "TVBH-HN01-08",
+                SalesConsultantName = "Trần Thanh Tâm",
+                DeliveryDate = DateTime.Now.AddDays(-7),
+                SurveyDate = DateTime.Now.AddDays(-4),
+                ContactChannel = "PhoneCall",
+                CallAttempts = 1,
+                SurveyorStaff = "Nguyễn Minh Phương (ICIC Center)",
+                ScoreSalesConsultant = 5.0m,
+                ScoreDealershipFacility = 4.8m,
+                ScoreDeliveryProcess = 5.0m,
+                ScorePaperworkFinance = 4.9m,
+                ScoreTimeliness = 5.0m,
+                ScoreOverall = 5.0m,
+                CalculatedSsiScore = 4.95m,
+                SsiIndex1000 = 990,
+                IsCleanCarDelivered = true,
+                IsFeatureExplained = true,
+                IsAdasExplained = true,
+                IsAvnBluelinkSetup = true,
+                IsOriginalDocsHandedOver = true,
+                IsFollowUpCallPromised = true,
+                NpsScore = 10,
+                NpsCategory = "Promoter",
+                CustomerFeedback = "Rất hài lòng với dịch vụ của bạn Tâm TVBH và lễ bàn giao xe trang trọng tại showroom. Đã giới thiệu cho bạn bè đồng nghiệp mua xe.",
+                HasComplaint = false,
+                Status = "Completed",
+                Remark = "Khảo sát SSI thành công xuất sắc, khách hàng đánh giá điểm tối đa.",
+                CreatedBy = "icic.agent01",
+                CreatedAt = DateTime.Now.AddDays(-4),
+                CompletedBy = "Nguyễn Minh Phương (ICIC)",
+                CompletedAt = DateTime.Now.AddDays(-4)
+            };
+
+            var ssi2 = new SalesSatisfactionSurvey
+            {
+                OrgId = org,
+                SurveyNo = "SSI-20260322-0002",
+                SurveyNoUser = "KS-SSI-2026/03/HN01-02",
+                DealNo = "DEAL202603-002",
+                Vin = "DEMOVIN00000002",
+                Model = "Creta 1.5 Cao cấp",
+                SpecCode = "1.5 Cao cấp 2 tông màu",
+                EngineNo = "G4FL0002",
+                Color = "Đen",
+                PlateNo = "30K-888.66",
+                CustomerName = "Trần Thị Mai",
+                CustomerPhone = "0912345678",
+                CustomerEmail = "mai.tran@gmail.com",
+                CustomerType = "Individual",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                SalesConsultantCode = "TVBH-HN01-12",
+                SalesConsultantName = "Lê Văn Hùng",
+                DeliveryDate = DateTime.Now.AddDays(-5),
+                SurveyDate = DateTime.Now.AddDays(-2),
+                ContactChannel = "PhoneCall",
+                CallAttempts = 1,
+                SurveyorStaff = "Nguyễn Minh Phương (ICIC Center)",
+                ScoreSalesConsultant = 4.5m,
+                ScoreDealershipFacility = 4.5m,
+                ScoreDeliveryProcess = 4.0m,
+                ScorePaperworkFinance = 3.5m,
+                ScoreTimeliness = 4.0m,
+                ScoreOverall = 4.2m,
+                CalculatedSsiScore = 4.15m,
+                SsiIndex1000 = 830,
+                IsCleanCarDelivered = true,
+                IsFeatureExplained = true,
+                IsAdasExplained = true,
+                IsAvnBluelinkSetup = true,
+                IsOriginalDocsHandedOver = false,
+                IsFollowUpCallPromised = true,
+                NpsScore = 8,
+                NpsCategory = "Passive",
+                CustomerFeedback = "Xe chạy rất đầm và êm. Tuy nhiên thủ tục trả góp ngân hàng và hẹn trả giấy đăng kiểm gốc hơi chậm 2 ngày so với dự kiến.",
+                HasComplaint = true,
+                ComplaintCategory = "PaperworkDelay",
+                ComplaintDetails = "Giấy chứng nhận đăng ký xe và hồ sơ vay gốc ngân hàng chậm 2 ngày làm khách hàng lo lắng khi lưu thông.",
+                RemedyAction = "Đại lý đã cử TVBH mang hồ sơ công chứng và giấy hẹn đăng ký đến tận nhà khách hàng, tặng voucher 1.000.000 VNĐ bảo dưỡng kỳ đầu.",
+                IsComplaintResolved = true,
+                ResolvedBy = "Phạm Hoàng Long (GĐ Bán Hàng DLR-HN01)",
+                ResolvedAt = DateTime.Now.AddDays(-1),
+                Status = "Completed",
+                Remark = "Khiếu nại chậm hồ sơ giấy tờ đã được Ban Giám Đốc đại lý xử lý thỏa đáng và khách hàng hài lòng.",
+                CreatedBy = "icic.agent01",
+                CreatedAt = DateTime.Now.AddDays(-2),
+                CompletedBy = "Nguyễn Minh Phương (ICIC)",
+                CompletedAt = DateTime.Now.AddDays(-1)
+            };
+
+            db.SalesSatisfactionSurveys.AddRange(ssi1, ssi2);
+            await db.SaveChangesAsync();
+
+            // Seed các câu hỏi khảo sát chi tiết
+            db.SalesSatisfactionSurveyQuestionLines.AddRange(
+                new SalesSatisfactionSurveyQuestionLine
+                {
+                    OrgId = org,
+                    SalesSatisfactionSurveyId = ssi1.Id,
+                    SurveyNo = ssi1.SurveyNo,
+                    LineIndex = 1,
+                    QuestionCode = "Q01_GREETING",
+                    QuestionCategory = "SalesConsultant",
+                    QuestionText = "Thái độ đón tiếp và tác phong chuyên nghiệp của Tư vấn bán hàng (TVBH)?",
+                    Score = 5.0m,
+                    AnswerText = "Rất niềm nở, lịch sự và chu đáo",
+                    Weight = 1.0m
+                },
+                new SalesSatisfactionSurveyQuestionLine
+                {
+                    OrgId = org,
+                    SalesSatisfactionSurveyId = ssi1.Id,
+                    SurveyNo = ssi1.SurveyNo,
+                    LineIndex = 2,
+                    QuestionCode = "Q02_NEEDS_ANALYSIS",
+                    QuestionCategory = "SalesConsultant",
+                    QuestionText = "TVBH có tìm hiểu kỹ nhu cầu sử dụng và tư vấn phiên bản xe phù hợp không?",
+                    Score = 5.0m,
+                    AnswerText = "Tư vấn rất chuẩn xác nhu cầu gia đình",
+                    Weight = 1.0m
+                },
+                new SalesSatisfactionSurveyQuestionLine
+                {
+                    OrgId = org,
+                    SalesSatisfactionSurveyId = ssi1.Id,
+                    SurveyNo = ssi1.SurveyNo,
+                    LineIndex = 3,
+                    QuestionCode = "Q08_CLEAN_CONDITION",
+                    QuestionCategory = "DeliveryProcess",
+                    QuestionText = "Xe được vệ sinh sạch sẽ, bóng đẹp và hoàn hảo khi bàn giao?",
+                    Score = 5.0m,
+                    AnswerText = "Xe sạch tinh tươm, không một vết xước",
+                    Weight = 1.0m
+                },
+                new SalesSatisfactionSurveyQuestionLine
+                {
+                    OrgId = org,
+                    SalesSatisfactionSurveyId = ssi1.Id,
+                    SurveyNo = ssi1.SurveyNo,
+                    LineIndex = 4,
+                    QuestionCode = "Q11_ADAS_DEMO",
+                    QuestionCategory = "TechnologyADAS",
+                    QuestionText = "TVBH có giải thích chi tiết các tính năng an toàn Hyundai SmartSense / ADAS và AVN Bluelink không?",
+                    Score = 5.0m,
+                    AnswerText = "Đã hướng dẫn và cài đặt Bluelink trực tiếp trên điện thoại",
+                    Weight = 1.0m
+                },
+                new SalesSatisfactionSurveyQuestionLine
+                {
+                    OrgId = org,
+                    SalesSatisfactionSurveyId = ssi1.Id,
+                    SurveyNo = ssi1.SurveyNo,
+                    LineIndex = 5,
+                    QuestionCode = "Q18_NPS_RECOMMEND",
+                    QuestionCategory = "OverallNPS",
+                    QuestionText = "Mức độ sẵn sàng giới thiệu Đại lý và dòng xe Hyundai cho bạn bè/người thân?",
+                    Score = 5.0m,
+                    AnswerText = "10/10 điểm - Chắc chắn sẽ giới thiệu",
+                    Weight = 1.0m
+                }
+            );
+
+            // Cập nhật thông tin khảo sát SSI trên hồ sơ số khung xe VIN
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.LastSsiNo = ssi1.SurveyNo;
+                v1.LastSsiDate = ssi1.SurveyDate;
+                v1.LastSsiScore = ssi1.CalculatedSsiScore;
+                v1.LastSsiIndex1000 = ssi1.SsiIndex1000;
+                v1.SsiSurveyCount = 1;
+            }
+
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null)
+            {
+                v2.LastSsiNo = ssi2.SurveyNo;
+                v2.LastSsiDate = ssi2.SurveyDate;
+                v2.LastSsiScore = ssi2.CalculatedSsiScore;
+                v2.LastSsiIndex1000 = ssi2.SsiIndex1000;
+                v2.SsiSurveyCount = 1;
+            }
+        }
+
         await db.SaveChangesAsync();
     }
 
@@ -6410,7 +6617,14 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"DOAutoConditionLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"DOAutoConditionId\" bigint NOT NULL, \"ConditionCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"ColorCode\" text NULL, \"MaxQuotaQty\" integer NOT NULL DEFAULT 50, \"PriorityRank\" integer NOT NULL DEFAULT 1, \"Status\" text NOT NULL DEFAULT 'Active', \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"DOAutoConditionDealerLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"DOAutoConditionId\" bigint NOT NULL, \"ConditionCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RegionCode\" text NULL DEFAULT 'MienBac', \"MaxDealerQuota\" integer NOT NULL DEFAULT 20, \"TierLevel\" text NOT NULL DEFAULT 'Tier1', \"Status\" text NOT NULL DEFAULT 'Active', \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"AutoDeliveryOrderBatches\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"BatchNo\" text NOT NULL DEFAULT '', \"BatchNoUser\" text NULL, \"BatchDate\" timestamp NOT NULL DEFAULT now(), \"ConditionId\" bigint NULL, \"ConditionCode\" text NOT NULL DEFAULT '', \"ConditionName\" text NULL, \"StorageCode\" text NULL DEFAULT 'ALL', \"TotalScannedVehicles\" integer NOT NULL DEFAULT 0, \"TotalEligibleVehicles\" integer NOT NULL DEFAULT 0, \"TotalAllocatedVehicles\" integer NOT NULL DEFAULT 0, \"TotalSkippedVehicles\" integer NOT NULL DEFAULT 0, \"TotalGeneratedDOs\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"ExecutionMode\" text NOT NULL DEFAULT 'LiveExecution', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ExecutedBy\" text NULL, \"ExecutedAt\" timestamp NULL, \"ConfirmedBy\" text NULL, \"ConfirmedAt\" timestamp NULL, \"RollbackedBy\" text NULL, \"RollbackedAt\" timestamp NULL, \"RollbackReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"AutoDeliveryOrderBatchLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AutoDeliveryOrderBatchId\" bigint NOT NULL, \"BatchNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCode\" text NULL, \"DealerCode\" text NULL, \"DealerName\" text NULL, \"SOCode\" text NULL, \"ContractNo\" text NULL, \"AllocatedDoNo\" text NULL, \"AllocationStatus\" text NOT NULL DEFAULT 'Allocated', \"EligibilityReason\" text NULL, \"IsQCPassed\" boolean NOT NULL DEFAULT true, \"IsCustomsCleared\" boolean NOT NULL DEFAULT true, \"IsTaxPaid\" boolean NOT NULL DEFAULT true, \"IsPdiPaid\" boolean NOT NULL DEFAULT true, \"IsRedeemed\" boolean NOT NULL DEFAULT true, \"IsGpsInstalled\" boolean NOT NULL DEFAULT true, \"IsGuaranteedOrPaid\" boolean NOT NULL DEFAULT true, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"AutoDeliveryOrderBatchLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AutoDeliveryOrderBatchId\" bigint NOT NULL, \"BatchNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCode\" text NULL, \"DealerCode\" text NULL, \"DealerName\" text NULL, \"SOCode\" text NULL, \"ContractNo\" text NULL, \"AllocatedDoNo\" text NULL, \"AllocationStatus\" text NOT NULL DEFAULT 'Allocated', \"EligibilityReason\" text NULL, \"IsQCPassed\" boolean NOT NULL DEFAULT true, \"IsCustomsCleared\" boolean NOT NULL DEFAULT true, \"IsTaxPaid\" boolean NOT NULL DEFAULT true, \"IsPdiPaid\" boolean NOT NULL DEFAULT true, \"IsRedeemed\" boolean NOT NULL DEFAULT true, \"IsGpsInstalled\" boolean NOT NULL DEFAULT true, \"IsGuaranteedOrPaid\" boolean NOT NULL DEFAULT true, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastSsiNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastSsiDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastSsiScore\" numeric NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastSsiIndex1000\" integer NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"SsiSurveyCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"SalesSatisfactionSurveys\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SurveyNo\" text NOT NULL DEFAULT '', \"SurveyNoUser\" text NULL, \"DealNo\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"CustomerEmail\" text NULL, \"CustomerType\" text NOT NULL DEFAULT 'Individual', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"SalesConsultantCode\" text NULL, \"SalesConsultantName\" text NULL, \"DeliveryDate\" timestamp NOT NULL DEFAULT now(), \"SurveyDate\" timestamp NOT NULL DEFAULT now(), \"ContactChannel\" text NOT NULL DEFAULT 'PhoneCall', \"CallAttempts\" integer NOT NULL DEFAULT 1, \"SurveyorStaff\" text NULL, \"ScoreSalesConsultant\" numeric NOT NULL DEFAULT 5.0, \"ScoreDealershipFacility\" numeric NOT NULL DEFAULT 5.0, \"ScoreDeliveryProcess\" numeric NOT NULL DEFAULT 5.0, \"ScorePaperworkFinance\" numeric NOT NULL DEFAULT 5.0, \"ScoreTimeliness\" numeric NOT NULL DEFAULT 5.0, \"ScoreOverall\" numeric NOT NULL DEFAULT 5.0, \"CalculatedSsiScore\" numeric NOT NULL DEFAULT 5.0, \"SsiIndex1000\" integer NOT NULL DEFAULT 1000, \"IsCleanCarDelivered\" boolean NOT NULL DEFAULT true, \"IsFeatureExplained\" boolean NOT NULL DEFAULT true, \"IsAdasExplained\" boolean NOT NULL DEFAULT true, \"IsAvnBluelinkSetup\" boolean NOT NULL DEFAULT true, \"IsOriginalDocsHandedOver\" boolean NOT NULL DEFAULT true, \"IsFollowUpCallPromised\" boolean NOT NULL DEFAULT true, \"NpsScore\" integer NOT NULL DEFAULT 10, \"NpsCategory\" text NOT NULL DEFAULT 'Promoter', \"CustomerFeedback\" text NULL, \"HasComplaint\" boolean NOT NULL DEFAULT false, \"ComplaintCategory\" text NULL, \"ComplaintDetails\" text NULL, \"RemedyAction\" text NULL, \"IsComplaintResolved\" boolean NOT NULL DEFAULT false, \"ResolvedBy\" text NULL, \"ResolvedAt\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"EscalatedBy\" text NULL, \"EscalatedAt\" timestamp NULL, \"EscalateReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"SalesSatisfactionSurveyQuestionLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SalesSatisfactionSurveyId\" bigint NOT NULL, \"SurveyNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"QuestionCode\" text NOT NULL DEFAULT '', \"QuestionCategory\" text NOT NULL DEFAULT 'SalesConsultant', \"QuestionText\" text NOT NULL DEFAULT '', \"Score\" numeric NOT NULL DEFAULT 5.0, \"AnswerText\" text NULL, \"Weight\" numeric NOT NULL DEFAULT 1.0, \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

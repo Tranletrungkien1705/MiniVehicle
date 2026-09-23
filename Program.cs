@@ -5134,6 +5134,177 @@ app.MapGet("/api/vehicles/{vin}/auto-do-history", async (string vin, IVehicleSer
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Khảo sát Chỉ số Hài lòng Bán hàng SSI (BizHTC.DealerSales / DLS_VINSurvey, RptSSI_ICIC, DlsVINSurvey_Update) =====
+
+app.MapPost("/api/ssi-surveys", async (CreateSalesSatisfactionSurveyDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần số khung xe VIN để lập phiếu khảo sát SSI." });
+    try { return Results.Ok(await svc.CreateSalesSatisfactionSurveyAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/ssi-surveys", async (IVehicleService svc, string? status, string? dealer, string? model, string? npsCategory, bool? hasComplaint, string? surveyNo, string? vin, string? q) =>
+    Results.Ok(await svc.ListSalesSatisfactionSurveysAsync(status, dealer, model, npsCategory, hasComplaint, surveyNo, vin, q))).RequireAuthorization();
+
+app.MapGet("/api/ssi-surveys/summary", async (IVehicleService svc, string? dealer, string? model, DateTime? fromDate, DateTime? toDate) =>
+    Results.Ok(await svc.GetSalesSatisfactionSummaryAsync(dealer, model, fromDate, toDate))).RequireAuthorization();
+
+app.MapGet("/api/reports/ssi/summary", async (IVehicleService svc, string? dealer, string? model, DateTime? fromDate, DateTime? toDate) =>
+    Results.Ok(await svc.GetSalesSatisfactionSummaryAsync(dealer, model, fromDate, toDate))).RequireAuthorization();
+
+app.MapGet("/api/ssi-surveys/{surveyNo}", async (string surveyNo, IVehicleService svc) =>
+{
+    var r = await svc.GetSalesSatisfactionSurveyAsync(surveyNo);
+    return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/ssi-surveys/{surveyNo}", async (string surveyNo, UpdateSalesSatisfactionSurveyDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesSatisfactionSurveyHeaderAsync(surveyNo, dto);
+        return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/ssi-surveys/{surveyNo}/update", async (string surveyNo, UpdateSalesSatisfactionSurveyDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSalesSatisfactionSurveyHeaderAsync(surveyNo, dto);
+        return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/ssi-surveys/{surveyNo}/complete", async (string surveyNo, CompleteSalesSatisfactionSurveyDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.CompleteSalesSatisfactionSurveyAsync(surveyNo, dto);
+        return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/ssi-surveys/{surveyNo}/contact-attempt", async (string surveyNo, RecordSsiContactAttemptDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RecordSsiContactAttemptAsync(surveyNo, dto);
+        return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/ssi-surveys/{surveyNo}/escalate", async (string surveyNo, EscalateSsiSurveyDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.ComplaintCategory) || string.IsNullOrWhiteSpace(dto.ComplaintDetails))
+        return Results.BadRequest(new { error = "Cần phân loại khiếu nại ComplaintCategory và nội dung ComplaintDetails." });
+    try
+    {
+        var r = await svc.EscalateSsiSurveyAsync(surveyNo, dto);
+        return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/ssi-surveys/{surveyNo}/resolve-complaint", async (string surveyNo, ResolveSsiComplaintDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.RemedyAction))
+        return Results.BadRequest(new { error = "Cần nội dung phương án xử lý RemedyAction." });
+    try
+    {
+        var r = await svc.ResolveSsiComplaintAsync(surveyNo, dto);
+        return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/ssi-surveys/{surveyNo}/{action}", async (string surveyNo, string action, SalesSatisfactionSurveyTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("in-progress" or "inprogress" or "start" or "complete" or "finish" or "unreachable" or "escalate" or "cancel"))
+        return Results.BadRequest(new { error = "action = in-progress|complete|unreachable|escalate|cancel" });
+    try
+    {
+        var r = await svc.SalesSatisfactionSurveyTransitionAsync(surveyNo, action, dto);
+        return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI hoặc sai trạng thái." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/ssi-surveys/{surveyNo}", async (string surveyNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveSalesSatisfactionSurveyAsync(surveyNo);
+        return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/ssi-surveys/{surveyNo}/questions", async (string surveyNo, List<SsiQuestionInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách câu hỏi items để thêm vào phiếu." });
+    try
+    {
+        var r = await svc.AddSsiQuestionLinesAsync(surveyNo, items);
+        return r is null ? Results.NotFound(new { surveyNo, error = "Không tìm thấy phiếu khảo sát SSI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/ssi-surveys/{surveyNo}/questions/{lineId:long}/update", async (string surveyNo, long lineId, UpdateSsiQuestionLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSsiQuestionLineAsync(surveyNo, lineId, dto);
+        return r is null ? Results.NotFound(new { surveyNo, lineId, error = "Không tìm thấy câu hỏi khảo sát." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/ssi-surveys/{surveyNo}/questions/{lineId:long}", async (string surveyNo, long lineId, UpdateSsiQuestionLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateSsiQuestionLineAsync(surveyNo, lineId, dto);
+        return r is null ? Results.NotFound(new { surveyNo, lineId, error = "Không tìm thấy câu hỏi khảo sát." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/ssi-surveys/{surveyNo}/questions/{lineId:long}", async (string surveyNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveSsiQuestionLineAsync(surveyNo, lineId);
+        return r is null ? Results.NotFound(new { surveyNo, lineId, error = "Không tìm thấy câu hỏi hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/ssi-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleSsiInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/ssi-surveys", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleSsiHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/ssi-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleSsiHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

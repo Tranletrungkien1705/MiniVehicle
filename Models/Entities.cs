@@ -146,6 +146,11 @@ public sealed class Vehicle
     public string? LastAutoDoNo { get; set; }           // Mã Lệnh giao xe DO tự động gần nhất sinh ra cho xe (DO-AUTO-...)
     public DateTime? LastAutoDoDate { get; set; }       // Ngày tự động phân bổ & sinh lệnh giao xe gần nhất
     public int AutoDoCount { get; set; } = 0;           // Tổng số lần xe được xử lý trong các đợt phân bổ giao xe tự động
+    public string? LastSsiNo { get; set; }              // Mã phiếu khảo sát hài lòng bán hàng SSI gần nhất (BizHTC.DealerSales.DLS_VINSurvey / SalesSatisfactionSurvey)
+    public DateTime? LastSsiDate { get; set; }          // Ngày thực hiện khảo sát SSI gần nhất
+    public decimal? LastSsiScore { get; set; }          // Điểm chỉ số hài lòng bán hàng SSI gần nhất (1.0 - 5.0 sao)
+    public int? LastSsiIndex1000 { get; set; }          // Điểm chỉ số SSI quy đổi thang 1000 điểm tiêu chuẩn J.D. Power (0 - 1000)
+    public int SsiSurveyCount { get; set; } = 0;        // Tổng số lượt đã thực hiện khảo sát SSI cho xe này
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -6082,5 +6087,324 @@ public sealed record VehicleAutoDoInfoDto(
     int AutoDoCount,
     List<AutoDeliveryOrderBatchLine> BatchHistory
 );
+
+// ===== Khảo sát Chỉ số Hài lòng Bán hàng & Bàn giao xe mới SSI (BizHTC.DealerSales / DLS_VINSurvey, RptSSI_ICIC, DlsVINSurvey_Update) =====
+
+/// <summary>Khảo sát Đánh giá Chỉ số Hài lòng Bán hàng SSI (BizHTC.DealerSales / DLS_VINSurvey / SalesSatisfactionSurvey): Trung tâm CSKH ICIC / Đại lý thực hiện khảo sát độc lập sau khi bàn giao xe mới cho khách hàng theo tiêu chuẩn Hyundai &amp; J.D. Power SSI (29 tiêu chí: TVBH, Showroom, Quy trình bàn giao xe, Hướng dẫn ADAS/AVN, Giấy tờ tài chính, Tiến độ giao xe, Net Promoter Score NPS và xử lý khiếu nại).</summary>
+public sealed class SalesSatisfactionSurvey
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string SurveyNo { get; set; } = "";             // Mã số phiếu khảo sát SSI (SSI-2026-03-0001, SSI...)
+    public string? SurveyNoUser { get; set; }            // Ký hiệu tham chiếu phiếu nội bộ
+    public string? DealNo { get; set; }                  // Mã hợp đồng / giao dịch bán lẻ xe liên kết (DLS_Deal / DealerDeal)
+    public string Vin { get; set; } = "";                // Số khung xe VIN được bàn giao
+    public string Model { get; set; } = "";              // Dòng xe (SantaFe, Tucson, Accent, Creta, Custin, Stargazer, Palisade, Ioniq 5...)
+    public string? SpecCode { get; set; }                // Phiên bản xe
+    public string? EngineNo { get; set; }                // Số máy
+    public string? Color { get; set; }                   // Màu sơn
+    public string? PlateNo { get; set; }                 // Biển số xe (nếu đã đăng ký)
+    public string CustomerName { get; set; } = "";       // Họ tên khách hàng / chủ sở hữu
+    public string CustomerPhone { get; set; } = "";      // Số điện thoại liên hệ
+    public string? CustomerEmail { get; set; }           // Email khách hàng
+    public string CustomerType { get; set; } = "Individual"; // Individual (Cá nhân), Corporate (Doanh nghiệp)
+    public string DealerCode { get; set; } = "";         // Mã đại lý bán xe (DLR-HN01, DLR-HCM01...)
+    public string? DealerName { get; set; }              // Tên đại lý
+    public string? SalesConsultantCode { get; set; }     // Mã nhân viên TVBH phụ trách hợp đồng
+    public string? SalesConsultantName { get; set; }     // Tên nhân viên TVBH
+    public DateTime DeliveryDate { get; set; } = DateTime.Now; // Ngày thực tế bàn giao xe cho khách hàng
+    public DateTime SurveyDate { get; set; } = DateTime.Now;   // Ngày thực hiện cuộc khảo sát
+    public string ContactChannel { get; set; } = "PhoneCall";  // PhoneCall (Cuộc gọi tổng đài ICIC), OnlineSurvey (Khảo sát trực tuyến Web), SMS (Tin nhắn), ZaloZNS (Zalo OA), ShowroomTablet (Tablet tại phòng giao xe), InPerson (Trực tiếp)
+    public int CallAttempts { get; set; } = 1;           // Số lần thử liên hệ cuộc gọi
+    public string? SurveyorStaff { get; set; }           // Chuyên viên CSKH / Khảo sát viên ICIC
+
+    // ===== Điểm số SSI theo các nhóm tiêu chí chuẩn (Thang điểm 1.0 - 5.0 sao) =====
+    public decimal ScoreSalesConsultant { get; set; } = 5.0m;  // 1. Tư vấn bán hàng: Thái độ, tác phong đón tiếp, am hiểu sản phẩm, tư vấn trung thực
+    public decimal ScoreDealershipFacility { get; set; } = 5.0m; // 2. Cơ sở vật chất Showroom: Khang trang, sạch sẽ, khu vực tiếp khách tiện nghi
+    public decimal ScoreDeliveryProcess { get; set; } = 5.0m;    // 3. Quy trình bàn giao xe: Lễ bàn giao trang trọng, giải thích kỹ thuật và bàn giao phụ kiện
+    public decimal ScorePaperworkFinance { get; set; } = 5.0m;   // 4. Giấy tờ & Tài chính: Minh bạch giá cả, hợp đồng, bảo hiểm, hỗ trợ ngân hàng trả góp
+    public decimal ScoreTimeliness { get; set; } = 5.0m;         // 5. Tiến độ giao xe: Bàn giao xe đúng hẹn cam kết
+    public decimal ScoreOverall { get; set; } = 5.0m;            // Điểm đánh giá trải nghiệm mua xe tổng thể (1.0 - 5.0 sao)
+    public decimal CalculatedSsiScore { get; set; } = 5.0m;      // Điểm SSI bình quân gia quyền theo chuẩn OEM (Thang 1.0 - 5.0)
+    public int SsiIndex1000 { get; set; } = 1000;                // Điểm SSI quy đổi hệ 1000 điểm chuẩn J.D. Power SSI = Round(CalculatedSsiScore / 5.0 * 1000)
+
+    // ===== Danh mục kiểm tra xác thực chi tiết (Checklist Nghiệm thu Bàn giao) =====
+    public bool IsCleanCarDelivered { get; set; } = true;        // Xe được vệ sinh sạch sẽ tinh tươm, không trầy xước
+    public bool IsFeatureExplained { get; set; } = true;         // TVBH đã hướng dẫn chi tiết các tính năng cơ bản & Sách HDSD
+    public bool IsAdasExplained { get; set; } = true;            // TVBH đã giải thích công nghệ an toàn chủ động Hyundai SmartSense / ADAS
+    public bool IsAvnBluelinkSetup { get; set; } = true;         // Đã kết nối điện thoại & kích hoạt Màn hình AVN / Ứng dụng Hyundai Bluelink
+    public bool IsOriginalDocsHandedOver { get; set; } = true;   // Đã nhận đầy đủ bộ hồ sơ gốc, hóa đơn GTGT, Phiếu xuất xưởng và Sổ bảo hành
+    public bool IsFollowUpCallPromised { get; set; } = true;     // TVBH đã hẹn gọi điện chăm sóc sau bàn giao xe
+
+    // ===== Chỉ số Net Promoter Score (NPS) & Ý kiến phản hồi =====
+    public int NpsScore { get; set; } = 10;                      // Điểm NPS (0 - 10 điểm): Mức độ sẵn sàng giới thiệu Hyundai cho người thân/bạn bè
+    public string NpsCategory { get; set; } = "Promoter";        // Promoter (9-10 điểm), Passive (7-8 điểm), Detractor (0-6 điểm)
+    public string? CustomerFeedback { get; set; }                // Lời nhận xét, cảm nhận hoặc khen ngợi của khách hàng
+
+    // ===== Quản lý Khiếu nại & Phương án Khắc phục Sự cố =====
+    public bool HasComplaint { get; set; } = false;              // Khách hàng có phản ánh không hài lòng hoặc khiếu nại (true/false)
+    public string? ComplaintCategory { get; set; }               // Phân loại khiếu nại: DeliveryDelay (Chậm giao xe), PriceFinance (Bất đồng giá/chi phí/vay), SalesAttitude (Thái độ TVBH), CarDefect (Lỗi kỹ thuật xe), MissingAccessories (Thiếu phụ kiện/quà), PaperworkDelay (Chậm hồ sơ/biển số), Other (Khác)
+    public string? ComplaintDetails { get; set; }                // Nội dung chi tiết bức xúc / khiếu nại của khách hàng
+    public string? RemedyAction { get; set; }                    // Phương án xử lý / giải pháp khắc phục từ Đại lý hoặc Hãng OEM
+    public bool IsComplaintResolved { get; set; } = false;       // Khiếu nại đã được xử lý thỏa đáng và khách hàng đồng thuận
+    public string? ResolvedBy { get; set; }                      // Người xác nhận giải quyết khiếu nại
+    public DateTime? ResolvedAt { get; set; }                    // Thời điểm giải quyết xong khiếu nại
+
+    // ===== Trạng thái & Nhật ký kiểm toán =====
+    public string Status { get; set; } = "Draft";                // Draft → Pending → InProgress → Completed (hoặc Unreachable / Escalated / Cancelled)
+    public string? Remark { get; set; }                          // Ghi chú nghiệp vụ
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? CompletedBy { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? EscalatedBy { get; set; }
+    public DateTime? EscalatedAt { get; set; }
+    public string? EscalateReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết Câu hỏi &amp; Trả lời khảo sát chuyên sâu theo chuẩn 2010.HTC DLS_VINSurvey (BizHTC.DealerSales / SalesSatisfactionSurveyQuestionLine): lưu vết chi tiết 29 câu hỏi nghiệp vụ khảo sát chuẩn hóa theo từng nhóm tiêu chí.</summary>
+public sealed class SalesSatisfactionSurveyQuestionLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long SalesSatisfactionSurveyId { get; set; }
+    public string SurveyNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public string QuestionCode { get; set; } = "";               // Mã câu hỏi chuẩn: Q01_GREETING, Q02_NEEDS_ANALYSIS, Q03_TEST_DRIVE, Q04_PRICE_TRANSPARENCY, Q05_CONTRACT_EXPLANATION, Q06_PAYMENT_FINANCE, Q07_DELIVERY_TIMELINESS, Q08_CLEAN_CONDITION, Q09_CEREMONY, Q10_FEATURE_DEMO, Q11_ADAS_DEMO, Q12_AVN_BLUELINK, Q13_DOCS_WARRANTY, Q14_FOLLOW_UP_PROMISE, Q15_SHOWROOM_COMFORT, Q16_SALES_ATTITUDE, Q17_OVERALL_EXPERIENCE, Q18_NPS_RECOMMEND...
+    public string QuestionCategory { get; set; } = "SalesConsultant"; // SalesConsultant (TVBH), Facility (Cơ sở vật chất), DeliveryProcess (Bàn giao xe), PaperworkFinance (Hồ sơ tài chính), Timeliness (Đúng hẹn), TechnologyADAS (Công nghệ & An toàn), OverallNPS (Tổng thể & Giới thiệu)
+    public string QuestionText { get; set; } = "";               // Nội dung câu hỏi phỏng vấn
+    public decimal Score { get; set; } = 5.0m;                   // Điểm đánh giá (1.0 - 5.0 hoặc thang 10)
+    public string? AnswerText { get; set; }                      // Câu trả lời (Có / Không / Đạt / Chưa Đạt / Ý kiến khách)
+    public decimal Weight { get; set; } = 1.0m;                  // Trọng số câu hỏi
+    public string? Remark { get; set; }                          // Ghi chú câu hỏi
+}
+
+// ===== DTOs cho Khảo sát Chỉ số Hài lòng Bán hàng SSI (BizHTC.DealerSales / DLS_VINSurvey & SalesSatisfactionSurvey) =====
+
+public sealed record CreateSalesSatisfactionSurveyDto(
+    string? SurveyNo,
+    string? SurveyNoUser,
+    string? DealNo,
+    string Vin,
+    string? Model,
+    string? SpecCode,
+    string? EngineNo,
+    string? Color,
+    string? PlateNo,
+    string? CustomerName,
+    string? CustomerPhone,
+    string? CustomerEmail,
+    string? CustomerType,
+    string? DealerCode,
+    string? DealerName,
+    string? SalesConsultantCode,
+    string? SalesConsultantName,
+    DateTime? DeliveryDate,
+    DateTime? SurveyDate,
+    string? ContactChannel,
+    string? SurveyorStaff,
+    string? Remark,
+    string? CreatedBy,
+    List<SsiQuestionInputDto>? Questions
+);
+
+public sealed record SsiQuestionInputDto(
+    string QuestionCode,
+    string? QuestionCategory,
+    string QuestionText,
+    decimal Score,
+    string? AnswerText,
+    decimal? Weight,
+    string? Remark
+);
+
+public sealed record UpdateSalesSatisfactionSurveyDto(
+    string? SurveyNoUser,
+    string? CustomerName,
+    string? CustomerPhone,
+    string? CustomerEmail,
+    string? PlateNo,
+    string? SalesConsultantCode,
+    string? SalesConsultantName,
+    DateTime? DeliveryDate,
+    DateTime? SurveyDate,
+    string? ContactChannel,
+    string? SurveyorStaff,
+    decimal? ScoreSalesConsultant,
+    decimal? ScoreDealershipFacility,
+    decimal? ScoreDeliveryProcess,
+    decimal? ScorePaperworkFinance,
+    decimal? ScoreTimeliness,
+    decimal? ScoreOverall,
+    bool? IsCleanCarDelivered,
+    bool? IsFeatureExplained,
+    bool? IsAdasExplained,
+    bool? IsAvnBluelinkSetup,
+    bool? IsOriginalDocsHandedOver,
+    bool? IsFollowUpCallPromised,
+    int? NpsScore,
+    string? CustomerFeedback,
+    bool? HasComplaint,
+    string? ComplaintCategory,
+    string? ComplaintDetails,
+    string? RemedyAction,
+    bool? IsComplaintResolved,
+    string? Remark
+);
+
+public sealed record CompleteSalesSatisfactionSurveyDto(
+    decimal? ScoreSalesConsultant,
+    decimal? ScoreDealershipFacility,
+    decimal? ScoreDeliveryProcess,
+    decimal? ScorePaperworkFinance,
+    decimal? ScoreTimeliness,
+    decimal? ScoreOverall,
+    bool? IsCleanCarDelivered,
+    bool? IsFeatureExplained,
+    bool? IsAdasExplained,
+    bool? IsAvnBluelinkSetup,
+    bool? IsOriginalDocsHandedOver,
+    bool? IsFollowUpCallPromised,
+    int? NpsScore,
+    string? CustomerFeedback,
+    bool? HasComplaint,
+    string? ComplaintCategory,
+    string? ComplaintDetails,
+    string? RemedyAction,
+    bool? IsComplaintResolved,
+    string? SurveyorStaff,
+    string? CompletedBy,
+    string? Remark
+);
+
+public sealed record RecordSsiContactAttemptDto(
+    string? ContactChannel,
+    string? SurveyorStaff,
+    string? AttemptNote,
+    bool IsReached,
+    DateTime? AttemptDate,
+    string? Actor
+);
+
+public sealed record EscalateSsiSurveyDto(
+    string ComplaintCategory,
+    string ComplaintDetails,
+    string EscalateReason,
+    string? RecommendedRemedy,
+    string? EscalatedBy
+);
+
+public sealed record ResolveSsiComplaintDto(
+    string RemedyAction,
+    string? CustomerAgreementNote,
+    string? ResolvedBy,
+    DateTime? ResolvedAt
+);
+
+public sealed record SalesSatisfactionSurveyTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record UpdateSsiQuestionLineDto(
+    decimal? Score,
+    string? AnswerText,
+    decimal? Weight,
+    string? Remark
+);
+
+public sealed record SalesSatisfactionSummaryDto(
+    int TotalSurveys,
+    int TotalCompleted,
+    int TotalPending,
+    int TotalInProgress,
+    int TotalUnreachable,
+    int TotalEscalated,
+    int TotalCancelled,
+    decimal AverageSsiScore,
+    int AverageSsiIndex1000,
+    decimal AverageScoreConsultant,
+    decimal AverageScoreFacility,
+    decimal AverageScoreDelivery,
+    decimal AverageScorePaperwork,
+    decimal AverageScoreTimeliness,
+    decimal AverageScoreOverall,
+    int TotalPromoters,
+    int TotalPassives,
+    int TotalDetractors,
+    decimal NpsScorePercent,
+    decimal CsatSatisfactionRatePercent,
+    int TotalComplaints,
+    int TotalResolvedComplaints,
+    decimal ComplaintResolutionRatePercent,
+    List<SsiDealerStatsDto> ByDealer,
+    List<SsiModelStatsDto> ByModel,
+    List<SsiSalesConsultantStatsDto> BySalesConsultant,
+    List<SsiComplaintCategoryStatsDto> ByComplaintCategory
+);
+
+public sealed record SsiDealerStatsDto(
+    string DealerCode,
+    string DealerName,
+    int TotalSurveys,
+    int CompletedCount,
+    decimal AverageSsiScore,
+    int AverageSsiIndex1000,
+    decimal NpsPercent,
+    decimal CsatPercent,
+    int ComplaintCount
+);
+
+public sealed record SsiModelStatsDto(
+    string Model,
+    int TotalSurveys,
+    int CompletedCount,
+    decimal AverageSsiScore,
+    int AverageSsiIndex1000,
+    decimal NpsPercent,
+    decimal CsatPercent
+);
+
+public sealed record SsiSalesConsultantStatsDto(
+    string SalesConsultantCode,
+    string SalesConsultantName,
+    string DealerCode,
+    int TotalSurveys,
+    decimal AverageScore,
+    int AverageIndex1000,
+    int PromoterCount,
+    int ComplaintCount
+);
+
+public sealed record SsiComplaintCategoryStatsDto(
+    string ComplaintCategory,
+    string CategoryName,
+    int TotalCount,
+    int ResolvedCount,
+    decimal ResolutionRatePercent
+);
+
+public sealed record VehicleSsiInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? PlateNo,
+    string? OwnerName,
+    string? DealerCode,
+    string? LastSsiNo,
+    DateTime? LastSsiDate,
+    decimal? LastSsiScore,
+    int? LastSsiIndex1000,
+    int SsiSurveyCount,
+    SalesSatisfactionSurvey? LastSurvey,
+    List<SalesSatisfactionSurvey> SurveyHistory
+);
+
 
 
