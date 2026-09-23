@@ -5855,6 +5855,306 @@ public static class Seeder
             }
         }
 
+        // ===== Cấu hình Điều kiện & Tự động Phân bổ Sinh Lệnh Giao Xe DO Tự Động (BizHTC.Car / Car_ConditionForDOAuto, Mst_DOATCondition, Car_DeliveryOrderAuto) =====
+        if (!await db.DOAutoConditions.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+
+            // Cấu hình 1: Phân bổ giao xe tự động FIFO theo ngày tồn kho nhà máy OEM
+            var cond1 = new DOAutoCondition
+            {
+                OrgId = org,
+                ConditionCode = "COND-DO-2026-01",
+                ConditionNoUser = "QĐ-ATDO/2026/03-FIFO",
+                ConditionName = "Cấu hình phân bổ giao xe tự động FIFO xe tồn bãi nhà máy OEM",
+                Description = "Tự động phân bổ và sinh Lệnh giao xe DO cho các đại lý theo thứ tự FIFO ngày xe nhập bãi, áp dụng cho xe đã hoàn tất KCS, thông quan và nghiệm thu PDI.",
+                PriorityRule = "FIFO_StoreDate",
+                EffectiveFrom = DateTime.Now.AddMonths(-1),
+                EffectiveTo = DateTime.Now.AddMonths(2),
+                MinDepositPercent = 10m,
+                MinPaymentPercent = 80m,
+                RequireGuaranteeOrPaid = true,
+                RequireQC = true,
+                RequireCustomsClearance = false,
+                RequireTaxPaid = false,
+                RequirePdiPassed = true,
+                RequireRedeemed = true,
+                RequireGpsInstalled = false,
+                MaxBatchVehicleQuota = 50,
+                TotalExecutedBatches = 1,
+                TotalAllocatedVehicles = 2,
+                Status = "Active",
+                Remark = "Áp dụng toàn quốc cho các dòng xe Accent, Creta, Tucson, SantaFe",
+                CreatedBy = "sales.planner.htv",
+                CreatedAt = DateTime.Now.AddMonths(-1),
+                ApprovedBy = "SalesDirector.NguyenVanTuan",
+                ApprovedAt = DateTime.Now.AddMonths(-1)
+            };
+
+            // Cấu hình 2: Phân bổ giao xe ưu tiên đại lý thanh toán và bảo lãnh ngân hàng
+            var cond2 = new DOAutoCondition
+            {
+                OrgId = org,
+                ConditionCode = "COND-DO-2026-02",
+                ConditionNoUser = "QĐ-ATDO/2026/03-PAYMENT",
+                ConditionName = "Cấu hình phân bổ xe ưu tiên tỷ lệ thanh toán và bảo lãnh ngân hàng",
+                Description = "Ưu tiên cấp xe cho các đại lý đã thanh toán 100% tiền xe hoặc có bảo lãnh ngân hàng còn hạn mức cao, tối ưu hóa dòng tiền và giải phóng tồn kho.",
+                PriorityRule = "PaymentRatio_Desc",
+                EffectiveFrom = DateTime.Now.AddDays(-15),
+                EffectiveTo = DateTime.Now.AddMonths(3),
+                MinDepositPercent = 20m,
+                MinPaymentPercent = 100m,
+                RequireGuaranteeOrPaid = true,
+                RequireQC = true,
+                RequireCustomsClearance = true,
+                RequireTaxPaid = true,
+                RequirePdiPassed = true,
+                RequireRedeemed = true,
+                RequireGpsInstalled = true,
+                MaxBatchVehicleQuota = 30,
+                TotalExecutedBatches = 0,
+                TotalAllocatedVehicles = 0,
+                Status = "Active",
+                Remark = "Ưu tiên phân bổ dòng xe SUV và xe điện",
+                CreatedBy = "sales.planner.htv",
+                CreatedAt = DateTime.Now.AddDays(-15),
+                ApprovedBy = "SalesDirector.NguyenVanTuan",
+                ApprovedAt = DateTime.Now.AddDays(-14)
+            };
+
+            db.DOAutoConditions.AddRange(cond1, cond2);
+            await db.SaveChangesAsync();
+
+            // Dòng model áp dụng cho cond1
+            db.DOAutoConditionLines.AddRange(
+                new DOAutoConditionLine
+                {
+                    OrgId = org,
+                    DOAutoConditionId = cond1.Id,
+                    ConditionCode = cond1.ConditionCode,
+                    LineIndex = 1,
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    ColorCode = null,
+                    MaxQuotaQty = 30,
+                    PriorityRank = 1,
+                    Status = "Active",
+                    Remark = "Dòng sedan bán chạy nhất"
+                },
+                new DOAutoConditionLine
+                {
+                    OrgId = org,
+                    DOAutoConditionId = cond1.Id,
+                    ConditionCode = cond1.ConditionCode,
+                    LineIndex = 2,
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    ColorCode = null,
+                    MaxQuotaQty = 20,
+                    PriorityRank = 2,
+                    Status = "Active",
+                    Remark = "Dòng B-SUV chủ lực"
+                }
+            );
+
+            // Dòng đại lý áp dụng cho cond1
+            db.DOAutoConditionDealerLines.AddRange(
+                new DOAutoConditionDealerLine
+                {
+                    OrgId = org,
+                    DOAutoConditionId = cond1.Id,
+                    ConditionCode = cond1.ConditionCode,
+                    LineIndex = 1,
+                    DealerCode = "DLR-HN01",
+                    DealerName = "Hyundai Đông Đô",
+                    RegionCode = "MienBac",
+                    MaxDealerQuota = 20,
+                    TierLevel = "PriorityVIP",
+                    Status = "Active",
+                    Remark = "Đại lý 3S xuất sắc miền Bắc"
+                },
+                new DOAutoConditionDealerLine
+                {
+                    OrgId = org,
+                    DOAutoConditionId = cond1.Id,
+                    ConditionCode = cond1.ConditionCode,
+                    LineIndex = 2,
+                    DealerCode = "DLR-HCM01",
+                    DealerName = "Hyundai Sài Gòn",
+                    RegionCode = "MienNam",
+                    MaxDealerQuota = 20,
+                    TierLevel = "Tier1",
+                    Status = "Active",
+                    Remark = "Đại lý trọng điểm miền Nam"
+                },
+                new DOAutoConditionDealerLine
+                {
+                    OrgId = org,
+                    DOAutoConditionId = cond1.Id,
+                    ConditionCode = cond1.ConditionCode,
+                    LineIndex = 3,
+                    DealerCode = "DLR-DN01",
+                    DealerName = "Hyundai Đà Nẵng",
+                    RegionCode = "MienTrung",
+                    MaxDealerQuota = 10,
+                    TierLevel = "Tier2",
+                    Status = "Active",
+                    Remark = "Đại lý khu vực miền Trung"
+                }
+            );
+
+            // Đợt chạy phân bổ tự động mẫu ADOB-2026-03-0001
+            var batch1 = new AutoDeliveryOrderBatch
+            {
+                OrgId = org,
+                BatchNo = "ADOB-2026-03-0001",
+                BatchNoUser = "ĐCPB/2026/03-01",
+                BatchDate = DateTime.Now.AddDays(-10),
+                ConditionId = cond1.Id,
+                ConditionCode = cond1.ConditionCode,
+                ConditionName = cond1.ConditionName,
+                StorageCode = "ALL",
+                TotalScannedVehicles = 4,
+                TotalEligibleVehicles = 2,
+                TotalAllocatedVehicles = 2,
+                TotalSkippedVehicles = 2,
+                TotalGeneratedDOs = 1,
+                Status = "Confirmed",
+                ExecutionMode = "LiveExecution",
+                Remark = "Đợt chạy phân bổ tự động đầu tháng 03/2026 sinh lệnh giao xe cho đại lý Hyundai Đông Đô",
+                CreatedBy = "system.autodo",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ExecutedBy = "dispatcher.quang",
+                ExecutedAt = DateTime.Now.AddDays(-10),
+                ConfirmedBy = "SalesDirector.NguyenVanTuan",
+                ConfirmedAt = DateTime.Now.AddDays(-9)
+            };
+            db.AutoDeliveryOrderBatches.Add(batch1);
+            await db.SaveChangesAsync();
+
+            db.AutoDeliveryOrderBatchLines.AddRange(
+                new AutoDeliveryOrderBatchLine
+                {
+                    OrgId = org,
+                    AutoDeliveryOrderBatchId = batch1.Id,
+                    BatchNo = batch1.BatchNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    EngineNo = "G4LC0001",
+                    Color = "Trắng",
+                    StorageCode = "YARD-A1",
+                    DealerCode = "DLR-HN01",
+                    DealerName = "Hyundai Đông Đô",
+                    SOCode = "SO202603-001",
+                    AllocatedDoNo = "DO-AUTO-20260318-DLR-HN01-001",
+                    AllocationStatus = "Allocated",
+                    EligibilityReason = "Thỏa mãn toàn bộ điều kiện kỹ thuật KCS, PDI và bảo lãnh ngân hàng",
+                    IsQCPassed = true,
+                    IsCustomsCleared = true,
+                    IsTaxPaid = true,
+                    IsPdiPaid = true,
+                    IsRedeemed = true,
+                    IsGpsInstalled = true,
+                    IsGuaranteedOrPaid = true,
+                    Status = "Delivered",
+                    Remark = "Đã giao xe thành công"
+                },
+                new AutoDeliveryOrderBatchLine
+                {
+                    OrgId = org,
+                    AutoDeliveryOrderBatchId = batch1.Id,
+                    BatchNo = batch1.BatchNo,
+                    LineIndex = 2,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    EngineNo = "G4FL0002",
+                    Color = "Đen",
+                    StorageCode = "YARD-B2",
+                    DealerCode = "DLR-HN01",
+                    DealerName = "Hyundai Đông Đô",
+                    SOCode = "SO202603-001",
+                    AllocatedDoNo = "DO-AUTO-20260318-DLR-HN01-001",
+                    AllocationStatus = "Allocated",
+                    EligibilityReason = "Thỏa mãn toàn bộ điều kiện kỹ thuật KCS, PDI và bảo lãnh ngân hàng",
+                    IsQCPassed = true,
+                    IsCustomsCleared = true,
+                    IsTaxPaid = true,
+                    IsPdiPaid = true,
+                    IsRedeemed = true,
+                    IsGpsInstalled = true,
+                    IsGuaranteedOrPaid = true,
+                    Status = "Delivered",
+                    Remark = "Đã giao xe thành công"
+                },
+                new AutoDeliveryOrderBatchLine
+                {
+                    OrgId = org,
+                    AutoDeliveryOrderBatchId = batch1.Id,
+                    BatchNo = batch1.BatchNo,
+                    LineIndex = 3,
+                    Vin = "DEMOVIN00000003",
+                    Model = "Hyundai New Porter H150",
+                    SpecCode = "H150 Thùng Bạt",
+                    Color = "Trắng",
+                    StorageCode = "BODY-SHOP-01",
+                    AllocationStatus = "Skipped",
+                    EligibilityReason = "Dòng xe thương mại Porter H150 không nằm trong danh mục model áp dụng của cấu hình COND-DO-2026-01",
+                    IsQCPassed = true,
+                    IsCustomsCleared = false,
+                    IsTaxPaid = false,
+                    IsPdiPaid = false,
+                    IsRedeemed = true,
+                    IsGpsInstalled = false,
+                    IsGuaranteedOrPaid = false,
+                    Status = "Skipped",
+                    Remark = "Bỏ qua trong đợt chạy xe du lịch"
+                },
+                new AutoDeliveryOrderBatchLine
+                {
+                    OrgId = org,
+                    AutoDeliveryOrderBatchId = batch1.Id,
+                    BatchNo = batch1.BatchNo,
+                    LineIndex = 4,
+                    Vin = "DEMOVIN00000004",
+                    Model = "Hyundai Mighty EX8 GTL",
+                    SpecCode = "EX8 GTL Thùng Lạnh",
+                    Color = "Xanh",
+                    StorageCode = "BODY-SHOP-01",
+                    AllocationStatus = "Skipped",
+                    EligibilityReason = "Dòng xe tải Mighty EX8 không nằm trong danh mục model áp dụng",
+                    IsQCPassed = true,
+                    IsCustomsCleared = false,
+                    IsTaxPaid = false,
+                    IsPdiPaid = false,
+                    IsRedeemed = true,
+                    IsGpsInstalled = false,
+                    IsGuaranteedOrPaid = false,
+                    Status = "Skipped",
+                    Remark = "Bỏ qua trong đợt chạy xe du lịch"
+                }
+            );
+
+            // Cập nhật thông tin auto-DO trên hồ sơ xe VIN
+            var v1Auto = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1Auto != null)
+            {
+                v1Auto.LastAutoDoNo = "DO-AUTO-20260318-DLR-HN01-001";
+                v1Auto.LastAutoDoDate = DateTime.Now.AddDays(-10);
+                v1Auto.AutoDoCount = 1;
+            }
+
+            var v2Auto = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2Auto != null)
+            {
+                v2Auto.LastAutoDoNo = "DO-AUTO-20260318-DLR-HN01-001";
+                v2Auto.LastAutoDoDate = DateTime.Now.AddDays(-10);
+                v2Auto.AutoDoCount = 1;
+            }
+        }
+
         await db.SaveChangesAsync();
     }
 
@@ -6102,7 +6402,15 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"ServicePackageLaborLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServicePackageId\" bigint NOT NULL, \"PackageNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"ServiceItemCode\" text NOT NULL DEFAULT '', \"ServiceItemName\" text NOT NULL DEFAULT '', \"StandardHours\" numeric NOT NULL DEFAULT 0.5, \"LaborPrice\" numeric NOT NULL DEFAULT 350000, \"DiscountPercent\" numeric NOT NULL DEFAULT 0, \"LaborAmount\" numeric NOT NULL DEFAULT 175000, \"IsMandatory\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"ServicePackagePartLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ServicePackageId\" bigint NOT NULL, \"PackageNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"PartCode\" text NOT NULL DEFAULT '', \"PartName\" text NOT NULL DEFAULT '', \"Unit\" text NOT NULL DEFAULT 'Cái', \"Quantity\" numeric NOT NULL DEFAULT 1.0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"DiscountPercent\" numeric NOT NULL DEFAULT 0, \"PartAmount\" numeric NOT NULL DEFAULT 0, \"IsMandatory\" boolean NOT NULL DEFAULT true, \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"ServicePackageSubscriptions\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SubscriptionNo\" text NOT NULL DEFAULT '', \"SubscriptionNoUser\" text NULL, \"PackageCardNo\" text NOT NULL DEFAULT '', \"ServicePackageId\" bigint NOT NULL, \"PackageNo\" text NOT NULL DEFAULT '', \"PackageName\" text NOT NULL DEFAULT '', \"PackageType\" text NOT NULL DEFAULT 'PeriodicMaintenance', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"EngineNo\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"CustomerEmail\" text NULL, \"DealerCode\" text NOT NULL DEFAULT 'DLR-HN01', \"DealerName\" text NULL DEFAULT 'Hyundai Hà Nội 01', \"SalesAdvisor\" text NULL, \"PurchaseDate\" timestamp NOT NULL DEFAULT now(), \"StartDate\" timestamp NOT NULL DEFAULT now(), \"ExpiryDate\" timestamp NOT NULL DEFAULT now(), \"TotalPackagePrice\" numeric NOT NULL DEFAULT 0, \"PaidAmount\" numeric NOT NULL DEFAULT 0, \"IsPaid\" boolean NOT NULL DEFAULT true, \"PaymentMethod\" text NOT NULL DEFAULT 'Cash', \"MaxUsageCount\" integer NOT NULL DEFAULT 1, \"UsedCount\" integer NOT NULL DEFAULT 0, \"RemainingCount\" integer NOT NULL DEFAULT 1, \"TotalSavedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Active', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"ServicePackageUsages\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"UsageNo\" text NOT NULL DEFAULT '', \"SubscriptionId\" bigint NOT NULL, \"SubscriptionNo\" text NOT NULL DEFAULT '', \"PackageCardNo\" text NOT NULL DEFAULT '', \"PackageNo\" text NOT NULL DEFAULT '', \"PackageName\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"PlateNo\" text NULL, \"DealerCode\" text NOT NULL DEFAULT 'DLR-HN01', \"DealerName\" text NULL DEFAULT 'Hyundai Hà Nội 01', \"UsageDate\" timestamp NOT NULL DEFAULT now(), \"OdoKm\" integer NOT NULL DEFAULT 5000, \"MilestoneUsed\" integer NULL DEFAULT 5000, \"RoNo\" text NULL, \"CavityNo\" text NULL, \"Technician\" text NULL, \"ServiceAdvisor\" text NULL, \"LaborSavedAmount\" numeric NOT NULL DEFAULT 0, \"PartSavedAmount\" numeric NOT NULL DEFAULT 0, \"TotalSavedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Confirmed', \"CustomerRating\" numeric NULL DEFAULT 5.0, \"CustomerFeedback\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ConfirmedBy\" text NULL, \"ConfirmedAt\" timestamp NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"ServicePackageUsages\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"UsageNo\" text NOT NULL DEFAULT '', \"SubscriptionId\" bigint NOT NULL, \"SubscriptionNo\" text NOT NULL DEFAULT '', \"PackageCardNo\" text NOT NULL DEFAULT '', \"PackageNo\" text NOT NULL DEFAULT '', \"PackageName\" text NOT NULL DEFAULT '', \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"PlateNo\" text NULL, \"DealerCode\" text NOT NULL DEFAULT 'DLR-HN01', \"DealerName\" text NULL DEFAULT 'Hyundai Hà Nội 01', \"UsageDate\" timestamp NOT NULL DEFAULT now(), \"OdoKm\" integer NOT NULL DEFAULT 5000, \"MilestoneUsed\" integer NULL DEFAULT 5000, \"RoNo\" text NULL, \"CavityNo\" text NULL, \"Technician\" text NULL, \"ServiceAdvisor\" text NULL, \"LaborSavedAmount\" numeric NOT NULL DEFAULT 0, \"PartSavedAmount\" numeric NOT NULL DEFAULT 0, \"TotalSavedAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Confirmed', \"CustomerRating\" numeric NULL DEFAULT 5.0, \"CustomerFeedback\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ConfirmedBy\" text NULL, \"ConfirmedAt\" timestamp NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastAutoDoNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastAutoDoDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"AutoDoCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"DOAutoConditions\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ConditionCode\" text NOT NULL DEFAULT '', \"ConditionNoUser\" text NULL, \"ConditionName\" text NOT NULL DEFAULT '', \"Description\" text NULL, \"PriorityRule\" text NOT NULL DEFAULT 'FIFO_StoreDate', \"EffectiveFrom\" timestamp NOT NULL DEFAULT now(), \"EffectiveTo\" timestamp NOT NULL DEFAULT now(), \"MinDepositPercent\" numeric NOT NULL DEFAULT 10, \"MinPaymentPercent\" numeric NOT NULL DEFAULT 80, \"RequireGuaranteeOrPaid\" boolean NOT NULL DEFAULT true, \"RequireQC\" boolean NOT NULL DEFAULT true, \"RequireCustomsClearance\" boolean NOT NULL DEFAULT false, \"RequireTaxPaid\" boolean NOT NULL DEFAULT false, \"RequirePdiPassed\" boolean NOT NULL DEFAULT true, \"RequireRedeemed\" boolean NOT NULL DEFAULT true, \"RequireGpsInstalled\" boolean NOT NULL DEFAULT false, \"MaxBatchVehicleQuota\" integer NOT NULL DEFAULT 100, \"TotalExecutedBatches\" integer NOT NULL DEFAULT 0, \"TotalAllocatedVehicles\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"SuspendedBy\" text NULL, \"SuspendedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"DOAutoConditionLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"DOAutoConditionId\" bigint NOT NULL, \"ConditionCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"ColorCode\" text NULL, \"MaxQuotaQty\" integer NOT NULL DEFAULT 50, \"PriorityRank\" integer NOT NULL DEFAULT 1, \"Status\" text NOT NULL DEFAULT 'Active', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"DOAutoConditionDealerLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"DOAutoConditionId\" bigint NOT NULL, \"ConditionCode\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"RegionCode\" text NULL DEFAULT 'MienBac', \"MaxDealerQuota\" integer NOT NULL DEFAULT 20, \"TierLevel\" text NOT NULL DEFAULT 'Tier1', \"Status\" text NOT NULL DEFAULT 'Active', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"AutoDeliveryOrderBatches\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"BatchNo\" text NOT NULL DEFAULT '', \"BatchNoUser\" text NULL, \"BatchDate\" timestamp NOT NULL DEFAULT now(), \"ConditionId\" bigint NULL, \"ConditionCode\" text NOT NULL DEFAULT '', \"ConditionName\" text NULL, \"StorageCode\" text NULL DEFAULT 'ALL', \"TotalScannedVehicles\" integer NOT NULL DEFAULT 0, \"TotalEligibleVehicles\" integer NOT NULL DEFAULT 0, \"TotalAllocatedVehicles\" integer NOT NULL DEFAULT 0, \"TotalSkippedVehicles\" integer NOT NULL DEFAULT 0, \"TotalGeneratedDOs\" integer NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Draft', \"ExecutionMode\" text NOT NULL DEFAULT 'LiveExecution', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ExecutedBy\" text NULL, \"ExecutedAt\" timestamp NULL, \"ConfirmedBy\" text NULL, \"ConfirmedAt\" timestamp NULL, \"RollbackedBy\" text NULL, \"RollbackedAt\" timestamp NULL, \"RollbackReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"AutoDeliveryOrderBatchLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"AutoDeliveryOrderBatchId\" bigint NOT NULL, \"BatchNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCode\" text NULL, \"DealerCode\" text NULL, \"DealerName\" text NULL, \"SOCode\" text NULL, \"ContractNo\" text NULL, \"AllocatedDoNo\" text NULL, \"AllocationStatus\" text NOT NULL DEFAULT 'Allocated', \"EligibilityReason\" text NULL, \"IsQCPassed\" boolean NOT NULL DEFAULT true, \"IsCustomsCleared\" boolean NOT NULL DEFAULT true, \"IsTaxPaid\" boolean NOT NULL DEFAULT true, \"IsPdiPaid\" boolean NOT NULL DEFAULT true, \"IsRedeemed\" boolean NOT NULL DEFAULT true, \"IsGpsInstalled\" boolean NOT NULL DEFAULT true, \"IsGuaranteedOrPaid\" boolean NOT NULL DEFAULT true, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

@@ -128,6 +128,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<ServicePackagePartLine> ServicePackagePartLines => Set<ServicePackagePartLine>();
     public DbSet<ServicePackageSubscription> ServicePackageSubscriptions => Set<ServicePackageSubscription>();
     public DbSet<ServicePackageUsage> ServicePackageUsages => Set<ServicePackageUsage>();
+    public DbSet<DOAutoCondition> DOAutoConditions => Set<DOAutoCondition>();
+    public DbSet<DOAutoConditionLine> DOAutoConditionLines => Set<DOAutoConditionLine>();
+    public DbSet<DOAutoConditionDealerLine> DOAutoConditionDealerLines => Set<DOAutoConditionDealerLine>();
+    public DbSet<AutoDeliveryOrderBatch> AutoDeliveryOrderBatches => Set<AutoDeliveryOrderBatch>();
+    public DbSet<AutoDeliveryOrderBatchLine> AutoDeliveryOrderBatchLines => Set<AutoDeliveryOrderBatchLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -230,5 +235,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<ServicePackageUsage>().HasIndex(x => new { x.OrgId, x.PackageCardNo });
         b.Entity<ServicePackageUsage>().HasIndex(x => new { x.OrgId, x.Vin });
         b.Entity<ServicePackageUsage>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<DOAutoCondition>().HasIndex(x => new { x.OrgId, x.ConditionCode }).IsUnique();
+        b.Entity<DOAutoCondition>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<DOAutoConditionLine>().HasIndex(x => new { x.OrgId, x.ConditionCode });
+        b.Entity<DOAutoConditionDealerLine>().HasIndex(x => new { x.OrgId, x.ConditionCode, x.DealerCode });
+        b.Entity<AutoDeliveryOrderBatch>().HasIndex(x => new { x.OrgId, x.BatchNo }).IsUnique();
+        b.Entity<AutoDeliveryOrderBatch>().HasIndex(x => new { x.OrgId, x.ConditionCode });
+        b.Entity<AutoDeliveryOrderBatch>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<AutoDeliveryOrderBatchLine>().HasIndex(x => new { x.OrgId, x.BatchNo });
+        b.Entity<AutoDeliveryOrderBatchLine>().HasIndex(x => new { x.OrgId, x.Vin });
+        b.Entity<AutoDeliveryOrderBatchLine>().HasIndex(x => new { x.OrgId, x.DealerCode });
     }
 }

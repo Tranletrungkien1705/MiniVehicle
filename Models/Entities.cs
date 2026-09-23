@@ -143,6 +143,9 @@ public sealed class Vehicle
     public string? LastPackageCardNo { get; set; }      // Mã thẻ bảo dưỡng trọn gói điện tử đang kích hoạt (PackageCardNo)
     public int ActiveServicePackageCount { get; set; } = 0; // Số lượng thẻ / gói dịch vụ đang còn hiệu lực
     public int PackageUsageCount { get; set; } = 0;     // Tổng số lượt xe đã sử dụng quyền lợi gói dịch vụ bảo dưỡng
+    public string? LastAutoDoNo { get; set; }           // Mã Lệnh giao xe DO tự động gần nhất sinh ra cho xe (DO-AUTO-...)
+    public DateTime? LastAutoDoDate { get; set; }       // Ngày tự động phân bổ & sinh lệnh giao xe gần nhất
+    public int AutoDoCount { get; set; } = 0;           // Tổng số lần xe được xử lý trong các đợt phân bổ giao xe tự động
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -5759,4 +5762,325 @@ public sealed record VehicleServicePackageInfoDto(
     List<ServicePackageSubscription> Subscriptions,
     List<ServicePackageUsage> RecentUsages
 );
+
+// ===== Cấu hình Điều kiện & Tự động Phân bổ & Sinh Lệnh Giao Xe DO Tự Động (BizHTC.Car / Car_ConditionForDOAuto, Mst_DOATCondition, Mst_DOATConditionDtl, Car_DeliveryOrderAuto / FrmMngSetupConditionForDOAuto, FrmNewSetupConditionForDOAuto, FrmNewDOAuto) =====
+
+/// <summary>Cấu hình Điều kiện Giao xe Tự động DO Auto (BizHTC.Car / Mst_DOATCondition / DOAutoCondition): thiết lập các tiêu chí tài chính, pháp lý, chất lượng KCS, quy tắc ưu tiên (FIFO theo ngày tồn kho / ngày hợp đồng, tỷ lệ thanh toán, phân hạng đại lý) và hạn mức tự động phân bổ xe InStock sinh Lệnh giao xe DO.</summary>
+public sealed class DOAutoCondition
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string ConditionCode { get; set; } = "";         // Mã cấu hình điều kiện (COND-DO-2026-01, COND...)
+    public string? ConditionNoUser { get; set; }           // Số hiệu / ký hiệu tham chiếu nội bộ
+    public string ConditionName { get; set; } = "";        // Tên cấu hình điều kiện giao xe tự động
+    public string? Description { get; set; }               // Mô tả chi tiết mục đích cấu hình
+    public string PriorityRule { get; set; } = "FIFO_StoreDate"; // Quy tắc ưu tiên: FIFO_StoreDate (Xe tồn kho lâu nhất), FIFO_ContractDate (Hợp đồng/Đơn hàng ký sớm nhất), PaymentRatio_Desc (Tỷ lệ thanh toán/bảo lãnh cao nhất), DealerTier (Ưu tiên đại lý cấp 1/trọng điểm)
+    public DateTime EffectiveFrom { get; set; } = DateTime.Now; // Ngày bắt đầu có hiệu lực
+    public DateTime EffectiveTo { get; set; } = DateTime.Now.AddMonths(3); // Ngày hết hạn hiệu lực
+    public decimal MinDepositPercent { get; set; } = 10m;   // Tỷ lệ % tiền đặt cọc tối thiểu (VD: 10% = 10)
+    public decimal MinPaymentPercent { get; set; } = 80m;   // Tỷ lệ % thanh toán hoặc bảo lãnh ngân hàng tối thiểu (VD: 80% = 80)
+    public bool RequireGuaranteeOrPaid { get; set; } = true; // Bắt buộc xe đã có Bảo lãnh ngân hàng hoặc đã hoàn tất thanh toán
+    public bool RequireQC { get; set; } = true;             // Bắt buộc xe đã kiểm tra KCS xuất xưởng nhà máy (ManufacturedDate != null)
+    public bool RequireCustomsClearance { get; set; } = false; // Bắt buộc xe nhập khẩu đã thông quan hải quan (IsCustomsCleared)
+    public bool RequireTaxPaid { get; set; } = false;       // Bắt buộc xe đã nộp đủ thuế hải quan (TaxPaymentDate != null)
+    public bool RequirePdiPassed { get; set; } = true;      // Bắt buộc xe đã qua kiểm tra tiền bàn giao PDI đạt chuẩn
+    public bool RequireRedeemed { get; set; } = true;       // Bắt buộc xe không bị thế chấp hoặc đã giải chấp (IsMortgaged == false || RedeemDate != null)
+    public bool RequireGpsInstalled { get; set; } = false;  // Bắt buộc xe đã gắn thiết bị định vị GPS giám sát vận chuyển
+    public int MaxBatchVehicleQuota { get; set; } = 100;    // Số lượng xe tối đa được phân bổ trong 1 đợt chạy
+    public int TotalExecutedBatches { get; set; } = 0;      // Tổng số đợt chạy đã áp dụng điều kiện này
+    public int TotalAllocatedVehicles { get; set; } = 0;    // Tổng số lượng xe đã được phân bổ thành công
+    public string Status { get; set; } = "Draft";           // Draft → Active → Expired (hoặc Suspended / Cancelled)
+    public string? Remark { get; set; }                     // Ghi chú điều hành
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }                 // Giám đốc Bán hàng / Khối Phân phối duyệt cấu hình
+    public DateTime? ApprovedAt { get; set; }
+    public string? SuspendedBy { get; set; }
+    public DateTime? SuspendedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết Dòng xe áp dụng trong Cấu hình Giao xe Tự động (BizHTC.Car / Mst_DOATConditionDtl / DOAutoConditionLine): quy định model, phiên bản spec, màu sắc, số lượng phân bổ tối đa quota và thứ tự ưu tiên dòng xe.</summary>
+public sealed class DOAutoConditionLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long DOAutoConditionId { get; set; }
+    public string ConditionCode { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public string Model { get; set; } = "";                 // Dòng xe áp dụng (SantaFe, Tucson, Accent, Creta, Custin, Stargazer, Palisade, Ioniq 5...)
+    public string? SpecCode { get; set; }                   // Phiên bản cấu hình (1.5 AT Tiêu Chuẩn, 1.6T AWD, Calligraphy...)
+    public string? ColorCode { get; set; }                  // Mã màu (NWAC, SAW, R2P...) hoặc null (tất cả màu)
+    public int MaxQuotaQty { get; set; } = 50;              // Số lượng xe tối đa cho phép phân bổ dòng này trong đợt
+    public int PriorityRank { get; set; } = 1;              // Thứ tự ưu tiên dòng xe (1 = Ưu tiên cao nhất)
+    public string Status { get; set; } = "Active";          // Active, Inactive
+    public string? Remark { get; set; }
+}
+
+/// <summary>Chi tiết Đại lý áp dụng trong Cấu hình Giao xe Tự động (BizHTC.Car / DOAutoConditionDealerLine): quy định danh sách đại lý được nhận xe tự động, phân hạng đại lý tier, khu vực và hạn mức tối đa cho mỗi đại lý.</summary>
+public sealed class DOAutoConditionDealerLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long DOAutoConditionId { get; set; }
+    public string ConditionCode { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public string DealerCode { get; set; } = "";            // Mã đại lý (DLR-HN01, DLR-HCM01...)
+    public string? DealerName { get; set; }                 // Tên đại lý
+    public string? RegionCode { get; set; } = "MienBac";    // MienBac, MienTrung, MienNam, TayNguyen
+    public int MaxDealerQuota { get; set; } = 20;           // Hạn mức số lượng xe tối đa cho đại lý trong đợt
+    public string TierLevel { get; set; } = "Tier1";        // Phân hạng đại lý: PriorityVIP, Tier1, Tier2, Tier3
+    public string Status { get; set; } = "Active";          // Active, Inactive
+    public string? Remark { get; set; }
+}
+
+/// <summary>Đợt Chạy Phân Bổ &amp; Sinh Lệnh Giao Xe DO Tự Động (BizHTC.Car / Car_DeliveryOrderAuto / AutoDeliveryOrderBatch): quản lý phiên chạy tự động quét kho tồn InStock, đối soát đơn hàng SO / hợp đồng đại lý, lọc điều kiện và tự động sinh Lệnh giao xe DeliveryOrder theo từng đại lý.</summary>
+public sealed class AutoDeliveryOrderBatch
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string BatchNo { get; set; } = "";               // Mã đợt chạy (ADOB-2026-03-0001, ADOB...)
+    public string? BatchNoUser { get; set; }              // Ký hiệu tham chiếu nội bộ
+    public DateTime BatchDate { get; set; } = DateTime.Now; // Ngày giờ thực hiện đợt chạy
+    public long? ConditionId { get; set; }                 // Liên kết cấu hình điều kiện áp dụng
+    public string ConditionCode { get; set; } = "";         // Mã cấu hình điều kiện
+    public string? ConditionName { get; set; }             // Tên cấu hình điều kiện
+    public string? StorageCode { get; set; } = "ALL";       // Kho bãi OEM quét xe (ALL, PLANT-HTMV1, PLANT-HTMV2, TCV_YARD...)
+    public int TotalScannedVehicles { get; set; } = 0;      // Tổng số xe tồn kho InStock được quét
+    public int TotalEligibleVehicles { get; set; } = 0;     // Số lượng xe thỏa mãn toàn bộ tiêu chí điều kiện
+    public int TotalAllocatedVehicles { get; set; } = 0;    // Số lượng xe đã thực tế phân bổ & sinh Lệnh giao xe DO
+    public int TotalSkippedVehicles { get; set; } = 0;      // Số lượng xe bị bỏ qua do không thỏa mãn hoặc vượt quota
+    public int TotalGeneratedDOs { get; set; } = 0;         // Tổng số phiếu Lệnh giao xe DeliveryOrder được tự động tạo mới
+    public string Status { get; set; } = "Draft";           // Draft → Simulated → Executed → Confirmed (hoặc Cancelled / Rollbacked)
+    public string ExecutionMode { get; set; } = "LiveExecution"; // LiveExecution (Chạy thực tế sinh DO), Simulation (Chạy thử mô phỏng kiểm tra)
+    public string? Remark { get; set; }                     // Ghi chú đợt chạy
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ExecutedBy { get; set; }                 // Chuyên viên điều phối / Hệ thống chạy lệnh
+    public DateTime? ExecutedAt { get; set; }
+    public string? ConfirmedBy { get; set; }                // Lãnh đạo xác nhận kết quả đợt phân bổ
+    public DateTime? ConfirmedAt { get; set; }
+    public string? RollbackedBy { get; set; }               // Người thực hiện hoàn tác đợt chạy
+    public DateTime? RollbackedAt { get; set; }
+    public string? RollbackReason { get; set; }
+}
+
+/// <summary>Chi tiết Xe &amp; Kết quả Phân bổ trong Đợt Chạy Giao Xe Tự Động (BizHTC.Car / AutoDeliveryOrderBatchLine): ghi nhận từng số khung VIN, thông tin xe, đại lý được gán, mã DO được sinh, trạng thái hợp lệ và lý do không đạt nếu bị bỏ qua.</summary>
+public sealed class AutoDeliveryOrderBatchLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long AutoDeliveryOrderBatchId { get; set; }
+    public string BatchNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;
+    public string Vin { get; set; } = "";                   // Số khung xe VIN
+    public string Model { get; set; } = "";                 // Dòng xe
+    public string? SpecCode { get; set; }                   // Phiên bản xe
+    public string? EngineNo { get; set; }                   // Số máy
+    public string? Color { get; set; }                      // Màu sơn
+    public string? StorageCode { get; set; }                // Vị trí kho bãi hiện tại của xe
+    public string? DealerCode { get; set; }                 // Đại lý được phân bổ nhận xe
+    public string? DealerName { get; set; }                 // Tên đại lý
+    public string? SOCode { get; set; }                     // Đơn đặt hàng SO liên kết (nếu có)
+    public string? ContractNo { get; set; }                 // Hợp đồng mua bán liên kết (nếu có)
+    public string? AllocatedDoNo { get; set; }              // Mã Lệnh giao xe DeliveryOrder được tự động tạo (DO-AUTO-...)
+    public string AllocationStatus { get; set; } = "Allocated"; // Allocated (Đã sinh DO), Simulated (Mô phỏng đạt), Skipped (Bỏ qua không đạt), Failed (Lỗi xử lý)
+    public string? EligibilityReason { get; set; }          // Lý do hợp lệ hoặc lý do không đủ điều kiện (NotEligibleReason)
+    public bool IsQCPassed { get; set; } = true;            // Đã nghiệm thu KCS xuất xưởng
+    public bool IsCustomsCleared { get; set; } = true;      // Đã thông quan hải quan
+    public bool IsTaxPaid { get; set; } = true;             // Đã hoàn tất nộp thuế
+    public bool IsPdiPaid { get; set; } = true;             // Đã hoàn tất nghiệm thu PDI
+    public bool IsRedeemed { get; set; } = true;            // Không thế chấp / Đã giải chấp
+    public bool IsGpsInstalled { get; set; } = true;        // Đã gắn thiết bị định vị GPS
+    public bool IsGuaranteedOrPaid { get; set; } = true;    // Đã có bảo lãnh ngân hàng hoặc đã thanh toán
+    public string Status { get; set; } = "Pending";         // Pending → Allocated → Delivered (hoặc Rollbacked / Cancelled)
+    public string? Remark { get; set; }
+}
+
+// ===== DTOs cho Cấu hình Điều kiện & Tự động Phân bổ Sinh Lệnh Giao Xe DO Tự Động =====
+
+public sealed record CreateDOAutoConditionDto(
+    string? ConditionCode,
+    string? ConditionNoUser,
+    string ConditionName,
+    string? Description,
+    string? PriorityRule,
+    DateTime? EffectiveFrom,
+    DateTime? EffectiveTo,
+    decimal? MinDepositPercent,
+    decimal? MinPaymentPercent,
+    bool? RequireGuaranteeOrPaid,
+    bool? RequireQC,
+    bool? RequireCustomsClearance,
+    bool? RequireTaxPaid,
+    bool? RequirePdiPassed,
+    bool? RequireRedeemed,
+    bool? RequireGpsInstalled,
+    int? MaxBatchVehicleQuota,
+    string? Remark,
+    string? CreatedBy,
+    List<DOAutoConditionLineInputDto>? ModelLines,
+    List<DOAutoConditionDealerLineInputDto>? DealerLines
+);
+
+public sealed record DOAutoConditionLineInputDto(
+    string Model,
+    string? SpecCode,
+    string? ColorCode,
+    int? MaxQuotaQty,
+    int? PriorityRank,
+    string? Remark
+);
+
+public sealed record DOAutoConditionDealerLineInputDto(
+    string DealerCode,
+    string? DealerName,
+    string? RegionCode,
+    int? MaxDealerQuota,
+    string? TierLevel,
+    string? Remark
+);
+
+public sealed record UpdateDOAutoConditionHeaderDto(
+    string? ConditionNoUser,
+    string? ConditionName,
+    string? Description,
+    string? PriorityRule,
+    DateTime? EffectiveFrom,
+    DateTime? EffectiveTo,
+    decimal? MinDepositPercent,
+    decimal? MinPaymentPercent,
+    bool? RequireGuaranteeOrPaid,
+    bool? RequireQC,
+    bool? RequireCustomsClearance,
+    bool? RequireTaxPaid,
+    bool? RequirePdiPassed,
+    bool? RequireRedeemed,
+    bool? RequireGpsInstalled,
+    int? MaxBatchVehicleQuota,
+    string? Remark
+);
+
+public sealed record UpdateDOAutoConditionLineDto(
+    string? Model,
+    string? SpecCode,
+    string? ColorCode,
+    int? MaxQuotaQty,
+    int? PriorityRank,
+    string? Status,
+    string? Remark
+);
+
+public sealed record UpdateDOAutoConditionDealerLineDto(
+    string? DealerName,
+    string? RegionCode,
+    int? MaxDealerQuota,
+    string? TierLevel,
+    string? Status,
+    string? Remark
+);
+
+public sealed record DOAutoConditionTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record CreateAutoDeliveryBatchDto(
+    string? BatchNo,
+    string? BatchNoUser,
+    string ConditionCode,
+    string? StorageCode,
+    string? ExecutionMode,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record SimulateAutoDeliveryAllocationDto(
+    string ConditionCode,
+    string? StorageCode,
+    string? DealerCode,
+    string? Model,
+    int? MaxVehicleCount,
+    string? Actor
+);
+
+public sealed record ExecuteAutoDeliveryAllocationDto(
+    string ConditionCode,
+    string? BatchNoUser,
+    string? StorageCode,
+    string? DealerCode,
+    string? Model,
+    int? MaxVehicleCount,
+    string? Remark,
+    string? CreatedBy
+);
+
+public sealed record AutoDeliveryBatchTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate
+);
+
+public sealed record SimulationAllocationResultDto(
+    string ConditionCode,
+    string ConditionName,
+    string PriorityRule,
+    int TotalScanned,
+    int TotalEligible,
+    int TotalSimulatedAllocated,
+    int TotalSkipped,
+    List<SimulationAllocationItemDto> AllocatedVehicles,
+    List<SimulationAllocationItemDto> SkippedVehicles
+);
+
+public sealed record SimulationAllocationItemDto(
+    string Vin,
+    string Model,
+    string? SpecCode,
+    string? Color,
+    string? StorageCode,
+    string? AssignedDealerCode,
+    string? AssignedDealerName,
+    string? MatchedOrderOrContract,
+    string Status,
+    string Reason
+);
+
+public sealed record AutoDeliveryOrderSummaryDto(
+    int TotalConditions,
+    int TotalActiveConditions,
+    int TotalDraftConditions,
+    int TotalBatches,
+    int TotalExecutedBatches,
+    int TotalSimulatedBatches,
+    int TotalScannedVehicles,
+    int TotalEligibleVehicles,
+    int TotalAllocatedVehicles,
+    int TotalGeneratedDOs,
+    decimal AutoAllocationSuccessRatePercent,
+    List<AutoDeliveryModelStatsDto> ByModel,
+    List<AutoDeliveryDealerStatsDto> ByDealer
+);
+
+public sealed record AutoDeliveryModelStatsDto(string Model, int ScannedCount, int EligibleCount, int AllocatedCount, decimal AllocationRate);
+public sealed record AutoDeliveryDealerStatsDto(string DealerCode, string DealerName, int AllocatedVehicles, int GeneratedDOs);
+
+public sealed record VehicleAutoDoInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    string? LastAutoDoNo,
+    DateTime? LastAutoDoDate,
+    int AutoDoCount,
+    List<AutoDeliveryOrderBatchLine> BatchHistory
+);
+
 

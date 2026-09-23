@@ -4912,6 +4912,228 @@ app.MapGet("/api/vehicles/{vin}/service-package-history", async (string vin, IVe
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Cấu hình Điều kiện & Tự động Phân bổ Sinh Lệnh Giao Xe DO Tự Động (BizHTC.Car / Car_ConditionForDOAuto, Mst_DOATCondition, Car_DeliveryOrderAuto) =====
+
+app.MapPost("/api/auto-delivery-conditions", async (CreateDOAutoConditionDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.ConditionName))
+        return Results.BadRequest(new { error = "Cần tên cấu hình điều kiện ConditionName." });
+    try { return Results.Ok(await svc.CreateDOAutoConditionAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/auto-delivery-conditions", async (IVehicleService svc, string? status, string? priorityRule, string? conditionCode, string? q) =>
+    Results.Ok(await svc.ListDOAutoConditionsAsync(status, priorityRule, conditionCode, q))).RequireAuthorization();
+
+app.MapGet("/api/auto-delivery-conditions/{conditionCode}", async (string conditionCode, IVehicleService svc) =>
+{
+    var r = await svc.GetDOAutoConditionAsync(conditionCode);
+    return r is null ? Results.NotFound(new { conditionCode, error = "Không tìm thấy cấu hình điều kiện giao xe tự động." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/auto-delivery-conditions/{conditionCode}", async (string conditionCode, UpdateDOAutoConditionHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateDOAutoConditionHeaderAsync(conditionCode, dto);
+        return r is null ? Results.NotFound(new { conditionCode, error = "Không tìm thấy cấu hình điều kiện." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/auto-delivery-conditions/{conditionCode}/update", async (string conditionCode, UpdateDOAutoConditionHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateDOAutoConditionHeaderAsync(conditionCode, dto);
+        return r is null ? Results.NotFound(new { conditionCode, error = "Không tìm thấy cấu hình điều kiện." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/auto-delivery-conditions/{conditionCode}/{action}", async (string conditionCode, string action, DOAutoConditionTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("approve" or "activate" or "active" or "suspend" or "resume" or "reactivate" or "expire" or "draft" or "cancel"))
+        return Results.BadRequest(new { error = "action = approve|activate|suspend|resume|expire|draft|cancel" });
+    try
+    {
+        var r = await svc.DOAutoConditionTransitionAsync(conditionCode, action, dto);
+        return r is null ? Results.NotFound(new { conditionCode, error = "Không tìm thấy cấu hình điều kiện hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/auto-delivery-conditions/{conditionCode}", async (string conditionCode, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveDOAutoConditionAsync(conditionCode);
+        return r is null ? Results.NotFound(new { conditionCode, error = "Không tìm thấy cấu hình hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/auto-delivery-conditions/{conditionCode}/model-lines", async (string conditionCode, List<DOAutoConditionLineInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách model dòng xe áp dụng." });
+    try
+    {
+        var r = await svc.AddDOAutoConditionLinesAsync(conditionCode, items);
+        return r is null ? Results.NotFound(new { conditionCode, error = "Không tìm thấy cấu hình điều kiện." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/auto-delivery-conditions/{conditionCode}/model-lines/{lineId:long}/update", async (string conditionCode, long lineId, UpdateDOAutoConditionLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateDOAutoConditionLineAsync(conditionCode, lineId, dto);
+        return r is null ? Results.NotFound(new { conditionCode, lineId, error = "Không tìm thấy dòng model." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/auto-delivery-conditions/{conditionCode}/model-lines/{lineId:long}", async (string conditionCode, long lineId, UpdateDOAutoConditionLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateDOAutoConditionLineAsync(conditionCode, lineId, dto);
+        return r is null ? Results.NotFound(new { conditionCode, lineId, error = "Không tìm thấy dòng model." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/auto-delivery-conditions/{conditionCode}/model-lines/{lineId:long}", async (string conditionCode, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveDOAutoConditionLineAsync(conditionCode, lineId);
+        return r is null ? Results.NotFound(new { conditionCode, lineId, error = "Không tìm thấy dòng model." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/auto-delivery-conditions/{conditionCode}/dealer-lines", async (string conditionCode, List<DOAutoConditionDealerLineInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách đại lý áp dụng." });
+    try
+    {
+        var r = await svc.AddDOAutoConditionDealerLinesAsync(conditionCode, items);
+        return r is null ? Results.NotFound(new { conditionCode, error = "Không tìm thấy cấu hình điều kiện." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/auto-delivery-conditions/{conditionCode}/dealer-lines/{lineId:long}/update", async (string conditionCode, long lineId, UpdateDOAutoConditionDealerLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateDOAutoConditionDealerLineAsync(conditionCode, lineId, dto);
+        return r is null ? Results.NotFound(new { conditionCode, lineId, error = "Không tìm thấy dòng đại lý." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/auto-delivery-conditions/{conditionCode}/dealer-lines/{lineId:long}", async (string conditionCode, long lineId, UpdateDOAutoConditionDealerLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateDOAutoConditionDealerLineAsync(conditionCode, lineId, dto);
+        return r is null ? Results.NotFound(new { conditionCode, lineId, error = "Không tìm thấy dòng đại lý." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/auto-delivery-conditions/{conditionCode}/dealer-lines/{lineId:long}", async (string conditionCode, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveDOAutoConditionDealerLineAsync(conditionCode, lineId);
+        return r is null ? Results.NotFound(new { conditionCode, lineId, error = "Không tìm thấy dòng đại lý." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+// ---- Quản lý Đợt Chạy Phân Bổ & Sinh Lệnh Giao Xe DO Tự Động ----
+
+app.MapPost("/api/auto-deliveries/simulate", async (SimulateAutoDeliveryAllocationDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.ConditionCode))
+        return Results.BadRequest(new { error = "Cần mã cấu hình điều kiện ConditionCode để chạy mô phỏng." });
+    try { return Results.Ok(await svc.SimulateAutoDeliveryAllocationAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/auto-deliveries/execute", async (ExecuteAutoDeliveryAllocationDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.ConditionCode))
+        return Results.BadRequest(new { error = "Cần mã cấu hình điều kiện ConditionCode để thực thi phân bổ." });
+    try { return Results.Ok(await svc.ExecuteAutoDeliveryAllocationAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/auto-deliveries/batches", async (IVehicleService svc, string? status, string? conditionCode, string? batchNo, string? executionMode) =>
+    Results.Ok(await svc.ListAutoDeliveryBatchesAsync(status, conditionCode, batchNo, executionMode))).RequireAuthorization();
+
+app.MapGet("/api/auto-deliveries/summary", async (IVehicleService svc, string? conditionCode, DateTime? fromDate, DateTime? toDate) =>
+    Results.Ok(await svc.GetAutoDeliveryOrderSummaryAsync(conditionCode, fromDate, toDate))).RequireAuthorization();
+
+app.MapGet("/api/reports/auto-deliveries/summary", async (IVehicleService svc, string? conditionCode, DateTime? fromDate, DateTime? toDate) =>
+    Results.Ok(await svc.GetAutoDeliveryOrderSummaryAsync(conditionCode, fromDate, toDate))).RequireAuthorization();
+
+app.MapGet("/api/auto-deliveries/batches/{batchNo}", async (string batchNo, IVehicleService svc) =>
+{
+    var r = await svc.GetAutoDeliveryBatchAsync(batchNo);
+    return r is null ? Results.NotFound(new { batchNo, error = "Không tìm thấy đợt chạy giao xe tự động." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPost("/api/auto-deliveries/batches/{batchNo}/{action}", async (string batchNo, string action, AutoDeliveryBatchTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("confirm" or "cancel"))
+        return Results.BadRequest(new { error = "action = confirm|cancel" });
+    try
+    {
+        var r = await svc.AutoDeliveryBatchTransitionAsync(batchNo, action, dto);
+        return r is null ? Results.NotFound(new { batchNo, error = "Không tìm thấy đợt chạy hoặc sai trạng thái." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/auto-deliveries/batches/{batchNo}/rollback", async (string batchNo, AutoDeliveryBatchTransitionDto? dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RollbackAutoDeliveryBatchAsync(batchNo, dto);
+        return r is null ? Results.NotFound(new { batchNo, error = "Không tìm thấy đợt chạy." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/auto-deliveries/batches/{batchNo}", async (string batchNo, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveAutoDeliveryBatchAsync(batchNo);
+        return r is null ? Results.NotFound(new { batchNo, error = "Không tìm thấy đợt chạy hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/auto-do-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleAutoDoInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/auto-do-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleAutoDoHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

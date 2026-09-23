@@ -2153,6 +2153,30 @@ public interface IVehicleService
     Task<object?> GetVehicleServicePackageInfoAsync(string vin);
     Task<object?> GetVehicleServicePackageHistoryAsync(string vin);
     Task<object> GetServicePackageSummaryAsync(string? dealerCode, string? packageType);
+
+    // ===== Cấu hình Điều kiện & Tự động Phân bổ & Sinh Lệnh Giao Xe DO Tự Động (BizHTC.Car / Car_ConditionForDOAuto, Mst_DOATCondition, Car_DeliveryOrderAuto) =====
+    Task<object> CreateDOAutoConditionAsync(CreateDOAutoConditionDto dto);
+    Task<object> ListDOAutoConditionsAsync(string? status, string? priorityRule, string? conditionCode, string? q);
+    Task<object?> GetDOAutoConditionAsync(string conditionCode);
+    Task<object?> UpdateDOAutoConditionHeaderAsync(string conditionCode, UpdateDOAutoConditionHeaderDto dto);
+    Task<object?> DOAutoConditionTransitionAsync(string conditionCode, string action, DOAutoConditionTransitionDto? dto);
+    Task<object?> RemoveDOAutoConditionAsync(string conditionCode);
+    Task<object?> AddDOAutoConditionLinesAsync(string conditionCode, List<DOAutoConditionLineInputDto> items);
+    Task<object?> UpdateDOAutoConditionLineAsync(string conditionCode, long lineId, UpdateDOAutoConditionLineDto dto);
+    Task<object?> RemoveDOAutoConditionLineAsync(string conditionCode, long lineId);
+    Task<object?> AddDOAutoConditionDealerLinesAsync(string conditionCode, List<DOAutoConditionDealerLineInputDto> items);
+    Task<object?> UpdateDOAutoConditionDealerLineAsync(string conditionCode, long lineId, UpdateDOAutoConditionDealerLineDto dto);
+    Task<object?> RemoveDOAutoConditionDealerLineAsync(string conditionCode, long lineId);
+    Task<object> SimulateAutoDeliveryAllocationAsync(SimulateAutoDeliveryAllocationDto dto);
+    Task<object> ExecuteAutoDeliveryAllocationAsync(ExecuteAutoDeliveryAllocationDto dto);
+    Task<object> ListAutoDeliveryBatchesAsync(string? status, string? conditionCode, string? batchNo, string? executionMode);
+    Task<object?> GetAutoDeliveryBatchAsync(string batchNo);
+    Task<object?> AutoDeliveryBatchTransitionAsync(string batchNo, string action, AutoDeliveryBatchTransitionDto? dto);
+    Task<object?> RollbackAutoDeliveryBatchAsync(string batchNo, AutoDeliveryBatchTransitionDto? dto);
+    Task<object?> RemoveAutoDeliveryBatchAsync(string batchNo);
+    Task<object?> GetVehicleAutoDoInfoAsync(string vin);
+    Task<object?> GetVehicleAutoDoHistoryAsync(string vin);
+    Task<object> GetAutoDeliveryOrderSummaryAsync(string? conditionCode, DateTime? fromDate, DateTime? toDate);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -35425,6 +35449,1071 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byPackageType,
             byDealer,
             byModel
+        );
+    }
+
+    // ===== Cấu hình Điều kiện & Tự động Phân bổ Sinh Lệnh Giao Xe DO Tự Động (BizHTC.Car / Car_ConditionForDOAuto, Mst_DOATCondition, Car_DeliveryOrderAuto) =====
+
+    public async Task<object> CreateDOAutoConditionAsync(CreateDOAutoConditionDto dto)
+    {
+        var now = DateTime.Now;
+        var code = !string.IsNullOrWhiteSpace(dto.ConditionCode)
+            ? dto.ConditionCode.Trim().ToUpperInvariant()
+            : $"COND-DO-{now:yyyyMMdd}-{(await db.DOAutoConditions.CountAsync(c => c.OrgId == Org) + 1):D3}";
+
+        if (await db.DOAutoConditions.AnyAsync(c => c.OrgId == Org && c.ConditionCode == code))
+            throw new InvalidOperationException($"Mã cấu hình điều kiện {code} đã tồn tại.");
+
+        var condition = new DOAutoCondition
+        {
+            OrgId = Org,
+            ConditionCode = code,
+            ConditionNoUser = dto.ConditionNoUser?.Trim(),
+            ConditionName = dto.ConditionName.Trim(),
+            Description = dto.Description?.Trim(),
+            PriorityRule = !string.IsNullOrWhiteSpace(dto.PriorityRule) ? dto.PriorityRule.Trim() : "FIFO_StoreDate",
+            EffectiveFrom = dto.EffectiveFrom ?? now,
+            EffectiveTo = dto.EffectiveTo ?? now.AddMonths(3),
+            MinDepositPercent = dto.MinDepositPercent ?? 10m,
+            MinPaymentPercent = dto.MinPaymentPercent ?? 80m,
+            RequireGuaranteeOrPaid = dto.RequireGuaranteeOrPaid ?? true,
+            RequireQC = dto.RequireQC ?? true,
+            RequireCustomsClearance = dto.RequireCustomsClearance ?? false,
+            RequireTaxPaid = dto.RequireTaxPaid ?? false,
+            RequirePdiPassed = dto.RequirePdiPassed ?? true,
+            RequireRedeemed = dto.RequireRedeemed ?? true,
+            RequireGpsInstalled = dto.RequireGpsInstalled ?? false,
+            MaxBatchVehicleQuota = dto.MaxBatchVehicleQuota > 0 ? dto.MaxBatchVehicleQuota.Value : 100,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = now
+        };
+
+        db.DOAutoConditions.Add(condition);
+        await db.SaveChangesAsync();
+
+        if (dto.ModelLines != null && dto.ModelLines.Count > 0)
+        {
+            int idx = 1;
+            foreach (var item in dto.ModelLines)
+            {
+                if (string.IsNullOrWhiteSpace(item.Model)) continue;
+                db.DOAutoConditionLines.Add(new DOAutoConditionLine
+                {
+                    OrgId = Org,
+                    DOAutoConditionId = condition.Id,
+                    ConditionCode = condition.ConditionCode,
+                    LineIndex = idx++,
+                    Model = item.Model.Trim(),
+                    SpecCode = item.SpecCode?.Trim(),
+                    ColorCode = item.ColorCode?.Trim(),
+                    MaxQuotaQty = item.MaxQuotaQty > 0 ? item.MaxQuotaQty.Value : 50,
+                    PriorityRank = item.PriorityRank > 0 ? item.PriorityRank.Value : idx,
+                    Status = "Active",
+                    Remark = item.Remark?.Trim()
+                });
+            }
+        }
+
+        if (dto.DealerLines != null && dto.DealerLines.Count > 0)
+        {
+            int idx = 1;
+            foreach (var d in dto.DealerLines)
+            {
+                if (string.IsNullOrWhiteSpace(d.DealerCode)) continue;
+                db.DOAutoConditionDealerLines.Add(new DOAutoConditionDealerLine
+                {
+                    OrgId = Org,
+                    DOAutoConditionId = condition.Id,
+                    ConditionCode = condition.ConditionCode,
+                    LineIndex = idx++,
+                    DealerCode = d.DealerCode.Trim().ToUpperInvariant(),
+                    DealerName = d.DealerName?.Trim() ?? d.DealerCode.Trim().ToUpperInvariant(),
+                    RegionCode = d.RegionCode?.Trim() ?? "MienBac",
+                    MaxDealerQuota = d.MaxDealerQuota > 0 ? d.MaxDealerQuota.Value : 20,
+                    TierLevel = d.TierLevel?.Trim() ?? "Tier1",
+                    Status = "Active",
+                    Remark = d.Remark?.Trim()
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
+        return await GetDOAutoConditionAsync(condition.ConditionCode) ?? condition;
+    }
+
+    public async Task<object> ListDOAutoConditionsAsync(string? status, string? priorityRule, string? conditionCode, string? q)
+    {
+        var query = db.DOAutoConditions.Where(c => c.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(c => c.Status == status.Trim());
+
+        if (!string.IsNullOrWhiteSpace(priorityRule))
+            query = query.Where(c => c.PriorityRule == priorityRule.Trim());
+
+        if (!string.IsNullOrWhiteSpace(conditionCode))
+        {
+            var cc = conditionCode.Trim().ToUpperInvariant();
+            query = query.Where(c => c.ConditionCode.Contains(cc));
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var s = q.Trim().ToLowerInvariant();
+            query = query.Where(c => c.ConditionCode.ToLower().Contains(s) ||
+                                     c.ConditionName.ToLower().Contains(s) ||
+                                     (c.Description != null && c.Description.ToLower().Contains(s)) ||
+                                     (c.ConditionNoUser != null && c.ConditionNoUser.ToLower().Contains(s)));
+        }
+
+        var list = await query.OrderByDescending(c => c.CreatedAt).ToListAsync();
+
+        var now = DateTime.Now;
+        foreach (var item in list)
+        {
+            if (item.Status == "Active" && item.EffectiveTo < now)
+            {
+                item.Status = "Expired";
+            }
+        }
+        await db.SaveChangesAsync();
+
+        var conditionIds = list.Select(c => c.Id).ToList();
+        var modelLinesCount = await db.DOAutoConditionLines.Where(l => l.OrgId == Org && conditionIds.Contains(l.DOAutoConditionId)).GroupBy(l => l.DOAutoConditionId).ToDictionaryAsync(g => g.Key, g => g.Count());
+        var dealerLinesCount = await db.DOAutoConditionDealerLines.Where(l => l.OrgId == Org && conditionIds.Contains(l.DOAutoConditionId)).GroupBy(l => l.DOAutoConditionId).ToDictionaryAsync(g => g.Key, g => g.Count());
+
+        var items = list.Select(c => new
+        {
+            c.Id,
+            c.ConditionCode,
+            c.ConditionNoUser,
+            c.ConditionName,
+            c.Description,
+            c.PriorityRule,
+            c.EffectiveFrom,
+            c.EffectiveTo,
+            c.MinDepositPercent,
+            c.MinPaymentPercent,
+            c.RequireGuaranteeOrPaid,
+            c.RequireQC,
+            c.RequireCustomsClearance,
+            c.RequireTaxPaid,
+            c.RequirePdiPassed,
+            c.RequireRedeemed,
+            c.RequireGpsInstalled,
+            c.MaxBatchVehicleQuota,
+            c.TotalExecutedBatches,
+            c.TotalAllocatedVehicles,
+            c.Status,
+            c.Remark,
+            c.CreatedBy,
+            c.CreatedAt,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            ModelLinesCount = modelLinesCount.TryGetValue(c.Id, out var mc) ? mc : 0,
+            DealerLinesCount = dealerLinesCount.TryGetValue(c.Id, out var dc) ? dc : 0
+        }).ToList();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetDOAutoConditionAsync(string conditionCode)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var c = await db.DOAutoConditions.FirstOrDefaultAsync(x => x.OrgId == Org && x.ConditionCode == conditionCode);
+        if (c is null) return null;
+
+        if (c.Status == "Active" && c.EffectiveTo < DateTime.Now)
+        {
+            c.Status = "Expired";
+            await db.SaveChangesAsync();
+        }
+
+        var modelLines = await db.DOAutoConditionLines.Where(l => l.OrgId == Org && l.DOAutoConditionId == c.Id).OrderBy(l => l.PriorityRank).ThenBy(l => l.LineIndex).ToListAsync();
+        var dealerLines = await db.DOAutoConditionDealerLines.Where(l => l.OrgId == Org && l.DOAutoConditionId == c.Id).OrderBy(l => l.LineIndex).ToListAsync();
+        var recentBatches = await db.AutoDeliveryOrderBatches.Where(b => b.OrgId == Org && b.ConditionCode == conditionCode).OrderByDescending(b => b.BatchDate).Take(10).ToListAsync();
+
+        return new
+        {
+            c.Id,
+            c.ConditionCode,
+            c.ConditionNoUser,
+            c.ConditionName,
+            c.Description,
+            c.PriorityRule,
+            c.EffectiveFrom,
+            c.EffectiveTo,
+            c.MinDepositPercent,
+            c.MinPaymentPercent,
+            c.RequireGuaranteeOrPaid,
+            c.RequireQC,
+            c.RequireCustomsClearance,
+            c.RequireTaxPaid,
+            c.RequirePdiPassed,
+            c.RequireRedeemed,
+            c.RequireGpsInstalled,
+            c.MaxBatchVehicleQuota,
+            c.TotalExecutedBatches,
+            c.TotalAllocatedVehicles,
+            c.Status,
+            c.Remark,
+            c.CreatedBy,
+            c.CreatedAt,
+            c.ApprovedBy,
+            c.ApprovedAt,
+            c.SuspendedBy,
+            c.SuspendedAt,
+            c.CancelledBy,
+            c.CancelledAt,
+            c.CancelReason,
+            ModelLines = modelLines,
+            DealerLines = dealerLines,
+            RecentBatches = recentBatches
+        };
+    }
+
+    public async Task<object?> UpdateDOAutoConditionHeaderAsync(string conditionCode, UpdateDOAutoConditionHeaderDto dto)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var c = await db.DOAutoConditions.FirstOrDefaultAsync(x => x.OrgId == Org && x.ConditionCode == conditionCode);
+        if (c is null) return null;
+
+        if (c.Status is "Cancelled" or "Expired")
+            throw new InvalidOperationException($"Không thể sửa cấu hình ở trạng thái '{c.Status}'.");
+
+        if (dto.ConditionNoUser != null) c.ConditionNoUser = dto.ConditionNoUser.Trim();
+        if (dto.ConditionName != null) c.ConditionName = dto.ConditionName.Trim();
+        if (dto.Description != null) c.Description = dto.Description.Trim();
+        if (dto.PriorityRule != null) c.PriorityRule = dto.PriorityRule.Trim();
+        if (dto.EffectiveFrom.HasValue) c.EffectiveFrom = dto.EffectiveFrom.Value;
+        if (dto.EffectiveTo.HasValue) c.EffectiveTo = dto.EffectiveTo.Value;
+        if (dto.MinDepositPercent.HasValue) c.MinDepositPercent = dto.MinDepositPercent.Value;
+        if (dto.MinPaymentPercent.HasValue) c.MinPaymentPercent = dto.MinPaymentPercent.Value;
+        if (dto.RequireGuaranteeOrPaid.HasValue) c.RequireGuaranteeOrPaid = dto.RequireGuaranteeOrPaid.Value;
+        if (dto.RequireQC.HasValue) c.RequireQC = dto.RequireQC.Value;
+        if (dto.RequireCustomsClearance.HasValue) c.RequireCustomsClearance = dto.RequireCustomsClearance.Value;
+        if (dto.RequireTaxPaid.HasValue) c.RequireTaxPaid = dto.RequireTaxPaid.Value;
+        if (dto.RequirePdiPassed.HasValue) c.RequirePdiPassed = dto.RequirePdiPassed.Value;
+        if (dto.RequireRedeemed.HasValue) c.RequireRedeemed = dto.RequireRedeemed.Value;
+        if (dto.RequireGpsInstalled.HasValue) c.RequireGpsInstalled = dto.RequireGpsInstalled.Value;
+        if (dto.MaxBatchVehicleQuota.HasValue && dto.MaxBatchVehicleQuota > 0) c.MaxBatchVehicleQuota = dto.MaxBatchVehicleQuota.Value;
+        if (dto.Remark != null) c.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return await GetDOAutoConditionAsync(conditionCode);
+    }
+
+    public async Task<object?> DOAutoConditionTransitionAsync(string conditionCode, string action, DOAutoConditionTransitionDto? dto)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var c = await db.DOAutoConditions.FirstOrDefaultAsync(x => x.OrgId == Org && x.ConditionCode == conditionCode);
+        if (c is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "SalesDirector";
+        var act = action.Trim().ToLowerInvariant();
+
+        switch (act)
+        {
+            case "approve" or "activate" or "active":
+                c.Status = "Active";
+                c.ApprovedBy = actor;
+                c.ApprovedAt = now;
+                break;
+
+            case "suspend":
+                c.Status = "Suspended";
+                c.SuspendedBy = actor;
+                c.SuspendedAt = now;
+                break;
+
+            case "resume" or "reactivate":
+                c.Status = c.EffectiveTo < now ? "Expired" : "Active";
+                break;
+
+            case "expire":
+                c.Status = "Expired";
+                break;
+
+            case "draft":
+                c.Status = "Draft";
+                break;
+
+            case "cancel":
+                c.Status = "Cancelled";
+                c.CancelledBy = actor;
+                c.CancelledAt = now;
+                c.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không hợp lệ.");
+        }
+
+        if (dto?.Note != null) c.Remark = (c.Remark + " | " + dto.Note).Trim(' ', '|');
+        await db.SaveChangesAsync();
+
+        return await GetDOAutoConditionAsync(conditionCode);
+    }
+
+    public async Task<object?> RemoveDOAutoConditionAsync(string conditionCode)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var c = await db.DOAutoConditions.FirstOrDefaultAsync(x => x.OrgId == Org && x.ConditionCode == conditionCode);
+        if (c is null) return null;
+
+        var hasBatches = await db.AutoDeliveryOrderBatches.AnyAsync(b => b.OrgId == Org && b.ConditionCode == conditionCode && b.Status == "Executed");
+        if (hasBatches)
+            throw new InvalidOperationException($"Không thể xóa cấu hình điều kiện {conditionCode} vì đã có đợt chạy giao xe tự động Executed.");
+
+        var modelLines = await db.DOAutoConditionLines.Where(l => l.OrgId == Org && l.DOAutoConditionId == c.Id).ToListAsync();
+        var dealerLines = await db.DOAutoConditionDealerLines.Where(l => l.OrgId == Org && l.DOAutoConditionId == c.Id).ToListAsync();
+
+        db.DOAutoConditionLines.RemoveRange(modelLines);
+        db.DOAutoConditionDealerLines.RemoveRange(dealerLines);
+        db.DOAutoConditions.Remove(c);
+        await db.SaveChangesAsync();
+
+        return new { success = true, conditionCode, message = "Đã xóa cấu hình điều kiện giao xe tự động thành công." };
+    }
+
+    public async Task<object?> AddDOAutoConditionLinesAsync(string conditionCode, List<DOAutoConditionLineInputDto> items)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var c = await db.DOAutoConditions.FirstOrDefaultAsync(x => x.OrgId == Org && x.ConditionCode == conditionCode);
+        if (c is null) return null;
+
+        var existingCount = await db.DOAutoConditionLines.CountAsync(l => l.OrgId == Org && l.DOAutoConditionId == c.Id);
+        int idx = existingCount + 1;
+
+        var newLines = new List<DOAutoConditionLine>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.Model)) continue;
+            newLines.Add(new DOAutoConditionLine
+            {
+                OrgId = Org,
+                DOAutoConditionId = c.Id,
+                ConditionCode = c.ConditionCode,
+                LineIndex = idx++,
+                Model = item.Model.Trim(),
+                SpecCode = item.SpecCode?.Trim(),
+                ColorCode = item.ColorCode?.Trim(),
+                MaxQuotaQty = item.MaxQuotaQty > 0 ? item.MaxQuotaQty.Value : 50,
+                PriorityRank = item.PriorityRank > 0 ? item.PriorityRank.Value : idx,
+                Status = "Active",
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        db.DOAutoConditionLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        return await GetDOAutoConditionAsync(conditionCode);
+    }
+
+    public async Task<object?> UpdateDOAutoConditionLineAsync(string conditionCode, long lineId, UpdateDOAutoConditionLineDto dto)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var line = await db.DOAutoConditionLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ConditionCode == conditionCode && l.Id == lineId);
+        if (line is null) return null;
+
+        if (dto.Model != null) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (dto.ColorCode != null) line.ColorCode = dto.ColorCode.Trim();
+        if (dto.MaxQuotaQty.HasValue && dto.MaxQuotaQty > 0) line.MaxQuotaQty = dto.MaxQuotaQty.Value;
+        if (dto.PriorityRank.HasValue && dto.PriorityRank > 0) line.PriorityRank = dto.PriorityRank.Value;
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> RemoveDOAutoConditionLineAsync(string conditionCode, long lineId)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var line = await db.DOAutoConditionLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ConditionCode == conditionCode && l.Id == lineId);
+        if (line is null) return null;
+
+        db.DOAutoConditionLines.Remove(line);
+        await db.SaveChangesAsync();
+        return new { success = true, lineId, conditionCode };
+    }
+
+    public async Task<object?> AddDOAutoConditionDealerLinesAsync(string conditionCode, List<DOAutoConditionDealerLineInputDto> items)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var c = await db.DOAutoConditions.FirstOrDefaultAsync(x => x.OrgId == Org && x.ConditionCode == conditionCode);
+        if (c is null) return null;
+
+        var existingCount = await db.DOAutoConditionDealerLines.CountAsync(l => l.OrgId == Org && l.DOAutoConditionId == c.Id);
+        int idx = existingCount + 1;
+
+        var newLines = new List<DOAutoConditionDealerLine>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.DealerCode)) continue;
+            newLines.Add(new DOAutoConditionDealerLine
+            {
+                OrgId = Org,
+                DOAutoConditionId = c.Id,
+                ConditionCode = c.ConditionCode,
+                LineIndex = idx++,
+                DealerCode = item.DealerCode.Trim().ToUpperInvariant(),
+                DealerName = item.DealerName?.Trim() ?? item.DealerCode.Trim().ToUpperInvariant(),
+                RegionCode = item.RegionCode?.Trim() ?? "MienBac",
+                MaxDealerQuota = item.MaxDealerQuota > 0 ? item.MaxDealerQuota.Value : 20,
+                TierLevel = item.TierLevel?.Trim() ?? "Tier1",
+                Status = "Active",
+                Remark = item.Remark?.Trim()
+            });
+        }
+
+        db.DOAutoConditionDealerLines.AddRange(newLines);
+        await db.SaveChangesAsync();
+
+        return await GetDOAutoConditionAsync(conditionCode);
+    }
+
+    public async Task<object?> UpdateDOAutoConditionDealerLineAsync(string conditionCode, long lineId, UpdateDOAutoConditionDealerLineDto dto)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var line = await db.DOAutoConditionDealerLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ConditionCode == conditionCode && l.Id == lineId);
+        if (line is null) return null;
+
+        if (dto.DealerName != null) line.DealerName = dto.DealerName.Trim();
+        if (dto.RegionCode != null) line.RegionCode = dto.RegionCode.Trim();
+        if (dto.MaxDealerQuota.HasValue && dto.MaxDealerQuota > 0) line.MaxDealerQuota = dto.MaxDealerQuota.Value;
+        if (dto.TierLevel != null) line.TierLevel = dto.TierLevel.Trim();
+        if (dto.Status != null) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+        return line;
+    }
+
+    public async Task<object?> RemoveDOAutoConditionDealerLineAsync(string conditionCode, long lineId)
+    {
+        conditionCode = conditionCode.Trim().ToUpperInvariant();
+        var line = await db.DOAutoConditionDealerLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ConditionCode == conditionCode && l.Id == lineId);
+        if (line is null) return null;
+
+        db.DOAutoConditionDealerLines.Remove(line);
+        await db.SaveChangesAsync();
+        return new { success = true, lineId, conditionCode };
+    }
+
+    public async Task<object> SimulateAutoDeliveryAllocationAsync(SimulateAutoDeliveryAllocationDto dto)
+    {
+        var conditionCode = dto.ConditionCode.Trim().ToUpperInvariant();
+        var condition = await db.DOAutoConditions.FirstOrDefaultAsync(c => c.OrgId == Org && c.ConditionCode == conditionCode);
+        if (condition is null)
+            throw new InvalidOperationException($"Không tìm thấy cấu hình điều kiện {conditionCode}.");
+
+        var modelLines = await db.DOAutoConditionLines.Where(l => l.OrgId == Org && l.DOAutoConditionId == condition.Id && l.Status == "Active").OrderBy(l => l.PriorityRank).ToListAsync();
+        var dealerLines = await db.DOAutoConditionDealerLines.Where(l => l.OrgId == Org && l.DOAutoConditionId == condition.Id && l.Status == "Active").ToListAsync();
+
+        var vehiclesQuery = db.Vehicles.Where(v => v.OrgId == Org && v.Status == VehicleStatus.InStock);
+        if (!string.IsNullOrWhiteSpace(dto.StorageCode) && dto.StorageCode != "ALL")
+        {
+            var sc = dto.StorageCode.Trim().ToUpperInvariant();
+            vehiclesQuery = vehiclesQuery.Where(v => v.StorageCode == sc);
+        }
+        if (!string.IsNullOrWhiteSpace(dto.Model))
+        {
+            var m = dto.Model.Trim();
+            vehiclesQuery = vehiclesQuery.Where(v => v.Model.Contains(m));
+        }
+
+        var allInStockVehicles = await vehiclesQuery.ToListAsync();
+
+        // Sort based on PriorityRule
+        IEnumerable<Vehicle> sortedVehicles = condition.PriorityRule switch
+        {
+            "PaymentRatio_Desc" => allInStockVehicles.OrderByDescending(v => v.IsPaid).ThenByDescending(v => v.PaidAmount).ThenBy(v => v.CreatedAt),
+            "DealerTier" => allInStockVehicles.OrderBy(v => v.CreatedAt),
+            "FIFO_StoreDate" or _ => allInStockVehicles.OrderBy(v => v.CreatedAt)
+        };
+
+        var targetDealers = dealerLines.Select(d => d.DealerCode).ToList();
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode))
+        {
+            targetDealers = new List<string> { dto.DealerCode.Trim().ToUpperInvariant() };
+        }
+        else if (targetDealers.Count == 0)
+        {
+            targetDealers = await db.SalesOrders.Where(so => so.OrgId == Org && so.Status == "Approved").Select(so => so.DealerCode).Distinct().ToListAsync();
+            if (targetDealers.Count == 0) targetDealers = new List<string> { "DLR-HN01", "DLR-HCM01", "DLR-DN01" };
+        }
+
+        var dealerQuotas = dealerLines.ToDictionary(d => d.DealerCode, d => d.MaxDealerQuota);
+        var dealerAllocatedCounts = targetDealers.ToDictionary(d => d, _ => 0);
+
+        var modelQuotas = modelLines.ToDictionary(m => m.Model, m => m.MaxQuotaQty);
+        var modelAllocatedCounts = modelLines.ToDictionary(m => m.Model, _ => 0);
+
+        var allocatedList = new List<SimulationAllocationItemDto>();
+        var skippedList = new List<SimulationAllocationItemDto>();
+
+        int maxLimit = dto.MaxVehicleCount ?? condition.MaxBatchVehicleQuota;
+        int totalAllocated = 0;
+
+        foreach (var v in sortedVehicles)
+        {
+            var failReasons = new List<string>();
+
+            if (condition.RequireQC && v.ManufacturedDate == null && v.LastWorkOrderNo == null)
+                failReasons.Add("Chưa có xác nhận KCS xuất xưởng nhà máy");
+
+            if (condition.RequireCustomsClearance && !v.IsCustomsCleared && v.DeclarationNo == null)
+                failReasons.Add("Chưa hoàn tất thông quan hải quan");
+
+            if (condition.RequireTaxPaid && v.TaxPaymentDate == null)
+                failReasons.Add("Chưa nộp thuế hải quan");
+
+            if (condition.RequirePdiPassed && !v.IsPdiPaid)
+                failReasons.Add("Chưa hoàn tất kiểm tra tiền bàn giao PDI");
+
+            if (condition.RequireRedeemed && v.IsMortgaged && v.RedeemDate == null)
+                failReasons.Add("Xe đang bị thế chấp ngân hàng chưa giải chấp");
+
+            if (condition.RequireGpsInstalled && !v.IsGpsInstalled)
+                failReasons.Add("Chưa lắp đặt thiết bị định vị GPS");
+
+            if (modelLines.Count > 0)
+            {
+                var matchedModelLine = modelLines.FirstOrDefault(m => v.Model.Contains(m.Model) || m.Model.Contains(v.Model));
+                if (matchedModelLine is null)
+                {
+                    failReasons.Add($"Dòng xe {v.Model} không nằm trong danh mục áp dụng của cấu hình");
+                }
+                else if (modelQuotas.TryGetValue(matchedModelLine.Model, out var mQuota) && modelAllocatedCounts[matchedModelLine.Model] >= mQuota)
+                {
+                    failReasons.Add($"Đã đạt hạn mức tối đa quota cho dòng xe {matchedModelLine.Model} ({mQuota} xe)");
+                }
+            }
+
+            if (totalAllocated >= maxLimit)
+            {
+                failReasons.Add($"Đã đạt giới hạn tối đa số xe trong đợt ({maxLimit} xe)");
+            }
+
+            if (failReasons.Count > 0)
+            {
+                skippedList.Add(new SimulationAllocationItemDto(
+                    v.Vin,
+                    v.Model,
+                    null,
+                    v.Color,
+                    v.StorageCode,
+                    null,
+                    null,
+                    null,
+                    "Skipped",
+                    string.Join("; ", failReasons)
+                ));
+                continue;
+            }
+
+            // Assign to an available dealer
+            string? assignedDealer = null;
+            if (!string.IsNullOrWhiteSpace(v.DealerCode) && targetDealers.Contains(v.DealerCode))
+            {
+                assignedDealer = v.DealerCode;
+            }
+            else
+            {
+                foreach (var d in targetDealers)
+                {
+                    var dQuota = dealerQuotas.TryGetValue(d, out var dq) ? dq : 20;
+                    if (dealerAllocatedCounts[d] < dQuota)
+                    {
+                        assignedDealer = d;
+                        break;
+                    }
+                }
+            }
+
+            if (assignedDealer is null)
+            {
+                skippedList.Add(new SimulationAllocationItemDto(
+                    v.Vin,
+                    v.Model,
+                    null,
+                    v.Color,
+                    v.StorageCode,
+                    null,
+                    null,
+                    null,
+                    "Skipped",
+                    "Toàn bộ đại lý mục tiêu đã hết hạn mức quota trong đợt"
+                ));
+                continue;
+            }
+
+            dealerAllocatedCounts[assignedDealer]++;
+            var matchedModel = modelLines.FirstOrDefault(m => v.Model.Contains(m.Model) || m.Model.Contains(v.Model));
+            if (matchedModel != null) modelAllocatedCounts[matchedModel.Model]++;
+            totalAllocated++;
+
+            allocatedList.Add(new SimulationAllocationItemDto(
+                v.Vin,
+                v.Model,
+                null,
+                v.Color,
+                v.StorageCode,
+                assignedDealer,
+                dealerLines.FirstOrDefault(dl => dl.DealerCode == assignedDealer)?.DealerName ?? assignedDealer,
+                v.SOCode ?? $"SO-{assignedDealer}-AUTO",
+                "Simulated",
+                "Thỏa mãn toàn bộ điều kiện kỹ thuật, tài chính và phân bổ hợp lệ"
+            ));
+        }
+
+        return new SimulationAllocationResultDto(
+            condition.ConditionCode,
+            condition.ConditionName,
+            condition.PriorityRule,
+            allInStockVehicles.Count,
+            allocatedList.Count,
+            allocatedList.Count,
+            skippedList.Count,
+            allocatedList,
+            skippedList
+        );
+    }
+
+    public async Task<object> ExecuteAutoDeliveryAllocationAsync(ExecuteAutoDeliveryAllocationDto dto)
+    {
+        var conditionCode = dto.ConditionCode.Trim().ToUpperInvariant();
+        var condition = await db.DOAutoConditions.FirstOrDefaultAsync(c => c.OrgId == Org && c.ConditionCode == conditionCode);
+        if (condition is null)
+            throw new InvalidOperationException($"Không tìm thấy cấu hình điều kiện {conditionCode}.");
+
+        var now = DateTime.Now;
+        var batchNo = $"ADOB-{now:yyyyMMdd}-{(await db.AutoDeliveryOrderBatches.CountAsync(b => b.OrgId == Org) + 1):D4}";
+
+        var simResult = (SimulationAllocationResultDto)await SimulateAutoDeliveryAllocationAsync(new SimulateAutoDeliveryAllocationDto(
+            dto.ConditionCode,
+            dto.StorageCode,
+            dto.DealerCode,
+            dto.Model,
+            dto.MaxVehicleCount,
+            dto.CreatedBy
+        ));
+
+        var batch = new AutoDeliveryOrderBatch
+        {
+            OrgId = Org,
+            BatchNo = batchNo,
+            BatchNoUser = dto.BatchNoUser?.Trim(),
+            BatchDate = now,
+            ConditionId = condition.Id,
+            ConditionCode = condition.ConditionCode,
+            ConditionName = condition.ConditionName,
+            StorageCode = dto.StorageCode?.Trim().ToUpperInvariant() ?? "ALL",
+            TotalScannedVehicles = simResult.TotalScanned,
+            TotalEligibleVehicles = simResult.TotalEligible,
+            TotalAllocatedVehicles = simResult.TotalSimulatedAllocated,
+            TotalSkippedVehicles = simResult.TotalSkipped,
+            TotalGeneratedDOs = 0,
+            Status = "Executed",
+            ExecutionMode = "LiveExecution",
+            Remark = dto.Remark?.Trim() ?? $"Đợt chạy tự động phân bổ & sinh Lệnh giao xe DO theo điều kiện {condition.ConditionCode} ({condition.ConditionName})",
+            CreatedBy = dto.CreatedBy?.Trim() ?? "SystemAutoDO",
+            CreatedAt = now,
+            ExecutedBy = dto.CreatedBy?.Trim() ?? "SystemAutoDO",
+            ExecutedAt = now
+        };
+
+        db.AutoDeliveryOrderBatches.Add(batch);
+        await db.SaveChangesAsync();
+
+        var allocatedVins = simResult.AllocatedVehicles.Select(a => a.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && allocatedVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        // Group allocated vehicles by assigned dealer
+        var byDealer = simResult.AllocatedVehicles.GroupBy(a => a.AssignedDealerCode!).ToList();
+        var createdDeliveryOrders = new List<DeliveryOrder>();
+        var batchLines = new List<AutoDeliveryOrderBatchLine>();
+        int lineIdx = 1;
+
+        int doIndex = await db.DeliveryOrders.CountAsync(d => d.OrgId == Org) + 1;
+
+        foreach (var group in byDealer)
+        {
+            var dealerCode = group.Key;
+            var doNo = $"DO-AUTO-{now:yyyyMMdd}-{dealerCode}-{(doIndex++):D3}";
+
+            var dOrder = new DeliveryOrder
+            {
+                OrgId = Org,
+                DoNo = doNo,
+                DealerCode = dealerCode,
+                Status = "Open",
+                CreatedAt = now
+            };
+            db.DeliveryOrders.Add(dOrder);
+            await db.SaveChangesAsync();
+            createdDeliveryOrders.Add(dOrder);
+
+            foreach (var item in group)
+            {
+                db.DeliveryOrderLines.Add(new DeliveryOrderLine
+                {
+                    OrgId = Org,
+                    DeliveryOrderId = dOrder.Id,
+                    Vin = item.Vin
+                });
+
+                if (vehicles.TryGetValue(item.Vin, out var v))
+                {
+                    v.Status = VehicleStatus.OnDelivery;
+                    v.DealerCode = dealerCode;
+                    v.LastAutoDoNo = dOrder.DoNo;
+                    v.LastAutoDoDate = now;
+                    v.AutoDoCount++;
+
+                    Log(v.Vin, "AutoDeliveryOrder", $"Tự động phân bổ & tạo lệnh giao xe {dOrder.DoNo} cho đại lý {dealerCode} qua đợt chạy {batchNo}");
+                }
+
+                batchLines.Add(new AutoDeliveryOrderBatchLine
+                {
+                    OrgId = Org,
+                    AutoDeliveryOrderBatchId = batch.Id,
+                    BatchNo = batch.BatchNo,
+                    LineIndex = lineIdx++,
+                    Vin = item.Vin,
+                    Model = item.Model,
+                    SpecCode = item.SpecCode,
+                    Color = item.Color,
+                    StorageCode = item.StorageCode,
+                    DealerCode = dealerCode,
+                    DealerName = item.AssignedDealerName,
+                    SOCode = item.MatchedOrderOrContract,
+                    AllocatedDoNo = dOrder.DoNo,
+                    AllocationStatus = "Allocated",
+                    EligibilityReason = item.Reason,
+                    IsQCPassed = true,
+                    IsCustomsCleared = true,
+                    IsTaxPaid = true,
+                    IsPdiPaid = true,
+                    IsRedeemed = true,
+                    IsGpsInstalled = true,
+                    IsGuaranteedOrPaid = true,
+                    Status = "Allocated"
+                });
+            }
+        }
+
+        // Add skipped lines
+        foreach (var item in simResult.SkippedVehicles)
+        {
+            batchLines.Add(new AutoDeliveryOrderBatchLine
+            {
+                OrgId = Org,
+                AutoDeliveryOrderBatchId = batch.Id,
+                BatchNo = batch.BatchNo,
+                LineIndex = lineIdx++,
+                Vin = item.Vin,
+                Model = item.Model,
+                SpecCode = item.SpecCode,
+                Color = item.Color,
+                StorageCode = item.StorageCode,
+                AllocationStatus = "Skipped",
+                EligibilityReason = item.Reason,
+                Status = "Skipped"
+            });
+        }
+
+        db.AutoDeliveryOrderBatchLines.AddRange(batchLines);
+
+        batch.TotalGeneratedDOs = createdDeliveryOrders.Count;
+        condition.TotalExecutedBatches++;
+        condition.TotalAllocatedVehicles += simResult.TotalSimulatedAllocated;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            batch.BatchNo,
+            batch.ConditionCode,
+            batch.ConditionName,
+            batch.Status,
+            batch.TotalScannedVehicles,
+            batch.TotalEligibleVehicles,
+            batch.TotalAllocatedVehicles,
+            batch.TotalSkippedVehicles,
+            batch.TotalGeneratedDOs,
+            GeneratedDeliveryOrders = createdDeliveryOrders.Select(d => new { d.DoNo, d.DealerCode, d.Status }),
+            AllocatedVehiclesCount = simResult.TotalSimulatedAllocated,
+            SkippedVehiclesCount = simResult.TotalSkipped
+        };
+    }
+
+    public async Task<object> ListAutoDeliveryBatchesAsync(string? status, string? conditionCode, string? batchNo, string? executionMode)
+    {
+        var query = db.AutoDeliveryOrderBatches.Where(b => b.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(b => b.Status == status.Trim());
+
+        if (!string.IsNullOrWhiteSpace(conditionCode))
+        {
+            var cc = conditionCode.Trim().ToUpperInvariant();
+            query = query.Where(b => b.ConditionCode == cc);
+        }
+
+        if (!string.IsNullOrWhiteSpace(batchNo))
+        {
+            var bn = batchNo.Trim().ToUpperInvariant();
+            query = query.Where(b => b.BatchNo.Contains(bn) || (b.BatchNoUser != null && b.BatchNoUser.Contains(bn)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(executionMode))
+            query = query.Where(b => b.ExecutionMode == executionMode.Trim());
+
+        var items = await query.OrderByDescending(b => b.BatchDate).ToListAsync();
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetAutoDeliveryBatchAsync(string batchNo)
+    {
+        batchNo = batchNo.Trim().ToUpperInvariant();
+        var batch = await db.AutoDeliveryOrderBatches.FirstOrDefaultAsync(b => b.OrgId == Org && b.BatchNo == batchNo);
+        if (batch is null) return null;
+
+        var lines = await db.AutoDeliveryOrderBatchLines.Where(l => l.OrgId == Org && l.AutoDeliveryOrderBatchId == batch.Id).OrderBy(l => l.LineIndex).ToListAsync();
+        var condition = await db.DOAutoConditions.FirstOrDefaultAsync(c => c.OrgId == Org && c.ConditionCode == batch.ConditionCode);
+
+        var doNos = lines.Where(l => !string.IsNullOrWhiteSpace(l.AllocatedDoNo)).Select(l => l.AllocatedDoNo!).Distinct().ToList();
+        var deliveryOrders = await db.DeliveryOrders.Where(d => d.OrgId == Org && doNos.Contains(d.DoNo)).ToListAsync();
+
+        return new
+        {
+            batch,
+            condition,
+            Lines = lines,
+            DeliveryOrders = deliveryOrders
+        };
+    }
+
+    public async Task<object?> AutoDeliveryBatchTransitionAsync(string batchNo, string action, AutoDeliveryBatchTransitionDto? dto)
+    {
+        batchNo = batchNo.Trim().ToUpperInvariant();
+        var batch = await db.AutoDeliveryOrderBatches.FirstOrDefaultAsync(b => b.OrgId == Org && b.BatchNo == batchNo);
+        if (batch is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "SalesDirector";
+        var act = action.Trim().ToLowerInvariant();
+
+        switch (act)
+        {
+            case "confirm":
+                batch.Status = "Confirmed";
+                batch.ConfirmedBy = actor;
+                batch.ConfirmedAt = now;
+                break;
+
+            case "cancel":
+                batch.Status = "Cancelled";
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động {action} không hợp lệ cho đợt chạy.");
+        }
+
+        if (dto?.Note != null) batch.Remark = (batch.Remark + " | " + dto.Note).Trim(' ', '|');
+        await db.SaveChangesAsync();
+
+        return batch;
+    }
+
+    public async Task<object?> RollbackAutoDeliveryBatchAsync(string batchNo, AutoDeliveryBatchTransitionDto? dto)
+    {
+        batchNo = batchNo.Trim().ToUpperInvariant();
+        var batch = await db.AutoDeliveryOrderBatches.FirstOrDefaultAsync(b => b.OrgId == Org && b.BatchNo == batchNo);
+        if (batch is null) return null;
+
+        if (batch.Status == "Rollbacked")
+            throw new InvalidOperationException($"Đợt chạy {batchNo} đã được hoàn tác trước đó.");
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "SalesDirector";
+        var reason = dto?.Reason?.Trim() ?? dto?.Note?.Trim() ?? "Hoàn tác đợt giao xe tự động do điều chỉnh kế hoạch phân bổ";
+
+        var lines = await db.AutoDeliveryOrderBatchLines.Where(l => l.OrgId == Org && l.AutoDeliveryOrderBatchId == batch.Id && l.AllocationStatus == "Allocated").ToListAsync();
+        var vins = lines.Select(l => l.Vin).Distinct().ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && vins.Contains(v.Vin)).ToListAsync();
+
+        foreach (var v in vehicles)
+        {
+            if (v.Status is VehicleStatus.OnDelivery or VehicleStatus.Allocated)
+            {
+                v.Status = VehicleStatus.InStock;
+                v.DealerCode = null;
+                Log(v.Vin, "AutoDeliveryRollbacked", $"Hoàn tác lệnh giao xe tự động {v.LastAutoDoNo} từ đợt chạy {batchNo}. Xe khôi phục về trạng thái InStock. Lý do: {reason}");
+            }
+        }
+
+        var doNos = lines.Where(l => !string.IsNullOrWhiteSpace(l.AllocatedDoNo)).Select(l => l.AllocatedDoNo!).Distinct().ToList();
+        var deliveryOrders = await db.DeliveryOrders.Where(d => d.OrgId == Org && doNos.Contains(d.DoNo)).ToListAsync();
+        foreach (var d in deliveryOrders)
+        {
+            if (d.Status == "Open") d.Status = "Cancelled";
+        }
+
+        foreach (var l in lines)
+        {
+            l.Status = "Rollbacked";
+        }
+
+        batch.Status = "Rollbacked";
+        batch.RollbackedBy = actor;
+        batch.RollbackedAt = now;
+        batch.RollbackReason = reason;
+
+        var condition = await db.DOAutoConditions.FirstOrDefaultAsync(c => c.OrgId == Org && c.ConditionCode == batch.ConditionCode);
+        if (condition != null)
+        {
+            condition.TotalAllocatedVehicles = Math.Max(0, condition.TotalAllocatedVehicles - batch.TotalAllocatedVehicles);
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            success = true,
+            batch.BatchNo,
+            batch.Status,
+            batch.RollbackedBy,
+            batch.RollbackedAt,
+            batch.RollbackReason,
+            RollbackedVehiclesCount = vehicles.Count,
+            CancelledDeliveryOrdersCount = deliveryOrders.Count
+        };
+    }
+
+    public async Task<object?> RemoveAutoDeliveryBatchAsync(string batchNo)
+    {
+        batchNo = batchNo.Trim().ToUpperInvariant();
+        var batch = await db.AutoDeliveryOrderBatches.FirstOrDefaultAsync(b => b.OrgId == Org && b.BatchNo == batchNo);
+        if (batch is null) return null;
+
+        if (batch.Status == "Executed")
+            throw new InvalidOperationException($"Không thể xóa trực tiếp đợt chạy đang ở trạng thái Executed. Vui lòng thực hiện Hoàn tác (Rollback) trước khi xóa.");
+
+        var lines = await db.AutoDeliveryOrderBatchLines.Where(l => l.OrgId == Org && l.AutoDeliveryOrderBatchId == batch.Id).ToListAsync();
+        db.AutoDeliveryOrderBatchLines.RemoveRange(lines);
+        db.AutoDeliveryOrderBatches.Remove(batch);
+
+        await db.SaveChangesAsync();
+        return new { success = true, batchNo, message = "Đã xóa đợt chạy giao xe tự động thành công." };
+    }
+
+    public async Task<object?> GetVehicleAutoDoInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (v is null) return null;
+
+        var batchLines = await db.AutoDeliveryOrderBatchLines.Where(l => l.OrgId == Org && l.Vin == vin).OrderByDescending(l => l.Id).ToListAsync();
+
+        return new VehicleAutoDoInfoDto(
+            v.Vin,
+            v.Model,
+            v.EngineNo,
+            v.Color,
+            v.StorageCode,
+            v.DealerCode,
+            v.LastAutoDoNo,
+            v.LastAutoDoDate,
+            v.AutoDoCount,
+            batchLines
+        );
+    }
+
+    public async Task<object?> GetVehicleAutoDoHistoryAsync(string vin)
+    {
+        return await GetVehicleAutoDoInfoAsync(vin);
+    }
+
+    public async Task<object> GetAutoDeliveryOrderSummaryAsync(string? conditionCode, DateTime? fromDate, DateTime? toDate)
+    {
+        var conditionsQ = db.DOAutoConditions.Where(c => c.OrgId == Org);
+        var batchesQ = db.AutoDeliveryOrderBatches.Where(b => b.OrgId == Org);
+        var batchLinesQ = db.AutoDeliveryOrderBatchLines.Where(l => l.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(conditionCode))
+        {
+            var cc = conditionCode.Trim().ToUpperInvariant();
+            conditionsQ = conditionsQ.Where(c => c.ConditionCode == cc);
+            batchesQ = batchesQ.Where(b => b.ConditionCode == cc);
+        }
+
+        if (fromDate.HasValue)
+            batchesQ = batchesQ.Where(b => b.BatchDate >= fromDate.Value);
+
+        if (toDate.HasValue)
+            batchesQ = batchesQ.Where(b => b.BatchDate <= toDate.Value);
+
+        var conditions = await conditionsQ.ToListAsync();
+        var batches = await batchesQ.ToListAsync();
+        var batchNos = batches.Select(b => b.BatchNo).ToList();
+        var batchLines = await batchLinesQ.Where(l => batchNos.Contains(l.BatchNo)).ToListAsync();
+
+        var totalConditions = conditions.Count;
+        var totalActiveConditions = conditions.Count(c => c.Status == "Active");
+        var totalDraftConditions = conditions.Count(c => c.Status == "Draft");
+
+        var totalBatches = batches.Count;
+        var totalExecutedBatches = batches.Count(b => b.Status is "Executed" or "Confirmed");
+        var totalSimulatedBatches = batches.Count(b => b.Status == "Simulated");
+
+        var totalScanned = batches.Sum(b => b.TotalScannedVehicles);
+        var totalEligible = batches.Sum(b => b.TotalEligibleVehicles);
+        var totalAllocated = batches.Sum(b => b.TotalAllocatedVehicles);
+        var totalGeneratedDOs = batches.Sum(b => b.TotalGeneratedDOs);
+
+        var successRate = totalEligible > 0
+            ? Math.Round((decimal)totalAllocated / totalEligible * 100, 1)
+            : 0m;
+
+        var byModel = batchLines.Where(l => !string.IsNullOrWhiteSpace(l.Model)).GroupBy(l => l.Model).Select(g =>
+        {
+            var scanned = g.Count();
+            var eligible = g.Count(x => x.AllocationStatus is "Allocated" or "Simulated");
+            var allocated = g.Count(x => x.AllocationStatus == "Allocated");
+            var rate = eligible > 0 ? Math.Round((decimal)allocated / eligible * 100, 1) : 0m;
+            return new AutoDeliveryModelStatsDto(g.Key, scanned, eligible, allocated, rate);
+        }).OrderByDescending(m => m.AllocatedCount).ToList();
+
+        var byDealer = batchLines.Where(l => !string.IsNullOrWhiteSpace(l.DealerCode) && l.AllocationStatus == "Allocated").GroupBy(l => l.DealerCode!).Select(g =>
+        {
+            var dName = g.First().DealerName ?? g.Key;
+            var allocated = g.Count();
+            var doCount = g.Where(x => !string.IsNullOrWhiteSpace(x.AllocatedDoNo)).Select(x => x.AllocatedDoNo).Distinct().Count();
+            return new AutoDeliveryDealerStatsDto(g.Key, dName, allocated, doCount);
+        }).OrderByDescending(d => d.AllocatedVehicles).ToList();
+
+        return new AutoDeliveryOrderSummaryDto(
+            totalConditions,
+            totalActiveConditions,
+            totalDraftConditions,
+            totalBatches,
+            totalExecutedBatches,
+            totalSimulatedBatches,
+            totalScanned,
+            totalEligible,
+            totalAllocated,
+            totalGeneratedDOs,
+            successRate,
+            byModel,
+            byDealer
         );
     }
 }
