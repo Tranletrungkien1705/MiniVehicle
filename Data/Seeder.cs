@@ -2764,6 +2764,192 @@ public static class Seeder
                 v2.PlantCode = po1.PlantCode;
             }
         }
+
+        if (!await db.ProformaInvoices.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var pi1 = new ProformaInvoice
+            {
+                OrgId = org,
+                RefNo = "PI202603-001",
+                RefNoUser = "PI/2026/03/HN01-01",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                OrderMonth = "2026-03",
+                ProductionMonth = "2026-03",
+                ExpectedDeliveryMonth = "2026-04",
+                Currency = "USD",
+                ExchangeRate = 25450m,
+                TotalQuantity = 2,
+                TotalAmountForeign = 49115.91m,
+                TotalAmount = 1250000000m,
+                DepositRate = 10m,
+                DepositAmount = 125000000m,
+                PaymentTerm = "LC",
+                DeparturePort = "BUSAN",
+                ArrivalPort = "CANG_HAI_PHONG",
+                LCTemp = "LC-VCB-2026-001",
+                LCNo = "LC-VCB-2026-001",
+                ContractNo = "CTO-HMC-2026-001",
+                Status = "Approved",
+                Remark = "Hóa đơn chiếu lệ PI đặt xe đợt 1 tháng 03/2026 đại lý Hyundai Hà Nội 01",
+                CreatedBy = "dealer.hn01",
+                CreatedAt = DateTime.Now.AddDays(-10),
+                ApprovedBy = "SaleManager.TranQuocTuan",
+                ApprovedAt = DateTime.Now.AddDays(-8),
+                ExecutedBy = "XNK.NguyenVanNam",
+                ExecutedAt = DateTime.Now.AddDays(-5)
+            };
+            db.ProformaInvoices.Add(pi1);
+            await db.SaveChangesAsync();
+
+            db.ProformaInvoiceLines.AddRange(
+                new ProformaInvoiceLine
+                {
+                    OrgId = org,
+                    ProformaInvoiceId = pi1.Id,
+                    RefNo = pi1.RefNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    SpecDescription = "Động cơ Kappa 1.4L MPI, Hộp số 6AT, Cửa sổ trời, Ghế da",
+                    ColorCode = "NWAC",
+                    ColorName = "Trắng Ngọc Trai",
+                    WorkOrderNo = "PO-202603-0001",
+                    PlantCode = "HTMV_NINHBINH_1",
+                    PortCode = "CANG_HAI_PHONG",
+                    LCTemp = "LC-VCB-2026-001",
+                    ContractNo = "CTO-HMC-2026-001",
+                    OrderQty = 1,
+                    AllocatedQty = 1,
+                    UnitPriceForeign = 21610.99m,
+                    TotalAmountForeign = 21610.99m,
+                    UnitPrice = 550000000m,
+                    TotalAmount = 550000000m,
+                    Status = "Approved",
+                    Remark = "Xe giao đợt đầu tháng 4"
+                },
+                new ProformaInvoiceLine
+                {
+                    OrgId = org,
+                    ProformaInvoiceId = pi1.Id,
+                    RefNo = pi1.RefNo,
+                    LineIndex = 2,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    SpecDescription = "Động cơ Smartstream 1.5L, Gói công nghệ an toàn SmartSense",
+                    ColorCode = "SAW",
+                    ColorName = "Đen Phantom",
+                    WorkOrderNo = "PO-202603-0001",
+                    PlantCode = "HTMV_NINHBINH_1",
+                    PortCode = "CANG_HAI_PHONG",
+                    LCTemp = "LC-VCB-2026-001",
+                    ContractNo = "CTO-HMC-2026-001",
+                    OrderQty = 1,
+                    AllocatedQty = 1,
+                    UnitPriceForeign = 27504.92m,
+                    TotalAmountForeign = 27504.92m,
+                    UnitPrice = 700000000m,
+                    TotalAmount = 700000000m,
+                    Status = "Approved",
+                    Remark = "Xe giao đợt đầu tháng 4"
+                }
+            );
+
+            var pi2 = new ProformaInvoice
+            {
+                OrgId = org,
+                RefNo = "PI202603-002",
+                RefNoUser = "PI/2026/03/SG01-02",
+                DealerCode = "DLR-SG01",
+                DealerName = "Hyundai Sài Gòn 01",
+                OrderMonth = "2026-03",
+                ProductionMonth = "2026-04",
+                ExpectedDeliveryMonth = "2026-05",
+                Currency = "USD",
+                ExchangeRate = 25450m,
+                TotalQuantity = 2,
+                TotalAmountForeign = 85265.23m,
+                TotalAmount = 2170000000m,
+                DepositRate = 10m,
+                DepositAmount = 217000000m,
+                PaymentTerm = "LC",
+                DeparturePort = "ULSAN",
+                ArrivalPort = "CANG_CAT_LAI",
+                LCTemp = "LC-TCB-2026-002",
+                Status = "Submitted",
+                Remark = "Đơn đặt xe SUV SantaFe & Tucson cho thị trường miền Nam",
+                CreatedBy = "dealer.sg01",
+                CreatedAt = DateTime.Now.AddDays(-3)
+            };
+            db.ProformaInvoices.Add(pi2);
+            await db.SaveChangesAsync();
+
+            db.ProformaInvoiceLines.AddRange(
+                new ProformaInvoiceLine
+                {
+                    OrgId = org,
+                    ProformaInvoiceId = pi2.Id,
+                    RefNo = pi2.RefNo,
+                    LineIndex = 1,
+                    Model = "SantaFe 2.5T AWD",
+                    SpecCode = "2.5T Calligraphy 6 chỗ",
+                    SpecDescription = "Động cơ Smartstream 2.5 T-GDI 281 mã lực, Hộp số 8DCT",
+                    ColorCode = "R2P",
+                    ColorName = "Đỏ Đô",
+                    PlantCode = "HTMV_NINHBINH_2",
+                    PortCode = "CANG_CAT_LAI",
+                    OrderQty = 1,
+                    AllocatedQty = 0,
+                    UnitPriceForeign = 50294.70m,
+                    TotalAmountForeign = 50294.70m,
+                    UnitPrice = 1280000000m,
+                    TotalAmount = 1280000000m,
+                    Status = "Pending",
+                    Remark = "Kế hoạch xuất xưởng tháng 4"
+                },
+                new ProformaInvoiceLine
+                {
+                    OrgId = org,
+                    ProformaInvoiceId = pi2.Id,
+                    RefNo = pi2.RefNo,
+                    LineIndex = 2,
+                    Model = "Tucson 1.6T HTRAC",
+                    SpecCode = "1.6 Turbo AWD",
+                    SpecDescription = "Động cơ 1.6 T-GDI Turbo, Màn hình cong 12.3 inch",
+                    ColorCode = "T2X",
+                    ColorName = "Xám Kim Loại",
+                    PlantCode = "HTMV_NINHBINH_2",
+                    PortCode = "CANG_CAT_LAI",
+                    OrderQty = 1,
+                    AllocatedQty = 0,
+                    UnitPriceForeign = 34970.53m,
+                    TotalAmountForeign = 34970.53m,
+                    UnitPrice = 890000000m,
+                    TotalAmount = 890000000m,
+                    Status = "Pending",
+                    Remark = "Kế hoạch xuất xưởng tháng 4"
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.LastPiNo = pi1.RefNo;
+                v1.LastPiDate = DateTime.Now.AddDays(-8);
+                v1.PiCount = 1;
+            }
+
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null)
+            {
+                v2.LastPiNo = pi1.RefNo;
+                v2.LastPiDate = DateTime.Now.AddDays(-8);
+                v2.PiCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -2906,9 +3092,14 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastWorkOrderNo\" text NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"ManufacturedDate\" timestamp NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PlantCode\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastPiNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastPiDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PiCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"CustomerCares\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CareNo\" text NOT NULL DEFAULT '', \"CareNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"PlateNo\" text NULL, \"Model\" text NULL, \"EngineNo\" text NULL, \"CustomerName\" text NULL, \"CustomerPhone\" text NULL, \"CustomerEmail\" text NULL, \"CustomerAddress\" text NULL, \"CareType\" text NOT NULL DEFAULT 'FollowUp72h', \"ContactMethod\" text NOT NULL DEFAULT 'PhoneCall', \"RoNo\" text NULL, \"DoNo\" text NULL, \"OdoKm\" integer NULL, \"ServiceDate\" timestamp NULL, \"ContactDate\" timestamp NULL, \"NextCareDate\" timestamp NULL, \"CallAttempts\" integer NOT NULL DEFAULT 1, \"CareStaff\" text NULL, \"ServiceAdvisor\" text NULL, \"ScoreOverall\" numeric NOT NULL DEFAULT 5.0, \"ScoreQuality\" numeric NOT NULL DEFAULT 5.0, \"ScoreAdvisor\" numeric NOT NULL DEFAULT 5.0, \"ScoreFacility\" numeric NOT NULL DEFAULT 5.0, \"IsProblemSolved\" boolean NOT NULL DEFAULT true, \"NpsScore\" integer NOT NULL DEFAULT 10, \"CustomerFeedback\" text NULL, \"RemedyAction\" text NULL, \"IsResolved\" boolean NOT NULL DEFAULT true, \"Status\" text NOT NULL DEFAULT 'Pending', \"EscalatedTo\" text NULL, \"EscalatedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL, \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())",
             "CREATE TABLE IF NOT EXISTS public.\"ProductionOrders\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"OrderNo\" text NOT NULL DEFAULT '', \"OrderNoUser\" text NULL, \"OrdMonth\" text NOT NULL DEFAULT '', \"OrdType\" text NOT NULL DEFAULT 'MTO', \"OrdCategoryType\" text NOT NULL DEFAULT 'MakeToOrder', \"PlantCode\" text NOT NULL DEFAULT 'HTMV_NINHBINH_1', \"PlantName\" text NULL, \"TotalPlanQty\" integer NOT NULL DEFAULT 0, \"TotalProducedQty\" integer NOT NULL DEFAULT 0, \"EstimatedCompletionDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ScheduledBy\" text NULL, \"ScheduledAt\" timestamp NULL, \"StartedBy\" text NULL, \"StartedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"ProductionOrderLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ProductionOrderId\" bigint NOT NULL, \"OrderNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT '', \"ColorName\" text NULL, \"PlanQty\" integer NOT NULL DEFAULT 1, \"QtyMonthN1\" integer NOT NULL DEFAULT 0, \"QtyMonthN2\" integer NOT NULL DEFAULT 0, \"QtyMonthN3\" integer NOT NULL DEFAULT 0, \"ProducedQty\" integer NOT NULL DEFAULT 0, \"ETADate\" timestamp NULL, \"Stage\" text NOT NULL DEFAULT 'Stamping', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"ProductionOrderLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ProductionOrderId\" bigint NOT NULL, \"OrderNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT '', \"ColorName\" text NULL, \"PlanQty\" integer NOT NULL DEFAULT 1, \"QtyMonthN1\" integer NOT NULL DEFAULT 0, \"QtyMonthN2\" integer NOT NULL DEFAULT 0, \"QtyMonthN3\" integer NOT NULL DEFAULT 0, \"ProducedQty\" integer NOT NULL DEFAULT 0, \"ETADate\" timestamp NULL, \"Stage\" text NOT NULL DEFAULT 'Stamping', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ProformaInvoices\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RefNo\" text NOT NULL DEFAULT '', \"RefNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"OrderMonth\" text NOT NULL DEFAULT '', \"ProductionMonth\" text NULL, \"ExpectedDeliveryMonth\" text NULL, \"Currency\" text NOT NULL DEFAULT 'USD', \"ExchangeRate\" numeric NOT NULL DEFAULT 25450, \"TotalQuantity\" integer NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"DepositRate\" numeric NOT NULL DEFAULT 10, \"DepositAmount\" numeric NOT NULL DEFAULT 0, \"PaymentTerm\" text NOT NULL DEFAULT 'LC', \"DeparturePort\" text NULL, \"ArrivalPort\" text NULL, \"LCTemp\" text NULL, \"LCNo\" text NULL, \"ContractNo\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"ExecutedBy\" text NULL, \"ExecutedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"ProformaInvoiceLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ProformaInvoiceId\" bigint NOT NULL, \"RefNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT 'NWAC', \"ColorName\" text NULL, \"WorkOrderNo\" text NULL, \"PlantCode\" text NULL, \"PortCode\" text NULL, \"LCTemp\" text NULL, \"ContractNo\" text NULL, \"OrderQty\" integer NOT NULL DEFAULT 1, \"AllocatedQty\" integer NOT NULL DEFAULT 0, \"UnitPriceForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

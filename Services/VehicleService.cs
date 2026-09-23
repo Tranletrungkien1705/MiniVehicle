@@ -1900,6 +1900,20 @@ public interface IVehicleService
     Task<object> GetProductionSummaryAsync(string? plantCode, string? ordMonth);
     Task<object?> GetVehicleProductionInfoAsync(string vin);
     Task<object?> GetVehicleProductionHistoryAsync(string vin);
+
+    // Hóa đơn chiếu lệ Proforma Invoice (BizHTC.Order.PerformanceInvoice / Ord_PI / ProformaInvoice)
+    Task<object> CreateProformaInvoiceAsync(CreateProformaInvoiceDto dto);
+    Task<object> ListProformaInvoicesAsync(string? status, string? dealer, string? orderMonth, string? productionMonth, string? refNo, string? model, string? vin);
+    Task<object?> GetProformaInvoiceAsync(string refNo);
+    Task<object?> UpdateProformaInvoiceHeaderAsync(string refNo, UpdateProformaInvoiceHeaderDto dto);
+    Task<object?> ProformaInvoiceTransitionAsync(string refNo, string action, ProformaInvoiceTransitionDto? dto);
+    Task<object?> AllocateVinToPiLineAsync(string refNo, long lineId, AllocateVinToPiLineDto dto);
+    Task<object?> AddProformaInvoiceLinesAsync(string refNo, List<ProformaInvoiceItemInputDto> items);
+    Task<object?> UpdateProformaInvoiceLineAsync(string refNo, long lineId, UpdateProformaInvoiceLineDto dto);
+    Task<object?> RemoveProformaInvoiceLineAsync(string refNo, long lineId);
+    Task<object?> GetVehiclePiInfoAsync(string vin);
+    Task<object?> GetVehiclePiHistoryAsync(string vin);
+    Task<object> GetProformaInvoiceSummaryAsync(string? dealerCode, string? orderMonth);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -22919,6 +22933,798 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             vehicle.ManufacturedDate,
             vehicle.PlantCode,
             history = events.Select(e => new { e.Id, e.Kind, e.Note, e.At })
+        };
+    }
+
+    // ===== Hóa đơn chiếu lệ Proforma Invoice (BizHTC.Order.PerformanceInvoice / Ord_PI / ProformaInvoice) =====
+
+    public async Task<object> CreateProformaInvoiceAsync(CreateProformaInvoiceDto dto)
+    {
+        var refNo = dto.RefNo?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(refNo))
+        {
+            var count = await db.ProformaInvoices.CountAsync(p => p.OrgId == Org);
+            refNo = $"PI{DateTime.Now:yyyyMM}-{(count + 1):D4}";
+        }
+
+        if (await db.ProformaInvoices.AnyAsync(p => p.OrgId == Org && p.RefNo == refNo))
+            throw new InvalidOperationException($"Mã số Proforma Invoice {refNo} đã tồn tại trong hệ thống.");
+
+        var currency = string.IsNullOrWhiteSpace(dto.Currency) ? "USD" : dto.Currency.Trim().ToUpperInvariant();
+        var exchangeRate = dto.ExchangeRate ?? (currency == "VND" ? 1.0m : 25450m);
+        var depositRate = dto.DepositRate ?? 10m;
+
+        var pi = new ProformaInvoice
+        {
+            OrgId = Org,
+            RefNo = refNo,
+            RefNoUser = dto.RefNoUser?.Trim(),
+            DealerCode = dto.DealerCode.Trim(),
+            DealerName = dto.DealerName?.Trim(),
+            OrderMonth = dto.OrderMonth.Trim(),
+            ProductionMonth = dto.ProductionMonth?.Trim(),
+            ExpectedDeliveryMonth = dto.ExpectedDeliveryMonth?.Trim(),
+            Currency = currency,
+            ExchangeRate = exchangeRate,
+            DepositRate = depositRate,
+            PaymentTerm = string.IsNullOrWhiteSpace(dto.PaymentTerm) ? "LC" : dto.PaymentTerm.Trim(),
+            DeparturePort = dto.DeparturePort?.Trim(),
+            ArrivalPort = dto.ArrivalPort?.Trim(),
+            LCTemp = dto.LCTemp?.Trim(),
+            LCNo = dto.LCNo?.Trim(),
+            ContractNo = dto.ContractNo?.Trim(),
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim(),
+            CreatedAt = DateTime.Now,
+            Status = "Draft"
+        };
+
+        db.ProformaInvoices.Add(pi);
+        await db.SaveChangesAsync();
+
+        var lines = new List<ProformaInvoiceLine>();
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            int idx = 1;
+            foreach (var item in dto.Items)
+            {
+                var orderQty = item.OrderQty > 0 ? item.OrderQty : 1;
+                var unitPriceForeign = item.UnitPriceForeign ?? 0;
+                var unitPrice = item.UnitPrice ?? (unitPriceForeign > 0 ? unitPriceForeign * exchangeRate : 0);
+                var totalAmountForeign = unitPriceForeign * orderQty;
+                var totalAmount = unitPrice * orderQty;
+
+                var line = new ProformaInvoiceLine
+                {
+                    OrgId = Org,
+                    ProformaInvoiceId = pi.Id,
+                    RefNo = pi.RefNo,
+                    LineIndex = idx++,
+                    Vin = item.Vin?.Trim().ToUpperInvariant(),
+                    Model = item.Model.Trim(),
+                    SpecCode = item.SpecCode.Trim(),
+                    SpecDescription = item.SpecDescription?.Trim(),
+                    ColorCode = string.IsNullOrWhiteSpace(item.ColorCode) ? "NWAC" : item.ColorCode.Trim(),
+                    ColorName = item.ColorName?.Trim(),
+                    WorkOrderNo = item.WorkOrderNo?.Trim(),
+                    PlantCode = item.PlantCode?.Trim(),
+                    PortCode = item.PortCode?.Trim(),
+                    LCTemp = item.LCTemp?.Trim(),
+                    ContractNo = item.ContractNo?.Trim(),
+                    OrderQty = orderQty,
+                    AllocatedQty = string.IsNullOrWhiteSpace(item.Vin) ? 0 : 1,
+                    UnitPriceForeign = unitPriceForeign,
+                    TotalAmountForeign = totalAmountForeign,
+                    UnitPrice = unitPrice,
+                    TotalAmount = totalAmount,
+                    Status = "Pending",
+                    Remark = item.Remark?.Trim()
+                };
+                lines.Add(line);
+                db.ProformaInvoiceLines.Add(line);
+
+                if (!string.IsNullOrWhiteSpace(line.Vin))
+                {
+                    Log(line.Vin, "ProformaInvoiceCreated", $"Lập Proforma Invoice {pi.RefNo} cho ĐL {pi.DealerCode} dòng {line.Model} ({line.SpecCode}).");
+                }
+            }
+
+            pi.TotalQuantity = lines.Sum(l => l.OrderQty);
+            pi.TotalAmountForeign = lines.Sum(l => l.TotalAmountForeign);
+            pi.TotalAmount = lines.Sum(l => l.TotalAmount);
+            pi.DepositAmount = pi.TotalAmount * pi.DepositRate / 100m;
+            await db.SaveChangesAsync();
+        }
+
+        return new
+        {
+            pi.Id,
+            pi.RefNo,
+            pi.RefNoUser,
+            pi.DealerCode,
+            pi.DealerName,
+            pi.OrderMonth,
+            pi.ProductionMonth,
+            pi.ExpectedDeliveryMonth,
+            pi.Currency,
+            pi.ExchangeRate,
+            pi.TotalQuantity,
+            pi.TotalAmountForeign,
+            pi.TotalAmount,
+            pi.DepositRate,
+            pi.DepositAmount,
+            pi.PaymentTerm,
+            pi.Status,
+            pi.CreatedAt,
+            itemsCount = lines.Count
+        };
+    }
+
+    public async Task<object> ListProformaInvoicesAsync(string? status, string? dealer, string? orderMonth, string? productionMonth, string? refNo, string? model, string? vin)
+    {
+        var q = db.ProformaInvoices.Where(p => p.OrgId == Org);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            q = q.Where(p => p.Status.ToLower() == status.Trim().ToLower());
+        if (!string.IsNullOrWhiteSpace(dealer))
+            q = q.Where(p => p.DealerCode.ToLower() == dealer.Trim().ToLower());
+        if (!string.IsNullOrWhiteSpace(orderMonth))
+            q = q.Where(p => p.OrderMonth == orderMonth.Trim());
+        if (!string.IsNullOrWhiteSpace(productionMonth))
+            q = q.Where(p => p.ProductionMonth == productionMonth.Trim());
+        if (!string.IsNullOrWhiteSpace(refNo))
+            q = q.Where(p => p.RefNo.Contains(refNo.Trim().ToUpperInvariant()) || (p.RefNoUser != null && p.RefNoUser.Contains(refNo.Trim())));
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var matchingPiIds = await db.ProformaInvoiceLines
+                .Where(l => l.OrgId == Org && l.Model.ToLower().Contains(model.Trim().ToLower()))
+                .Select(l => l.ProformaInvoiceId)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(p => matchingPiIds.Contains(p.Id));
+        }
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var targetVin = vin.Trim().ToUpperInvariant();
+            var matchingPiIds = await db.ProformaInvoiceLines
+                .Where(l => l.OrgId == Org && l.Vin == targetVin)
+                .Select(l => l.ProformaInvoiceId)
+                .Distinct()
+                .ToListAsync();
+            q = q.Where(p => matchingPiIds.Contains(p.Id));
+        }
+
+        var items = await q.OrderByDescending(p => p.CreatedAt).ToListAsync();
+        var piIds = items.Select(x => x.Id).ToList();
+        var allLines = await db.ProformaInvoiceLines.Where(l => l.OrgId == Org && piIds.Contains(l.ProformaInvoiceId)).ToListAsync();
+
+        var result = items.Select(p =>
+        {
+            var pLines = allLines.Where(l => l.ProformaInvoiceId == p.Id).ToList();
+            return new
+            {
+                p.Id,
+                p.RefNo,
+                p.RefNoUser,
+                p.DealerCode,
+                p.DealerName,
+                p.OrderMonth,
+                p.ProductionMonth,
+                p.ExpectedDeliveryMonth,
+                p.Currency,
+                p.ExchangeRate,
+                p.TotalQuantity,
+                p.TotalAmountForeign,
+                p.TotalAmount,
+                p.DepositRate,
+                p.DepositAmount,
+                p.PaymentTerm,
+                p.DeparturePort,
+                p.ArrivalPort,
+                p.LCTemp,
+                p.LCNo,
+                p.ContractNo,
+                p.Status,
+                p.CreatedAt,
+                p.ApprovedAt,
+                p.ExecutedAt,
+                p.CompletedAt,
+                linesCount = pLines.Count,
+                allocatedQty = pLines.Sum(l => l.AllocatedQty),
+                models = pLines.Select(l => l.Model).Distinct().ToList()
+            };
+        }).ToList();
+
+        return new { count = result.Count, items = result };
+    }
+
+    public async Task<object?> GetProformaInvoiceAsync(string refNo)
+    {
+        refNo = refNo.Trim().ToUpperInvariant();
+        var pi = await db.ProformaInvoices.FirstOrDefaultAsync(p => p.OrgId == Org && p.RefNo == refNo);
+        if (pi == null) return null;
+
+        var lines = await db.ProformaInvoiceLines
+            .Where(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id)
+            .OrderBy(l => l.LineIndex)
+            .ToListAsync();
+
+        return new
+        {
+            pi.Id,
+            pi.RefNo,
+            pi.RefNoUser,
+            pi.DealerCode,
+            pi.DealerName,
+            pi.OrderMonth,
+            pi.ProductionMonth,
+            pi.ExpectedDeliveryMonth,
+            pi.Currency,
+            pi.ExchangeRate,
+            pi.TotalQuantity,
+            pi.TotalAmountForeign,
+            pi.TotalAmount,
+            pi.DepositRate,
+            pi.DepositAmount,
+            pi.PaymentTerm,
+            pi.DeparturePort,
+            pi.ArrivalPort,
+            pi.LCTemp,
+            pi.LCNo,
+            pi.ContractNo,
+            pi.Status,
+            pi.Remark,
+            pi.CreatedBy,
+            pi.CreatedAt,
+            pi.ApprovedBy,
+            pi.ApprovedAt,
+            pi.ExecutedBy,
+            pi.ExecutedAt,
+            pi.CompletedBy,
+            pi.CompletedAt,
+            pi.RejectedBy,
+            pi.RejectedAt,
+            pi.RejectReason,
+            pi.CancelledBy,
+            pi.CancelledAt,
+            pi.CancelReason,
+            lines = lines.Select(l => new
+            {
+                l.Id,
+                l.LineIndex,
+                l.Vin,
+                l.Model,
+                l.SpecCode,
+                l.SpecDescription,
+                l.ColorCode,
+                l.ColorName,
+                l.WorkOrderNo,
+                l.PlantCode,
+                l.PortCode,
+                l.LCTemp,
+                l.ContractNo,
+                l.OrderQty,
+                l.AllocatedQty,
+                l.UnitPriceForeign,
+                l.TotalAmountForeign,
+                l.UnitPrice,
+                l.TotalAmount,
+                l.Status,
+                l.Remark
+            })
+        };
+    }
+
+    public async Task<object?> UpdateProformaInvoiceHeaderAsync(string refNo, UpdateProformaInvoiceHeaderDto dto)
+    {
+        refNo = refNo.Trim().ToUpperInvariant();
+        var pi = await db.ProformaInvoices.FirstOrDefaultAsync(p => p.OrgId == Org && p.RefNo == refNo);
+        if (pi == null) return null;
+
+        if (pi.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể điều chỉnh Proforma Invoice {refNo} ở trạng thái {pi.Status}.");
+
+        if (dto.RefNoUser != null) pi.RefNoUser = dto.RefNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) pi.DealerCode = dto.DealerCode.Trim();
+        if (dto.DealerName != null) pi.DealerName = dto.DealerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.OrderMonth)) pi.OrderMonth = dto.OrderMonth.Trim();
+        if (dto.ProductionMonth != null) pi.ProductionMonth = dto.ProductionMonth.Trim();
+        if (dto.ExpectedDeliveryMonth != null) pi.ExpectedDeliveryMonth = dto.ExpectedDeliveryMonth.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Currency)) pi.Currency = dto.Currency.Trim().ToUpperInvariant();
+        if (dto.ExchangeRate.HasValue && dto.ExchangeRate.Value > 0) pi.ExchangeRate = dto.ExchangeRate.Value;
+        if (dto.DepositRate.HasValue && dto.DepositRate.Value >= 0) pi.DepositRate = dto.DepositRate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.PaymentTerm)) pi.PaymentTerm = dto.PaymentTerm.Trim();
+        if (dto.DeparturePort != null) pi.DeparturePort = dto.DeparturePort.Trim();
+        if (dto.ArrivalPort != null) pi.ArrivalPort = dto.ArrivalPort.Trim();
+        if (dto.LCTemp != null) pi.LCTemp = dto.LCTemp.Trim();
+        if (dto.LCNo != null) pi.LCNo = dto.LCNo.Trim();
+        if (dto.ContractNo != null) pi.ContractNo = dto.ContractNo.Trim();
+        if (dto.Remark != null) pi.Remark = dto.Remark.Trim();
+
+        var lines = await db.ProformaInvoiceLines.Where(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id).ToListAsync();
+        foreach (var l in lines)
+        {
+            if (l.UnitPriceForeign > 0 && pi.ExchangeRate > 0)
+            {
+                l.UnitPrice = l.UnitPriceForeign * pi.ExchangeRate;
+                l.TotalAmount = l.UnitPrice * l.OrderQty;
+            }
+        }
+
+        pi.TotalQuantity = lines.Sum(l => l.OrderQty);
+        pi.TotalAmountForeign = lines.Sum(l => l.TotalAmountForeign);
+        pi.TotalAmount = lines.Sum(l => l.TotalAmount);
+        pi.DepositAmount = pi.TotalAmount * pi.DepositRate / 100m;
+
+        await db.SaveChangesAsync();
+        return await GetProformaInvoiceAsync(refNo);
+    }
+
+    public async Task<object?> ProformaInvoiceTransitionAsync(string refNo, string action, ProformaInvoiceTransitionDto? dto)
+    {
+        refNo = refNo.Trim().ToUpperInvariant();
+        var pi = await db.ProformaInvoices.FirstOrDefaultAsync(p => p.OrgId == Org && p.RefNo == refNo);
+        if (pi == null) return null;
+
+        var act = action.Trim().ToLowerInvariant();
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor ?? "system";
+
+        var lines = await db.ProformaInvoiceLines.Where(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id).ToListAsync();
+
+        switch (act)
+        {
+            case "submit":
+                if (pi.Status != "Draft")
+                    throw new InvalidOperationException($"Chỉ có thể nộp duyệt Proforma Invoice khi ở trạng thái Draft (hiện tại: {pi.Status}).");
+                pi.Status = "Submitted";
+                break;
+
+            case "approve":
+                if (pi.Status is not ("Draft" or "Submitted"))
+                    throw new InvalidOperationException($"Chỉ có thể phê duyệt Proforma Invoice khi ở trạng thái Draft hoặc Submitted (hiện tại: {pi.Status}).");
+                pi.Status = "Approved";
+                pi.ApprovedBy = actor;
+                pi.ApprovedAt = now;
+
+                foreach (var line in lines)
+                {
+                    if (line.Status == "Pending") line.Status = "Approved";
+                    if (!string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        var v = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == line.Vin);
+                        if (v != null)
+                        {
+                            v.LastPiNo = pi.RefNo;
+                            v.LastPiDate = now;
+                            v.PiCount++;
+                            Log(v.Vin, "ProformaInvoiceApproved", $"Phê duyệt PI {pi.RefNo} cho ĐL {pi.DealerCode}.");
+                        }
+                    }
+                }
+                break;
+
+            case "execute" or "in-execution" or "inexecution":
+                if (pi.Status != "Approved")
+                    throw new InvalidOperationException($"Chỉ có thể đưa vào thực thi Proforma Invoice khi đã được Approved (hiện tại: {pi.Status}).");
+                pi.Status = "InExecution";
+                pi.ExecutedBy = actor;
+                pi.ExecutedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.LCNo)) pi.LCNo = dto.LCNo.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.ContractNo)) pi.ContractNo = dto.ContractNo.Trim();
+
+                foreach (var line in lines)
+                {
+                    if (line.Status == "Approved") line.Status = "InExecution";
+                    if (!string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        Log(line.Vin, "ProformaInvoiceExecuting", $"PI {pi.RefNo} chuyển sang thực thi sản xuất & mở LC.");
+                    }
+                }
+                break;
+
+            case "complete" or "finish":
+                if (pi.Status is not ("InExecution" or "Approved"))
+                    throw new InvalidOperationException($"Chỉ có thể hoàn tất Proforma Invoice khi đang ở trạng thái Approved hoặc InExecution (hiện tại: {pi.Status}).");
+                pi.Status = "Completed";
+                pi.CompletedBy = actor;
+                pi.CompletedAt = now;
+
+                foreach (var line in lines)
+                {
+                    if (line.Status != "Cancelled") line.Status = "Completed";
+                    if (!string.IsNullOrWhiteSpace(line.Vin))
+                    {
+                        Log(line.Vin, "ProformaInvoiceCompleted", $"Hoàn tất đơn hàng Proforma Invoice {pi.RefNo}.");
+                    }
+                }
+                break;
+
+            case "reject":
+                if (pi.Status is "Completed" or "Cancelled")
+                    throw new InvalidOperationException($"Không thể từ chối Proforma Invoice đã ở trạng thái {pi.Status}.");
+                pi.Status = "Rejected";
+                pi.RejectedBy = actor;
+                pi.RejectedAt = now;
+                pi.RejectReason = dto?.Reason ?? dto?.Note;
+                break;
+
+            case "cancel":
+                if (pi.Status is "Completed")
+                    throw new InvalidOperationException($"Không thể hủy Proforma Invoice đã hoàn tất.");
+                pi.Status = "Cancelled";
+                pi.CancelledBy = actor;
+                pi.CancelledAt = now;
+                pi.CancelReason = dto?.Reason ?? dto?.Note;
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Cancelled";
+                }
+                break;
+
+            default:
+                throw new InvalidOperationException($"Hành động '{action}' không hợp lệ cho Proforma Invoice.");
+        }
+
+        await db.SaveChangesAsync();
+        return await GetProformaInvoiceAsync(refNo);
+    }
+
+    public async Task<object?> AllocateVinToPiLineAsync(string refNo, long lineId, AllocateVinToPiLineDto dto)
+    {
+        refNo = refNo.Trim().ToUpperInvariant();
+        var pi = await db.ProformaInvoices.FirstOrDefaultAsync(p => p.OrgId == Org && p.RefNo == refNo);
+        if (pi == null) return null;
+
+        if (pi.Status is "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Proforma Invoice {refNo} đang ở trạng thái {pi.Status}, không thể phân bổ VIN.");
+
+        var line = await db.ProformaInvoiceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id && l.Id == lineId);
+        if (line == null)
+            throw new InvalidOperationException($"Không tìm thấy dòng chi tiết ID {lineId} trong Proforma Invoice {refNo}.");
+
+        var vin = dto.Vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle == null)
+            throw new InvalidOperationException($"Số khung VIN {vin} không tồn tại trong hệ thống.");
+
+        line.Vin = vin;
+        line.AllocatedQty = 1;
+        line.Status = "Allocated";
+
+        vehicle.LastPiNo = pi.RefNo;
+        vehicle.LastPiDate = DateTime.Now;
+        vehicle.PiCount++;
+
+        Log(vin, "PiVinAllocated", $"Phân bổ vào Proforma Invoice {pi.RefNo} cho ĐL {pi.DealerCode} dòng {line.Model}. {dto.Remark ?? ""}".Trim());
+
+        await db.SaveChangesAsync();
+        return await GetProformaInvoiceAsync(refNo);
+    }
+
+    public async Task<object?> AddProformaInvoiceLinesAsync(string refNo, List<ProformaInvoiceItemInputDto> items)
+    {
+        refNo = refNo.Trim().ToUpperInvariant();
+        var pi = await db.ProformaInvoices.FirstOrDefaultAsync(p => p.OrgId == Org && p.RefNo == refNo);
+        if (pi == null) return null;
+
+        if (pi.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể thêm dòng xe vào Proforma Invoice {refNo} ở trạng thái {pi.Status}.");
+
+        var currentMaxIndex = await db.ProformaInvoiceLines
+            .Where(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id)
+            .Select(l => (int?)l.LineIndex)
+            .MaxAsync() ?? 0;
+
+        foreach (var item in items)
+        {
+            var orderQty = item.OrderQty > 0 ? item.OrderQty : 1;
+            var unitPriceForeign = item.UnitPriceForeign ?? 0;
+            var unitPrice = item.UnitPrice ?? (unitPriceForeign > 0 ? unitPriceForeign * pi.ExchangeRate : 0);
+            var totalAmountForeign = unitPriceForeign * orderQty;
+            var totalAmount = unitPrice * orderQty;
+
+            var line = new ProformaInvoiceLine
+            {
+                OrgId = Org,
+                ProformaInvoiceId = pi.Id,
+                RefNo = pi.RefNo,
+                LineIndex = ++currentMaxIndex,
+                Vin = item.Vin?.Trim().ToUpperInvariant(),
+                Model = item.Model.Trim(),
+                SpecCode = item.SpecCode.Trim(),
+                SpecDescription = item.SpecDescription?.Trim(),
+                ColorCode = string.IsNullOrWhiteSpace(item.ColorCode) ? "NWAC" : item.ColorCode.Trim(),
+                ColorName = item.ColorName?.Trim(),
+                WorkOrderNo = item.WorkOrderNo?.Trim(),
+                PlantCode = item.PlantCode?.Trim(),
+                PortCode = item.PortCode?.Trim(),
+                LCTemp = item.LCTemp?.Trim(),
+                ContractNo = item.ContractNo?.Trim(),
+                OrderQty = orderQty,
+                AllocatedQty = string.IsNullOrWhiteSpace(item.Vin) ? 0 : 1,
+                UnitPriceForeign = unitPriceForeign,
+                TotalAmountForeign = totalAmountForeign,
+                UnitPrice = unitPrice,
+                TotalAmount = totalAmount,
+                Status = pi.Status == "Approved" ? "Approved" : "Pending",
+                Remark = item.Remark?.Trim()
+            };
+            db.ProformaInvoiceLines.Add(line);
+
+            if (!string.IsNullOrWhiteSpace(line.Vin))
+            {
+                Log(line.Vin, "ProformaInvoiceLineAdded", $"Thêm vào PI {pi.RefNo} cho ĐL {pi.DealerCode}.");
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ProformaInvoiceLines.Where(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id).ToListAsync();
+        pi.TotalQuantity = allLines.Sum(l => l.OrderQty);
+        pi.TotalAmountForeign = allLines.Sum(l => l.TotalAmountForeign);
+        pi.TotalAmount = allLines.Sum(l => l.TotalAmount);
+        pi.DepositAmount = pi.TotalAmount * pi.DepositRate / 100m;
+
+        await db.SaveChangesAsync();
+        return await GetProformaInvoiceAsync(refNo);
+    }
+
+    public async Task<object?> UpdateProformaInvoiceLineAsync(string refNo, long lineId, UpdateProformaInvoiceLineDto dto)
+    {
+        refNo = refNo.Trim().ToUpperInvariant();
+        var pi = await db.ProformaInvoices.FirstOrDefaultAsync(p => p.OrgId == Org && p.RefNo == refNo);
+        if (pi == null) return null;
+
+        if (pi.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể điều chỉnh dòng xe trong Proforma Invoice {refNo} ở trạng thái {pi.Status}.");
+
+        var line = await db.ProformaInvoiceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id && l.Id == lineId);
+        if (line == null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.Model)) line.Model = dto.Model.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.SpecCode)) line.SpecCode = dto.SpecCode.Trim();
+        if (dto.SpecDescription != null) line.SpecDescription = dto.SpecDescription.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.ColorCode)) line.ColorCode = dto.ColorCode.Trim();
+        if (dto.ColorName != null) line.ColorName = dto.ColorName.Trim();
+        if (dto.WorkOrderNo != null) line.WorkOrderNo = dto.WorkOrderNo.Trim();
+        if (dto.PlantCode != null) line.PlantCode = dto.PlantCode.Trim();
+        if (dto.PortCode != null) line.PortCode = dto.PortCode.Trim();
+        if (dto.LCTemp != null) line.LCTemp = dto.LCTemp.Trim();
+        if (dto.ContractNo != null) line.ContractNo = dto.ContractNo.Trim();
+        if (dto.OrderQty.HasValue && dto.OrderQty.Value > 0) line.OrderQty = dto.OrderQty.Value;
+        if (dto.AllocatedQty.HasValue && dto.AllocatedQty.Value >= 0) line.AllocatedQty = dto.AllocatedQty.Value;
+        if (dto.UnitPriceForeign.HasValue && dto.UnitPriceForeign.Value >= 0) line.UnitPriceForeign = dto.UnitPriceForeign.Value;
+        if (dto.UnitPrice.HasValue && dto.UnitPrice.Value >= 0) line.UnitPrice = dto.UnitPrice.Value;
+        else if (dto.UnitPriceForeign.HasValue && pi.ExchangeRate > 0) line.UnitPrice = dto.UnitPriceForeign.Value * pi.ExchangeRate;
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Vin != null) line.Vin = dto.Vin.Trim().ToUpperInvariant();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        line.TotalAmountForeign = line.UnitPriceForeign * line.OrderQty;
+        line.TotalAmount = line.UnitPrice * line.OrderQty;
+
+        if (!string.IsNullOrWhiteSpace(line.Vin))
+        {
+            var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == line.Vin);
+            if (vehicle != null)
+            {
+                vehicle.LastPiNo = pi.RefNo;
+                vehicle.LastPiDate = DateTime.Now;
+            }
+        }
+
+        var allLines = await db.ProformaInvoiceLines.Where(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id).ToListAsync();
+        pi.TotalQuantity = allLines.Sum(l => l.OrderQty);
+        pi.TotalAmountForeign = allLines.Sum(l => l.TotalAmountForeign);
+        pi.TotalAmount = allLines.Sum(l => l.TotalAmount);
+        pi.DepositAmount = pi.TotalAmount * pi.DepositRate / 100m;
+
+        await db.SaveChangesAsync();
+        return await GetProformaInvoiceAsync(refNo);
+    }
+
+    public async Task<object?> RemoveProformaInvoiceLineAsync(string refNo, long lineId)
+    {
+        refNo = refNo.Trim().ToUpperInvariant();
+        var pi = await db.ProformaInvoices.FirstOrDefaultAsync(p => p.OrgId == Org && p.RefNo == refNo);
+        if (pi == null) return null;
+
+        if (pi.Status is "Completed" or "Cancelled")
+            throw new InvalidOperationException($"Không thể xóa dòng xe trong Proforma Invoice {refNo} ở trạng thái {pi.Status}.");
+
+        var line = await db.ProformaInvoiceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id && l.Id == lineId);
+        if (line == null) return null;
+
+        db.ProformaInvoiceLines.Remove(line);
+        await db.SaveChangesAsync();
+
+        var allLines = await db.ProformaInvoiceLines.Where(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id).ToListAsync();
+        pi.TotalQuantity = allLines.Sum(l => l.OrderQty);
+        pi.TotalAmountForeign = allLines.Sum(l => l.TotalAmountForeign);
+        pi.TotalAmount = allLines.Sum(l => l.TotalAmount);
+        pi.DepositAmount = pi.TotalAmount * pi.DepositRate / 100m;
+
+        await db.SaveChangesAsync();
+        return await GetProformaInvoiceAsync(refNo);
+    }
+
+    public async Task<object?> GetVehiclePiInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle == null) return null;
+
+        ProformaInvoice? pi = null;
+        ProformaInvoiceLine? line = null;
+
+        if (!string.IsNullOrWhiteSpace(vehicle.LastPiNo))
+        {
+            pi = await db.ProformaInvoices.FirstOrDefaultAsync(p => p.OrgId == Org && p.RefNo == vehicle.LastPiNo);
+            if (pi != null)
+            {
+                line = await db.ProformaInvoiceLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.ProformaInvoiceId == pi.Id && l.Vin == vin);
+            }
+        }
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            vehicle.EngineNo,
+            vehicle.Color,
+            vehicle.ModelYear,
+            status = vehicle.Status.ToString(),
+            vehicle.LastPiNo,
+            vehicle.LastPiDate,
+            vehicle.PiCount,
+            proformaInvoice = pi == null ? null : new
+            {
+                pi.RefNo,
+                pi.RefNoUser,
+                pi.DealerCode,
+                pi.DealerName,
+                pi.OrderMonth,
+                pi.ProductionMonth,
+                pi.ExpectedDeliveryMonth,
+                pi.Currency,
+                pi.TotalQuantity,
+                pi.TotalAmount,
+                pi.DepositAmount,
+                pi.Status,
+                pi.CreatedAt
+            },
+            proformaInvoiceLine = line == null ? null : new
+            {
+                line.LineIndex,
+                line.Model,
+                line.SpecCode,
+                line.ColorCode,
+                line.ColorName,
+                line.OrderQty,
+                line.UnitPriceForeign,
+                line.UnitPrice,
+                line.TotalAmount,
+                line.Status
+            }
+        };
+    }
+
+    public async Task<object?> GetVehiclePiHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle == null) return null;
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("ProformaInvoice") || e.Kind == "PiVinAllocated"))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        var piLines = await db.ProformaInvoiceLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            vehicle.LastPiNo,
+            vehicle.LastPiDate,
+            vehicle.PiCount,
+            history = events.Select(e => new { e.Id, e.Kind, e.Note, e.At }),
+            piLines = piLines.Select(l => new { l.RefNo, l.Model, l.SpecCode, l.ColorCode, l.UnitPrice, l.TotalAmount, l.Status })
+        };
+    }
+
+    public async Task<object> GetProformaInvoiceSummaryAsync(string? dealerCode, string? orderMonth)
+    {
+        var q = db.ProformaInvoices.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode)) q = q.Where(p => p.DealerCode.ToLower() == dealerCode.Trim().ToLower());
+        if (!string.IsNullOrWhiteSpace(orderMonth)) q = q.Where(p => p.OrderMonth == orderMonth.Trim());
+
+        var invoices = await q.ToListAsync();
+        var invIds = invoices.Select(x => x.Id).ToList();
+        var lines = await db.ProformaInvoiceLines.Where(l => l.OrgId == Org && invIds.Contains(l.ProformaInvoiceId)).ToListAsync();
+
+        int totalInvoices = invoices.Count;
+        int totalDraft = invoices.Count(x => x.Status == "Draft");
+        int totalSubmitted = invoices.Count(x => x.Status == "Submitted");
+        int totalApproved = invoices.Count(x => x.Status == "Approved");
+        int totalInExecution = invoices.Count(x => x.Status == "InExecution");
+        int totalCompleted = invoices.Count(x => x.Status == "Completed");
+        int totalCancelled = invoices.Count(x => x.Status is "Cancelled" or "Rejected");
+
+        int totalOrderQty = lines.Where(l => l.Status != "Cancelled").Sum(l => l.OrderQty);
+        int totalAllocatedQty = lines.Where(l => l.Status != "Cancelled").Sum(l => l.AllocatedQty);
+        decimal totalAmountForeign = lines.Where(l => l.Status != "Cancelled").Sum(l => l.TotalAmountForeign);
+        decimal totalAmount = lines.Where(l => l.Status != "Cancelled").Sum(l => l.TotalAmount);
+
+        decimal executionRate = totalOrderQty > 0 ? Math.Round((decimal)totalAllocatedQty / totalOrderQty * 100, 1) : 0;
+
+        var byModel = lines.Where(l => l.Status != "Cancelled").GroupBy(l => l.Model).Select(g =>
+        {
+            var mOrderQty = g.Sum(x => x.OrderQty);
+            var mAllocatedQty = g.Sum(x => x.AllocatedQty);
+            var mAmount = g.Sum(x => x.TotalAmount);
+            return new
+            {
+                model = g.Key,
+                invoiceCount = g.Select(x => x.ProformaInvoiceId).Distinct().Count(),
+                orderQty = mOrderQty,
+                allocatedQty = mAllocatedQty,
+                totalAmount = mAmount
+            };
+        }).OrderByDescending(x => x.orderQty).ToList();
+
+        var byDealer = invoices.GroupBy(p => p.DealerCode).Select(g =>
+        {
+            var pIds = g.Select(x => x.Id).ToList();
+            var dLines = lines.Where(l => pIds.Contains(l.ProformaInvoiceId) && l.Status != "Cancelled").ToList();
+            return new
+            {
+                dealerCode = g.Key,
+                dealerName = g.First().DealerName ?? g.Key,
+                invoiceCount = g.Count(),
+                totalQty = dLines.Sum(x => x.OrderQty),
+                totalAmount = dLines.Sum(x => x.TotalAmount)
+            };
+        }).OrderByDescending(x => x.totalAmount).ToList();
+
+        var byOrderMonth = invoices.GroupBy(p => p.OrderMonth).Select(g =>
+        {
+            var pIds = g.Select(x => x.Id).ToList();
+            var mLines = lines.Where(l => pIds.Contains(l.ProformaInvoiceId) && l.Status != "Cancelled").ToList();
+            return new
+            {
+                orderMonth = g.Key,
+                invoiceCount = g.Count(),
+                totalQty = mLines.Sum(x => x.OrderQty),
+                totalAmount = mLines.Sum(x => x.TotalAmount)
+            };
+        }).OrderByDescending(x => x.orderMonth).ToList();
+
+        return new
+        {
+            totalInvoices,
+            totalDraft,
+            totalSubmitted,
+            totalApproved,
+            totalInExecution,
+            totalCompleted,
+            totalCancelled,
+            totalOrderQty,
+            totalAllocatedQty,
+            totalAmountForeign,
+            totalAmount,
+            executionRatePercent = executionRate,
+            byModel,
+            byDealer,
+            byOrderMonth
         };
     }
 }

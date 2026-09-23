@@ -2763,6 +2763,135 @@ app.MapGet("/api/vehicles/{vin}/production-history", async (string vin, IVehicle
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Hóa đơn chiếu lệ Proforma Invoice (BizHTC.Order.PerformanceInvoice / Ord_PI / ProformaInvoice) =====
+
+app.MapPost("/api/proforma-invoices", async (CreateProformaInvoiceDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.OrderMonth))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode và tháng đặt hàng OrderMonth (YYYY-MM)." });
+    try { return Results.Ok(await svc.CreateProformaInvoiceAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/proforma-invoices", async (IVehicleService svc, string? status, string? dealer, string? orderMonth, string? productionMonth, string? refNo, string? model, string? vin) =>
+    Results.Ok(await svc.ListProformaInvoicesAsync(status, dealer, orderMonth, productionMonth, refNo, model, vin))).RequireAuthorization();
+
+app.MapGet("/api/proforma-invoices/summary", async (IVehicleService svc, string? dealerCode, string? orderMonth) =>
+    Results.Ok(await svc.GetProformaInvoiceSummaryAsync(dealerCode, orderMonth))).RequireAuthorization();
+
+app.MapGet("/api/reports/proforma-invoices/summary", async (IVehicleService svc, string? dealerCode, string? orderMonth) =>
+    Results.Ok(await svc.GetProformaInvoiceSummaryAsync(dealerCode, orderMonth))).RequireAuthorization();
+
+app.MapGet("/api/proforma-invoices/{refNo}", async (string refNo, IVehicleService svc) =>
+{
+    var r = await svc.GetProformaInvoiceAsync(refNo);
+    return r is null ? Results.NotFound(new { refNo, error = "Không tìm thấy Proforma Invoice." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/proforma-invoices/{refNo}", async (string refNo, UpdateProformaInvoiceHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateProformaInvoiceHeaderAsync(refNo, dto);
+        return r is null ? Results.NotFound(new { refNo, error = "Không tìm thấy Proforma Invoice." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/proforma-invoices/{refNo}/update", async (string refNo, UpdateProformaInvoiceHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateProformaInvoiceHeaderAsync(refNo, dto);
+        return r is null ? Results.NotFound(new { refNo, error = "Không tìm thấy Proforma Invoice." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/proforma-invoices/{refNo}/{action}", async (string refNo, string action, ProformaInvoiceTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve" or "execute" or "in-execution" or "inexecution" or "complete" or "finish" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve|execute|complete|reject|cancel" });
+    try
+    {
+        var r = await svc.ProformaInvoiceTransitionAsync(refNo, action, dto);
+        return r is null ? Results.NotFound(new { refNo, error = "Không tìm thấy Proforma Invoice hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/proforma-invoices/{refNo}/lines/{lineId:long}/allocate-vin", async (string refNo, long lineId, AllocateVinToPiLineDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.Vin))
+        return Results.BadRequest(new { error = "Cần số khung Vin để phân bổ vào dòng Proforma Invoice." });
+    try
+    {
+        var r = await svc.AllocateVinToPiLineAsync(refNo, lineId, dto);
+        return r is null ? Results.NotFound(new { refNo, lineId, error = "Không tìm thấy Proforma Invoice hoặc dòng chi tiết." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/proforma-invoices/{refNo}/lines", async (string refNo, List<ProformaInvoiceItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách items dòng xe để thêm vào Proforma Invoice." });
+    try
+    {
+        var r = await svc.AddProformaInvoiceLinesAsync(refNo, items);
+        return r is null ? Results.NotFound(new { refNo, error = "Không tìm thấy Proforma Invoice." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/proforma-invoices/{refNo}/lines/{lineId:long}/update", async (string refNo, long lineId, UpdateProformaInvoiceLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateProformaInvoiceLineAsync(refNo, lineId, dto);
+        return r is null ? Results.NotFound(new { refNo, lineId, error = "Không tìm thấy dòng chi tiết Proforma Invoice." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/proforma-invoices/{refNo}/lines/{lineId:long}", async (string refNo, long lineId, UpdateProformaInvoiceLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateProformaInvoiceLineAsync(refNo, lineId, dto);
+        return r is null ? Results.NotFound(new { refNo, lineId, error = "Không tìm thấy dòng chi tiết Proforma Invoice." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/proforma-invoices/{refNo}/lines/{lineId:long}", async (string refNo, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveProformaInvoiceLineAsync(refNo, lineId);
+        return r is null ? Results.NotFound(new { refNo, lineId, error = "Không tìm thấy dòng chi tiết Proforma Invoice hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/proforma-invoice-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePiInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/pi-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePiInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/pi-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePiHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

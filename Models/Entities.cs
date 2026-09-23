@@ -77,6 +77,9 @@ public sealed class Vehicle
     public string? LastWorkOrderNo { get; set; }      // Mã Lệnh sản xuất / Đơn đặt hàng sản xuất nhà máy đã sinh ra xe (MnfPl_Order / WorkOrder)
     public DateTime? ManufacturedDate { get; set; }   // Ngày hoàn tất xuất xưởng KCS tại nhà máy OEM
     public string? PlantCode { get; set; }            // Nhà máy sản xuất lắp ráp xe (HTMV_NINHBINH_1, HTMV_NINHBINH_2, TCV_PLANT)
+    public string? LastPiNo { get; set; }             // Mã số Proforma Invoice gần nhất (Ord_PI / PerformanceInvoice)
+    public DateTime? LastPiDate { get; set; }         // Ngày ban hành Proforma Invoice
+    public int PiCount { get; set; } = 0;             // Tổng số lần lập PI liên quan đến xe
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -2268,4 +2271,208 @@ public sealed record VehicleProductionInfoDto(
     string? PlantCode,
     ProductionOrder? ProductionOrder,
     ProductionOrderLine? ProductionOrderLine
+);
+
+/// <summary>Hóa đơn chiếu lệ / Báo giá đơn hàng bán buôn xe đại lý &amp; Nhập khẩu ô tô (BizHTC.Order.PerformanceInvoice / Ord_PI / Ord_PerformanceInvoice / ProformaInvoice): chứng từ xác nhận đặt xe chính thức do hãng OEM ban hành cho Đại lý hoặc Nhà máy sản xuất quốc tế, làm căn cứ mở Thư tín dụng LC, lập Hợp đồng mua bán xe và kế hoạch sản xuất.</summary>
+public sealed class ProformaInvoice
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string RefNo { get; set; } = "";                 // Mã số PI (PI-2026-03-0001, PI-HMC-2026-...)
+    public string? RefNoUser { get; set; }                // Mã số PI tham chiếu nội bộ / do người dùng nhập
+    public string DealerCode { get; set; } = "";          // Mã đại lý thụ hưởng / đối tác nhận PI
+    public string? DealerName { get; set; }               // Tên đại lý
+    public string OrderMonth { get; set; } = "";          // Tháng đặt hàng kế hoạch (YYYY-MM)
+    public string? ProductionMonth { get; set; }          // Tháng sản xuất dự kiến (YYYY-MM)
+    public string? ExpectedDeliveryMonth { get; set; }    // Tháng dự kiến giao xe (YYYY-MM)
+    public string Currency { get; set; } = "USD";         // Đồng tiền giao dịch (USD, EUR, VND)
+    public decimal ExchangeRate { get; set; } = 25450m;   // Tỷ giá quy đổi ngoại tệ sang VNĐ
+    public int TotalQuantity { get; set; } = 0;           // Tổng số lượng xe trong PI
+    public decimal TotalAmountForeign { get; set; } = 0;  // Tổng giá trị ngoại tệ USD
+    public decimal TotalAmount { get; set; } = 0;         // Tổng trị giá quy đổi sang VNĐ = TotalAmountForeign * ExchangeRate (hoặc tổng giá VNĐ)
+    public decimal DepositRate { get; set; } = 10m;       // Tỷ lệ tiền đặt cọc theo PI (%) (VD: 10% = 10)
+    public decimal DepositAmount { get; set; } = 0;       // Tiền đặt cọc theo PI (VNĐ) = TotalAmount * DepositRate / 100
+    public string PaymentTerm { get; set; } = "LC";       // Điều kiện thanh toán (LC, TT, BankGuarantee, Cash, Clearing)
+    public string? DeparturePort { get; set; } = "BUSAN"; // Cảng bốc hàng / xuất xưởng (BUSAN, ULSAN, CHENNAI, HTMV_FACTORY...)
+    public string? ArrivalPort { get; set; } = "CANG_HAI_PHONG"; // Cảng dỡ hàng / Điểm nhận xe (CANG_HAI_PHONG, CANG_CAT_LAI, SHOWROOM_HN01...)
+    public string? LCTemp { get; set; }                   // Mã L/C tạm / Thư tín dụng dự kiến (CT_LC)
+    public string? LCNo { get; set; }                     // Mã L/C chính thức sau khi mở
+    public string? ContractNo { get; set; }               // Mã hợp đồng mua bán ngoại thương hoặc bán buôn liên quan
+    public string Status { get; set; } = "Draft";         // Draft → Submitted → Approved → InExecution → Completed (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú điều khoản / điều kiện giao nhận
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? ApprovedBy { get; set; }               // Lãnh đạo kinh doanh / Kế hoạch bán hàng OEM phê duyệt
+    public DateTime? ApprovedAt { get; set; }
+    public string? ExecutedBy { get; set; }               // Chuyên viên điều vận / XNK đưa vào thực thi sản xuất & mở LC
+    public DateTime? ExecutedAt { get; set; }
+    public string? CompletedBy { get; set; }              // Người xác nhận hoàn tất PI
+    public DateTime? CompletedAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết dòng xe trong Hóa đơn chiếu lệ Proforma Invoice (BizHTC.Order.PerformanceInvoice / Ord_PIDetail / Ord_PerformanceInvoiceDetail / ProformaInvoiceLine): model xe, phiên bản, màu sơn, lệnh sản xuất, nhà máy, cảng xuất/nhập, số lượng đặt, đơn giá ngoại tệ USD và quy đổi VNĐ.</summary>
+public sealed class ProformaInvoiceLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long ProformaInvoiceId { get; set; }
+    public string RefNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;               // Thứ tự dòng trong PI
+    public string? Vin { get; set; }                      // Số khung VIN cụ thể nếu đã phân bổ / chỉ định
+    public string Model { get; set; } = "";               // Dòng xe (SantaFe, Tucson, Accent, Creta, Grand i10, Custin, Palisade, Ioniq 5...)
+    public string SpecCode { get; set; } = "";           // Mã phiên bản xe (2.5T AWD Calligraphy, 2.0 AT Đặc Biệt, 1.5 AT Tiêu Chuẩn...)
+    public string? SpecDescription { get; set; }         // Mô tả cấu hình xe
+    public string ColorCode { get; set; } = "NWAC";      // Mã màu sơn xe (NWAC, SAW, R2P, T2X...)
+    public string? ColorName { get; set; }               // Tên màu sắc (Trắng Ngọc Trai, Đen Phantom, Đỏ Đô...)
+    public string? WorkOrderNo { get; set; }             // Lệnh sản xuất liên kết (PO-2026-03-0001...)
+    public string? PlantCode { get; set; }               // Nhà máy sản xuất (HTMV_NINHBINH_1, HTMV_NINHBINH_2, ULSAN_PLANT...)
+    public string? PortCode { get; set; }                // Mã cảng xuất / dỡ hàng
+    public string? LCTemp { get; set; }                  // Mã LC dự kiến
+    public string? ContractNo { get; set; }              // Mã hợp đồng liên kết
+    public int OrderQty { get; set; } = 1;               // Số lượng xe đặt mua dòng này
+    public int AllocatedQty { get; set; } = 0;           // Số lượng xe đã thực tế phân bổ VIN
+    public decimal UnitPriceForeign { get; set; } = 0;   // Đơn giá ngoại tệ (USD)
+    public decimal TotalAmountForeign { get; set; } = 0; // Thành tiền ngoại tệ (USD) = OrderQty * UnitPriceForeign
+    public decimal UnitPrice { get; set; } = 0;          // Đơn giá quy đổi VNĐ = UnitPriceForeign * ExchangeRate (hoặc đơn giá xuất buôn VNĐ)
+    public decimal TotalAmount { get; set; } = 0;        // Thành tiền quy đổi VNĐ = OrderQty * UnitPrice
+    public string Status { get; set; } = "Pending";      // Pending → Approved → Allocated → Delivered (hoặc Cancelled)
+    public string? Remark { get; set; }
+}
+
+// ===== DTOs cho Hóa đơn chiếu lệ Proforma Invoice (BizHTC.Order.PerformanceInvoice / Ord_PI / ProformaInvoice) =====
+
+public sealed record CreateProformaInvoiceDto(
+    string? RefNo,
+    string? RefNoUser,
+    string DealerCode,
+    string? DealerName,
+    string OrderMonth,
+    string? ProductionMonth,
+    string? ExpectedDeliveryMonth,
+    string? Currency,
+    decimal? ExchangeRate,
+    decimal? DepositRate,
+    string? PaymentTerm,
+    string? DeparturePort,
+    string? ArrivalPort,
+    string? LCTemp,
+    string? LCNo,
+    string? ContractNo,
+    string? Remark,
+    string? CreatedBy,
+    List<ProformaInvoiceItemInputDto>? Items
+);
+
+public sealed record ProformaInvoiceItemInputDto(
+    string Model,
+    string SpecCode,
+    string? SpecDescription,
+    string ColorCode,
+    string? ColorName,
+    string? WorkOrderNo,
+    string? PlantCode,
+    string? PortCode,
+    string? LCTemp,
+    string? ContractNo,
+    int OrderQty,
+    decimal? UnitPriceForeign,
+    decimal? UnitPrice,
+    string? Vin,
+    string? Remark
+);
+
+public sealed record UpdateProformaInvoiceHeaderDto(
+    string? RefNoUser,
+    string? DealerCode,
+    string? DealerName,
+    string? OrderMonth,
+    string? ProductionMonth,
+    string? ExpectedDeliveryMonth,
+    string? Currency,
+    decimal? ExchangeRate,
+    decimal? DepositRate,
+    string? PaymentTerm,
+    string? DeparturePort,
+    string? ArrivalPort,
+    string? LCTemp,
+    string? LCNo,
+    string? ContractNo,
+    string? Remark
+);
+
+public sealed record ProformaInvoiceTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate,
+    string? RefNoUser,
+    string? LCNo,
+    string? ContractNo
+);
+
+public sealed record AllocateVinToPiLineDto(
+    string Vin,
+    string? Remark,
+    string? Actor
+);
+
+public sealed record UpdateProformaInvoiceLineDto(
+    string? Model,
+    string? SpecCode,
+    string? SpecDescription,
+    string? ColorCode,
+    string? ColorName,
+    string? WorkOrderNo,
+    string? PlantCode,
+    string? PortCode,
+    string? LCTemp,
+    string? ContractNo,
+    int? OrderQty,
+    int? AllocatedQty,
+    decimal? UnitPriceForeign,
+    decimal? UnitPrice,
+    string? Status,
+    string? Vin,
+    string? Remark
+);
+
+public sealed record ProformaInvoiceSummaryDto(
+    int TotalInvoices,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalApproved,
+    int TotalInExecution,
+    int TotalCompleted,
+    int TotalCancelled,
+    int TotalOrderQty,
+    int TotalAllocatedQty,
+    decimal TotalAmountForeign,
+    decimal TotalAmount,
+    decimal ExecutionRate,
+    List<ProformaInvoiceModelStatsDto> ByModel,
+    List<ProformaInvoiceDealerStatsDto> ByDealer,
+    List<ProformaInvoiceMonthStatsDto> ByOrderMonth
+);
+
+public sealed record ProformaInvoiceModelStatsDto(string Model, int InvoiceCount, int OrderQty, int AllocatedQty, decimal TotalAmount);
+public sealed record ProformaInvoiceDealerStatsDto(string DealerCode, string DealerName, int InvoiceCount, int TotalQty, decimal TotalAmount);
+public sealed record ProformaInvoiceMonthStatsDto(string OrderMonth, int InvoiceCount, int TotalQty, decimal TotalAmount);
+
+public sealed record VehiclePiInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    int? ModelYear,
+    string? LastPiNo,
+    DateTime? LastPiDate,
+    int PiCount,
+    ProformaInvoice? ProformaInvoice,
+    ProformaInvoiceLine? ProformaInvoiceLine
 );
