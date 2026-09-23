@@ -135,6 +135,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<AutoDeliveryOrderBatchLine> AutoDeliveryOrderBatchLines => Set<AutoDeliveryOrderBatchLine>();
     public DbSet<SalesSatisfactionSurvey> SalesSatisfactionSurveys => Set<SalesSatisfactionSurvey>();
     public DbSet<SalesSatisfactionSurveyQuestionLine> SalesSatisfactionSurveyQuestionLines => Set<SalesSatisfactionSurveyQuestionLine>();
+    public DbSet<CustomerVisit> CustomerVisits => Set<CustomerVisit>();
+    public DbSet<CustomerVisitActionLog> CustomerVisitActionLogs => Set<CustomerVisitActionLog>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -252,5 +254,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<SalesSatisfactionSurvey>().HasIndex(x => new { x.OrgId, x.DealerCode });
         b.Entity<SalesSatisfactionSurvey>().HasIndex(x => new { x.OrgId, x.Status });
         b.Entity<SalesSatisfactionSurveyQuestionLine>().HasIndex(x => new { x.OrgId, x.SurveyNo });
+        b.Entity<CustomerVisit>().HasIndex(x => new { x.OrgId, x.VisitCode }).IsUnique();
+        b.Entity<CustomerVisit>().HasIndex(x => new { x.OrgId, x.DealerCode });
+        b.Entity<CustomerVisit>().HasIndex(x => new { x.OrgId, x.Status });
+        b.Entity<CustomerVisit>().HasIndex(x => new { x.OrgId, x.CustomerPhone });
+        b.Entity<CustomerVisit>().HasIndex(x => new { x.OrgId, x.InterestedModel });
+        b.Entity<CustomerVisitActionLog>().HasIndex(x => new { x.OrgId, x.VisitCode });
+        b.Entity<CustomerVisitActionLog>().HasIndex(x => new { x.OrgId, x.ActionNo }).IsUnique();
     }
 }

@@ -6362,6 +6362,270 @@ public static class Seeder
             }
         }
 
+        // ===== Quản lý Khách hàng Tham quan Showroom & Phễu Bán hàng (BizHTC.RetailContract / DLR_CtmVisit, FrmCusVisit / CustomerVisit) =====
+        if (!await db.CustomerVisits.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var visit1 = new CustomerVisit
+            {
+                OrgId = org,
+                VisitCode = "VIS202603-0001",
+                VisitCodeUser = "CV-2026/03/HN01-01",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01 - Cầu Giấy",
+                VisitDate = DateTime.Now.AddDays(-3),
+                CustomerName = "Nguyễn Văn An",
+                CustomerPhone = "0901234567",
+                CustomerEmail = "an.nguyen@gmail.com",
+                CustomerAddress = "12 Trần Duy Hưng, Cầu Giấy, Hà Nội",
+                Gender = "Nam",
+                RangeAgeCode = "26-35",
+                CustomerType = "Individual",
+                InterestedModel = "Accent 1.4 AT",
+                SpecCode = "1.4 AT Đặc biệt",
+                SpecDescription = "Bản full cao cấp cửa sổ trời, 6 túi khí",
+                ColorCode = "NWAC",
+                ColorName = "Trắng ngọc trai",
+                Vin = "DEMOVIN00000001",
+                VisitPurpose = "XemXeMoi",
+                LeadSource = "ShowroomWalkIn",
+                SalesConsultantCode = "TVBH-HN01-01",
+                SalesConsultantName = "Trần Thị Tư Vấn",
+                HasTradeIn = true,
+                TradeInModel = "Grand i10 1.2 AT 2018",
+                TradeInYear = 2018,
+                TradeInEstimatedPrice = 280000000m,
+                PaymentMethodExpected = "BankLoan",
+                LoanPercentExpected = 70m,
+                EstimatedPurchaseTime = "TrongTuan",
+                PurchaseProbability = "VeryHigh",
+                BudgetAmount = 560000000m,
+                CompetitorModel = "Toyota Vios 1.5G, Honda City RS",
+                IsTestDriveTaken = true,
+                LinkedDriveTestCode = "DT202603-0001",
+                LinkedDealNo = "DEAL202603-001",
+                NextFollowUpDate = DateTime.Now.AddDays(2),
+                FollowUpAction = "NegotiateContract",
+                CustomerFeedback = "Khách hàng rất thích kiểu dáng mới, màn hình AVN tiếng Việt và gói an toàn SmartSense.",
+                Status = "ConvertedToDeal",
+                Remark = "Đã ký hợp đồng bán lẻ DEAL202603-001 và nộp cọc 20 triệu",
+                CreatedBy = "reception.hn01",
+                CreatedAt = DateTime.Now.AddDays(-3),
+                CompletedBy = "Trần Thị Tư Vấn",
+                CompletedAt = DateTime.Now.AddDays(-1)
+            };
+
+            var visit2 = new CustomerVisit
+            {
+                OrgId = org,
+                VisitCode = "VIS202603-0002",
+                VisitCodeUser = "CV-2026/03/HN01-02",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01 - Cầu Giấy",
+                VisitDate = DateTime.Now.AddDays(-2),
+                CustomerName = "Trần Thị Bình",
+                CustomerPhone = "0912345678",
+                CustomerEmail = "binh.tran@yahoo.com",
+                CustomerAddress = "88 Nguyễn Trãi, Thanh Xuân, Hà Nội",
+                Gender = "Nữ",
+                RangeAgeCode = "26-35",
+                CustomerType = "Individual",
+                InterestedModel = "Creta 1.5 Cao cấp",
+                SpecCode = "1.5 Cao cấp 2 tông màu",
+                SpecDescription = "Bản 2 tông màu mui đen, hệ thống âm thanh 8 loa Bose",
+                ColorCode = "SAW",
+                ColorName = "Đen Phantom",
+                Vin = "DEMOVIN00000002",
+                VisitPurpose = "LaiThu",
+                LeadSource = "DigitalAds",
+                SalesConsultantCode = "TVBH-HN01-02",
+                SalesConsultantName = "Lê Văn Bán Hàng",
+                HasTradeIn = false,
+                PaymentMethodExpected = "Cash",
+                LoanPercentExpected = 0m,
+                EstimatedPurchaseTime = "TrongThang",
+                PurchaseProbability = "High",
+                BudgetAmount = 720000000m,
+                CompetitorModel = "Kia Seltos, Honda HR-V",
+                IsTestDriveTaken = true,
+                LinkedDriveTestCode = "DT202603-0002",
+                NextFollowUpDate = DateTime.Now.AddDays(3),
+                FollowUpAction = "SendQuotation",
+                CustomerFeedback = "Lái thử xe rất êm ái, cách âm tốt, đang so sánh giá lăn bánh với đại lý khác.",
+                Status = "Quoted",
+                Remark = "Đã gửi báo giá lăn bánh Hà Nội kèm gói quà tặng dán phim cách nhiệt & thảm lót sàn",
+                CreatedBy = "reception.hn01",
+                CreatedAt = DateTime.Now.AddDays(-2)
+            };
+
+            var visit3 = new CustomerVisit
+            {
+                OrgId = org,
+                VisitCode = "VIS202603-0003",
+                VisitCodeUser = "CV-2026/03/HN02-01",
+                DealerCode = "DLR-HN02",
+                DealerName = "Hyundai Hà Nội 02 - Long Biên",
+                VisitDate = DateTime.Now.AddDays(-1),
+                CustomerName = "Phạm Văn Cường",
+                CustomerPhone = "0987654321",
+                CustomerEmail = "cuong.pham@fpt.com",
+                CustomerAddress = "55 Nguyễn Văn Cừ, Long Biên, Hà Nội",
+                Gender = "Nam",
+                RangeAgeCode = "36-45",
+                CustomerType = "Individual",
+                InterestedModel = "SantaFe 2.5T Calligraphy",
+                SpecCode = "2.5T AWD Calligraphy",
+                SpecDescription = "Bản máy xăng tăng áp dẫn động 4 bánh toàn thời gian HTRAC cao cấp nhất",
+                ColorCode = "R2P",
+                ColorName = "Đỏ đô ánh kim",
+                VisitPurpose = "BaoGia",
+                LeadSource = "WebsiteHyundai",
+                SalesConsultantCode = "TVBH-HN02-01",
+                SalesConsultantName = "Hoàng Minh TVBH",
+                HasTradeIn = true,
+                TradeInModel = "Tucson 2.0 AT 2021",
+                TradeInYear = 2021,
+                TradeInEstimatedPrice = 750000000m,
+                PaymentMethodExpected = "Cash",
+                EstimatedPurchaseTime = "1Den3Thang",
+                PurchaseProbability = "Medium",
+                BudgetAmount = 1450000000m,
+                CompetitorModel = "Ford Everest Titanium, Kia Sorento Signature",
+                IsTestDriveTaken = false,
+                NextFollowUpDate = DateTime.Now.AddDays(5),
+                FollowUpAction = "ScheduleTestDrive",
+                CustomerFeedback = "Thích thiết kế vuông vức phong cách SUV việt dã thế hệ mới, hẹn cuối tuần mang xe qua nhà lái thử.",
+                Status = "InConsultation",
+                Remark = "Hẹn lái thử tại nhà ngày thứ Bảy",
+                CreatedBy = "reception.hn02",
+                CreatedAt = DateTime.Now.AddDays(-1)
+            };
+
+            db.CustomerVisits.AddRange(visit1, visit2, visit3);
+            await db.SaveChangesAsync();
+
+            db.CustomerVisitActionLogs.AddRange(
+                new CustomerVisitActionLog
+                {
+                    OrgId = org,
+                    CustomerVisitId = visit1.Id,
+                    VisitCode = visit1.VisitCode,
+                    ActionNo = "ACT-20260301-0001",
+                    LineIndex = 1,
+                    ActionType = "ShowroomGreeting",
+                    ActionDate = DateTime.Now.AddDays(-3),
+                    SalesConsultant = "Trần Thị Tư Vấn",
+                    DiscussionSummary = "Tiếp đón khách hàng Nguyễn Văn An đến showroom xem xe Accent 1.4 AT. Nguồn: Khách vãng lai.",
+                    CustomerResponse = "Quan tâm bản Đặc biệt màu trắng, có nhu cầu đổi xe Grand i10 cũ",
+                    NextActionPlan = "Định giá xe cũ và hướng dẫn lái thử xe",
+                    NextActionDate = DateTime.Now.AddDays(-3),
+                    Status = "Completed",
+                    CreatedAt = DateTime.Now.AddDays(-3)
+                },
+                new CustomerVisitActionLog
+                {
+                    OrgId = org,
+                    CustomerVisitId = visit1.Id,
+                    VisitCode = visit1.VisitCode,
+                    ActionNo = "ACT-20260301-0002",
+                    LineIndex = 2,
+                    ActionType = "TestDriveDone",
+                    ActionDate = DateTime.Now.AddDays(-3),
+                    SalesConsultant = "Trần Thị Tư Vấn",
+                    DiscussionSummary = "Thực hiện lái thử xe Accent cung đường nội đô Cầu Giấy",
+                    CustomerResponse = "Khách hàng hài lòng với cảm giác lái và độ êm",
+                    NextActionPlan = "Lập phương án vay ngân hàng 70% và chốt hợp đồng",
+                    NextActionDate = DateTime.Now.AddDays(-2),
+                    Status = "Completed",
+                    CreatedAt = DateTime.Now.AddDays(-3)
+                },
+                new CustomerVisitActionLog
+                {
+                    OrgId = org,
+                    CustomerVisitId = visit1.Id,
+                    VisitCode = visit1.VisitCode,
+                    ActionNo = "ACT-20260302-0003",
+                    LineIndex = 3,
+                    ActionType = "DealClosed",
+                    ActionDate = DateTime.Now.AddDays(-1),
+                    SalesConsultant = "Trần Thị Tư Vấn",
+                    DiscussionSummary = "Ký hợp đồng bán lẻ DEAL202603-001, nhận đặt cọc 20.000.000 VNĐ.",
+                    CustomerResponse = "Đã hoàn tất thanh toán cọc và hẹn ngày nhận bàn giao xe",
+                    NextActionPlan = "Chuẩn bị lễ bàn giao xe và hoàn thiện đăng ký",
+                    NextActionDate = DateTime.Now.AddDays(2),
+                    Status = "Completed",
+                    CreatedAt = DateTime.Now.AddDays(-1)
+                },
+                new CustomerVisitActionLog
+                {
+                    OrgId = org,
+                    CustomerVisitId = visit2.Id,
+                    VisitCode = visit2.VisitCode,
+                    ActionNo = "ACT-20260302-0001",
+                    LineIndex = 1,
+                    ActionType = "ShowroomGreeting",
+                    ActionDate = DateTime.Now.AddDays(-2),
+                    SalesConsultant = "Lê Văn Bán Hàng",
+                    DiscussionSummary = "Tiếp đón chị Trần Thị Bình đến xem xe Creta 1.5 Cao cấp qua quảng cáo Facebook.",
+                    CustomerResponse = "Quan tâm bản 2 tông màu cao cấp, thích hệ thống loa Bose",
+                    NextActionPlan = "Cho khách trải nghiệm lái thử xe thực tế",
+                    NextActionDate = DateTime.Now.AddDays(-2),
+                    Status = "Completed",
+                    CreatedAt = DateTime.Now.AddDays(-2)
+                },
+                new CustomerVisitActionLog
+                {
+                    OrgId = org,
+                    CustomerVisitId = visit2.Id,
+                    VisitCode = visit2.VisitCode,
+                    ActionNo = "ACT-20260302-0002",
+                    LineIndex = 2,
+                    ActionType = "QuotationSent",
+                    ActionDate = DateTime.Now.AddDays(-2),
+                    SalesConsultant = "Lê Văn Bán Hàng",
+                    DiscussionSummary = "Gửi bảng báo giá chi tiết lăn bánh xe Creta 1.5 Cao cấp 720 triệu VNĐ kèm quà tặng.",
+                    CustomerResponse = "Đang cân nhắc phương án trả thẳng tiền mặt",
+                    NextActionPlan = "Gọi điện chăm sóc lại sau 2 ngày",
+                    NextActionDate = DateTime.Now.AddDays(1),
+                    Status = "Completed",
+                    CreatedAt = DateTime.Now.AddDays(-2)
+                },
+                new CustomerVisitActionLog
+                {
+                    OrgId = org,
+                    CustomerVisitId = visit3.Id,
+                    VisitCode = visit3.VisitCode,
+                    ActionNo = "ACT-20260303-0001",
+                    LineIndex = 1,
+                    ActionType = "ShowroomGreeting",
+                    ActionDate = DateTime.Now.AddDays(-1),
+                    SalesConsultant = "Hoàng Minh TVBH",
+                    DiscussionSummary = "Tiếp đón anh Phạm Văn Cường tìm hiểu xe SantaFe 2.5T Calligraphy.",
+                    CustomerResponse = "Đang chạy Tucson 2021, muốn nâng cấp lên SUV 7 chỗ rộng rãi",
+                    NextActionPlan = "Lên lịch hẹn mang xe SantaFe lái thử tại nhà vào cuối tuần",
+                    NextActionDate = DateTime.Now.AddDays(4),
+                    Status = "Completed",
+                    CreatedAt = DateTime.Now.AddDays(-1)
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.LastCustomerVisitNo = visit1.VisitCode;
+                v1.LastCustomerVisitDate = visit1.VisitDate;
+                v1.CustomerVisitCount = 1;
+            }
+
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null)
+            {
+                v2.LastCustomerVisitNo = visit2.VisitCode;
+                v2.LastCustomerVisitDate = visit2.VisitDate;
+                v2.CustomerVisitCount = 1;
+            }
+        }
+
         await db.SaveChangesAsync();
     }
 
@@ -6624,7 +6888,12 @@ public static class Seeder
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastSsiIndex1000\" integer NULL",
             "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"SsiSurveyCount\" integer NOT NULL DEFAULT 0",
             "CREATE TABLE IF NOT EXISTS public.\"SalesSatisfactionSurveys\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SurveyNo\" text NOT NULL DEFAULT '', \"SurveyNoUser\" text NULL, \"DealNo\" text NULL, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"PlateNo\" text NULL, \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"CustomerEmail\" text NULL, \"CustomerType\" text NOT NULL DEFAULT 'Individual', \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"SalesConsultantCode\" text NULL, \"SalesConsultantName\" text NULL, \"DeliveryDate\" timestamp NOT NULL DEFAULT now(), \"SurveyDate\" timestamp NOT NULL DEFAULT now(), \"ContactChannel\" text NOT NULL DEFAULT 'PhoneCall', \"CallAttempts\" integer NOT NULL DEFAULT 1, \"SurveyorStaff\" text NULL, \"ScoreSalesConsultant\" numeric NOT NULL DEFAULT 5.0, \"ScoreDealershipFacility\" numeric NOT NULL DEFAULT 5.0, \"ScoreDeliveryProcess\" numeric NOT NULL DEFAULT 5.0, \"ScorePaperworkFinance\" numeric NOT NULL DEFAULT 5.0, \"ScoreTimeliness\" numeric NOT NULL DEFAULT 5.0, \"ScoreOverall\" numeric NOT NULL DEFAULT 5.0, \"CalculatedSsiScore\" numeric NOT NULL DEFAULT 5.0, \"SsiIndex1000\" integer NOT NULL DEFAULT 1000, \"IsCleanCarDelivered\" boolean NOT NULL DEFAULT true, \"IsFeatureExplained\" boolean NOT NULL DEFAULT true, \"IsAdasExplained\" boolean NOT NULL DEFAULT true, \"IsAvnBluelinkSetup\" boolean NOT NULL DEFAULT true, \"IsOriginalDocsHandedOver\" boolean NOT NULL DEFAULT true, \"IsFollowUpCallPromised\" boolean NOT NULL DEFAULT true, \"NpsScore\" integer NOT NULL DEFAULT 10, \"NpsCategory\" text NOT NULL DEFAULT 'Promoter', \"CustomerFeedback\" text NULL, \"HasComplaint\" boolean NOT NULL DEFAULT false, \"ComplaintCategory\" text NULL, \"ComplaintDetails\" text NULL, \"RemedyAction\" text NULL, \"IsComplaintResolved\" boolean NOT NULL DEFAULT false, \"ResolvedBy\" text NULL, \"ResolvedAt\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"EscalatedBy\" text NULL, \"EscalatedAt\" timestamp NULL, \"EscalateReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"SalesSatisfactionSurveyQuestionLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SalesSatisfactionSurveyId\" bigint NOT NULL, \"SurveyNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"QuestionCode\" text NOT NULL DEFAULT '', \"QuestionCategory\" text NOT NULL DEFAULT 'SalesConsultant', \"QuestionText\" text NOT NULL DEFAULT '', \"Score\" numeric NOT NULL DEFAULT 5.0, \"AnswerText\" text NULL, \"Weight\" numeric NOT NULL DEFAULT 1.0, \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"SalesSatisfactionSurveyQuestionLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"SalesSatisfactionSurveyId\" bigint NOT NULL, \"SurveyNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"QuestionCode\" text NOT NULL DEFAULT '', \"QuestionCategory\" text NOT NULL DEFAULT 'SalesConsultant', \"QuestionText\" text NOT NULL DEFAULT '', \"Score\" numeric NOT NULL DEFAULT 5.0, \"AnswerText\" text NULL, \"Weight\" numeric NOT NULL DEFAULT 1.0, \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCustomerVisitNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastCustomerVisitDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"CustomerVisitCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"CustomerVisits\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"VisitCode\" text NOT NULL DEFAULT '', \"VisitCodeUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"VisitDate\" timestamp NOT NULL DEFAULT now(), \"CustomerName\" text NOT NULL DEFAULT '', \"CustomerPhone\" text NOT NULL DEFAULT '', \"CustomerEmail\" text NULL, \"CustomerAddress\" text NULL, \"Gender\" text NOT NULL DEFAULT 'Nam', \"RangeAgeCode\" text NOT NULL DEFAULT '26-35', \"CustomerType\" text NOT NULL DEFAULT 'Individual', \"InterestedModel\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT 'NWAC', \"ColorName\" text NOT NULL DEFAULT 'Trắng ngọc trai', \"Vin\" text NULL, \"VisitPurpose\" text NOT NULL DEFAULT 'XemXeMoi', \"LeadSource\" text NOT NULL DEFAULT 'ShowroomWalkIn', \"SalesConsultantCode\" text NULL, \"SalesConsultantName\" text NULL, \"HasTradeIn\" boolean NOT NULL DEFAULT false, \"TradeInModel\" text NULL, \"TradeInYear\" integer NULL, \"TradeInEstimatedPrice\" numeric NOT NULL DEFAULT 0, \"PaymentMethodExpected\" text NOT NULL DEFAULT 'Cash', \"LoanPercentExpected\" numeric NOT NULL DEFAULT 0, \"EstimatedPurchaseTime\" text NOT NULL DEFAULT 'TrongThang', \"PurchaseProbability\" text NOT NULL DEFAULT 'High', \"BudgetAmount\" numeric NOT NULL DEFAULT 0, \"CompetitorModel\" text NULL, \"IsTestDriveTaken\" boolean NOT NULL DEFAULT false, \"LinkedDriveTestCode\" text NULL, \"LinkedDealNo\" text NULL, \"NextFollowUpDate\" timestamp NULL, \"FollowUpAction\" text NULL DEFAULT 'CallBack', \"CustomerFeedback\" text NULL, \"Status\" text NOT NULL DEFAULT 'CheckedIn', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"CustomerVisitActionLogs\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"CustomerVisitId\" bigint NOT NULL, \"VisitCode\" text NOT NULL DEFAULT '', \"ActionNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"ActionType\" text NOT NULL DEFAULT 'ShowroomGreeting', \"ActionDate\" timestamp NOT NULL DEFAULT now(), \"SalesConsultant\" text NULL, \"DiscussionSummary\" text NOT NULL DEFAULT '', \"CustomerResponse\" text NULL, \"NextActionPlan\" text NULL, \"NextActionDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Completed', \"Remark\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now())"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

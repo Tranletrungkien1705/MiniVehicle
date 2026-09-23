@@ -2195,6 +2195,24 @@ public interface IVehicleService
     Task<object?> GetVehicleSsiInfoAsync(string vin);
     Task<object?> GetVehicleSsiHistoryAsync(string vin);
     Task<SalesSatisfactionSummaryDto> GetSalesSatisfactionSummaryAsync(string? dealerCode, string? model, DateTime? fromDate, DateTime? toDate);
+
+    // ===== Quản lý Khách hàng Tham quan Showroom & Phễu Bán hàng (BizHTC.RetailContract / DLR_CtmVisit, FrmCusVisit / CustomerVisit) =====
+    Task<object> CreateCustomerVisitAsync(CreateCustomerVisitDto dto);
+    Task<object> ListCustomerVisitsAsync(string? status, string? dealer, string? model, string? phone, string? consultant, string? leadSource, DateTime? fromDate, DateTime? toDate);
+    Task<object?> GetCustomerVisitAsync(string visitCode);
+    Task<object?> UpdateCustomerVisitAsync(string visitCode, UpdateCustomerVisitDto dto);
+    Task<object?> CustomerVisitTransitionAsync(string visitCode, string action, CustomerVisitTransitionDto? dto);
+    Task<object?> RecordVisitFollowUpAsync(string visitCode, RecordVisitFollowUpDto dto);
+    Task<object?> ConvertVisitToTestDriveAsync(string visitCode, ConvertToTestDriveDto dto);
+    Task<object?> ConvertVisitToDealAsync(string visitCode, ConvertToDealDto dto);
+    Task<object?> AddVisitActionLogsAsync(string visitCode, List<CustomerVisitActionInputDto> items);
+    Task<object?> UpdateVisitActionLogAsync(string visitCode, long lineId, UpdateVisitActionLogDto dto);
+    Task<object?> RemoveVisitActionLogAsync(string visitCode, long lineId);
+    Task<CustomerVisitSummaryDto> GetCustomerVisitSummaryAsync(string? dealer, int? year, int? month);
+    Task<ShowroomFunnelAnalyticsDto> GetShowroomFunnelAnalyticsAsync(string? dealer, int? year, int? month);
+    Task<VehicleVisitInfoDto?> GetVehicleVisitInfoAsync(string vin);
+    Task<object?> GetVehicleVisitHistoryAsync(string vin);
+    Task<CustomerVisitHistoryDto?> GetCustomerVisitByPhoneAsync(string phone);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -37437,5 +37455,1076 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byComplaintCategory
         );
     }
+
+    // ===== Quản lý Khách hàng Tham quan Showroom & Phễu Bán hàng (BizHTC.RetailContract / DLR_CtmVisit, FrmCusVisit / CustomerVisit) =====
+
+    public async Task<object> CreateCustomerVisitAsync(CreateCustomerVisitDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.CustomerName))
+            throw new InvalidOperationException("Vui lòng nhập họ tên khách hàng.");
+        if (string.IsNullOrWhiteSpace(dto.CustomerPhone))
+            throw new InvalidOperationException("Vui lòng nhập số điện thoại khách hàng.");
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Vui lòng chỉ định mã đại lý tiếp đón.");
+        if (string.IsNullOrWhiteSpace(dto.InterestedModel))
+            throw new InvalidOperationException("Vui lòng chọn dòng xe khách quan tâm.");
+
+        var visitCode = !string.IsNullOrWhiteSpace(dto.VisitCode)
+            ? dto.VisitCode.Trim().ToUpperInvariant()
+            : "VIS-" + DateTime.Now.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
+
+        if (await db.CustomerVisits.AnyAsync(v => v.OrgId == Org && v.VisitCode == visitCode))
+            throw new InvalidOperationException($"Mã lượt khách {visitCode} đã tồn tại.");
+
+        var visit = new CustomerVisit
+        {
+            OrgId = Org,
+            VisitCode = visitCode,
+            VisitCodeUser = dto.VisitCodeUser?.Trim(),
+            DealerCode = dto.DealerCode.Trim().ToUpperInvariant(),
+            DealerName = dto.DealerName?.Trim(),
+            VisitDate = DateTime.Now,
+            CustomerName = dto.CustomerName.Trim(),
+            CustomerPhone = dto.CustomerPhone.Trim(),
+            CustomerEmail = dto.CustomerEmail?.Trim(),
+            CustomerAddress = dto.CustomerAddress?.Trim(),
+            Gender = string.IsNullOrWhiteSpace(dto.Gender) ? "Nam" : dto.Gender.Trim(),
+            RangeAgeCode = string.IsNullOrWhiteSpace(dto.RangeAgeCode) ? "26-35" : dto.RangeAgeCode.Trim(),
+            CustomerType = string.IsNullOrWhiteSpace(dto.CustomerType) ? "Individual" : dto.CustomerType.Trim(),
+            InterestedModel = dto.InterestedModel.Trim(),
+            SpecCode = dto.SpecCode?.Trim(),
+            SpecDescription = dto.SpecDescription?.Trim(),
+            ColorCode = dto.ColorCode?.Trim() ?? "NWAC",
+            ColorName = dto.ColorName?.Trim() ?? "Trắng ngọc trai",
+            Vin = dto.Vin?.Trim().ToUpperInvariant(),
+            VisitPurpose = string.IsNullOrWhiteSpace(dto.VisitPurpose) ? "XemXeMoi" : dto.VisitPurpose.Trim(),
+            LeadSource = string.IsNullOrWhiteSpace(dto.LeadSource) ? "ShowroomWalkIn" : dto.LeadSource.Trim(),
+            SalesConsultantCode = dto.SalesConsultantCode?.Trim(),
+            SalesConsultantName = dto.SalesConsultantName?.Trim(),
+            HasTradeIn = dto.HasTradeIn ?? false,
+            TradeInModel = dto.TradeInModel?.Trim(),
+            TradeInYear = dto.TradeInYear,
+            TradeInEstimatedPrice = dto.TradeInEstimatedPrice ?? 0,
+            PaymentMethodExpected = string.IsNullOrWhiteSpace(dto.PaymentMethodExpected) ? "Cash" : dto.PaymentMethodExpected.Trim(),
+            LoanPercentExpected = dto.LoanPercentExpected ?? 0,
+            EstimatedPurchaseTime = string.IsNullOrWhiteSpace(dto.EstimatedPurchaseTime) ? "TrongThang" : dto.EstimatedPurchaseTime.Trim(),
+            PurchaseProbability = string.IsNullOrWhiteSpace(dto.PurchaseProbability) ? "High" : dto.PurchaseProbability.Trim(),
+            BudgetAmount = dto.BudgetAmount ?? 0,
+            CompetitorModel = dto.CompetitorModel?.Trim(),
+            IsTestDriveTaken = dto.IsTestDriveTaken ?? false,
+            LinkedDriveTestCode = dto.LinkedDriveTestCode?.Trim(),
+            LinkedDealNo = dto.LinkedDealNo?.Trim(),
+            NextFollowUpDate = dto.NextFollowUpDate,
+            FollowUpAction = dto.FollowUpAction?.Trim() ?? "CallBack",
+            CustomerFeedback = dto.CustomerFeedback?.Trim(),
+            Status = "CheckedIn",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "ShowroomReceptionist",
+            CreatedAt = DateTime.Now
+        };
+
+        db.CustomerVisits.Add(visit);
+        await db.SaveChangesAsync();
+
+        var actionLog = new CustomerVisitActionLog
+        {
+            OrgId = Org,
+            CustomerVisitId = visit.Id,
+            VisitCode = visit.VisitCode,
+            ActionNo = "ACT-" + DateTime.Now.ToString("yyyyMMdd") + "-0001",
+            LineIndex = 1,
+            ActionType = "ShowroomGreeting",
+            ActionDate = DateTime.Now,
+            SalesConsultant = visit.SalesConsultantName,
+            DiscussionSummary = $"Tiếp đón khách hàng {visit.CustomerName} đến showroom xem dòng xe {visit.InterestedModel} ({visit.SpecCode ?? "Tiêu chuẩn"}). Nguồn: {visit.LeadSource}",
+            CustomerResponse = visit.CustomerFeedback ?? "Khách hàng quan tâm và cần tư vấn chi tiết",
+            NextActionPlan = visit.FollowUpAction,
+            NextActionDate = visit.NextFollowUpDate,
+            Status = "Completed",
+            Remark = visit.Remark,
+            CreatedAt = DateTime.Now
+        };
+        db.CustomerVisitActionLogs.Add(actionLog);
+
+        if (dto.InitialActions is { Count: > 0 })
+        {
+            var idx = 2;
+            foreach (var act in dto.InitialActions)
+            {
+                db.CustomerVisitActionLogs.Add(new CustomerVisitActionLog
+                {
+                    OrgId = Org,
+                    CustomerVisitId = visit.Id,
+                    VisitCode = visit.VisitCode,
+                    ActionNo = $"ACT-{DateTime.Now:yyyyMMdd}-{idx:D4}",
+                    LineIndex = idx++,
+                    ActionType = string.IsNullOrWhiteSpace(act.ActionType) ? "ProductConsultation" : act.ActionType.Trim(),
+                    ActionDate = DateTime.Now,
+                    SalesConsultant = act.SalesConsultant?.Trim() ?? visit.SalesConsultantName,
+                    DiscussionSummary = act.DiscussionSummary.Trim(),
+                    CustomerResponse = act.CustomerResponse?.Trim(),
+                    NextActionPlan = act.NextActionPlan?.Trim(),
+                    NextActionDate = act.NextActionDate,
+                    Status = string.IsNullOrWhiteSpace(act.Status) ? "Completed" : act.Status.Trim(),
+                    Remark = act.Remark?.Trim(),
+                    CreatedAt = DateTime.Now
+                });
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(visit.Vin))
+        {
+            var veh = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == visit.Vin);
+            if (veh != null)
+            {
+                veh.LastCustomerVisitNo = visit.VisitCode;
+                veh.LastCustomerVisitDate = visit.VisitDate;
+                veh.CustomerVisitCount++;
+                Log(visit.Vin, "CustomerVisitShowroom", $"{visit.VisitCode} Khách hàng {visit.CustomerName} ({visit.CustomerPhone}) đến xem xe tại đại lý {visit.DealerCode}. TVBH: {visit.SalesConsultantName ?? "N/A"}");
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            visit.VisitCode,
+            visit.CustomerName,
+            visit.CustomerPhone,
+            visit.DealerCode,
+            visit.InterestedModel,
+            visit.SpecCode,
+            visit.VisitPurpose,
+            visit.LeadSource,
+            visit.PurchaseProbability,
+            status = visit.Status,
+            visit.CreatedAt
+        };
+    }
+
+    public async Task<object> ListCustomerVisitsAsync(string? status, string? dealer, string? model, string? phone, string? consultant, string? leadSource, DateTime? fromDate, DateTime? toDate)
+    {
+        var q = db.CustomerVisits.Where(v => v.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(v => v.Status == status);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(v => v.DealerCode == dealer.Trim().ToUpperInvariant());
+        if (!string.IsNullOrWhiteSpace(model)) q = q.Where(v => v.InterestedModel == model.Trim());
+        if (!string.IsNullOrWhiteSpace(phone)) q = q.Where(v => v.CustomerPhone.Contains(phone.Trim()));
+        if (!string.IsNullOrWhiteSpace(consultant)) q = q.Where(v => v.SalesConsultantCode == consultant || (v.SalesConsultantName != null && v.SalesConsultantName.Contains(consultant)));
+        if (!string.IsNullOrWhiteSpace(leadSource)) q = q.Where(v => v.LeadSource == leadSource.Trim());
+        if (fromDate.HasValue) q = q.Where(v => v.VisitDate >= fromDate.Value);
+        if (toDate.HasValue) q = q.Where(v => v.VisitDate <= toDate.Value);
+
+        var items = await q.OrderByDescending(v => v.VisitDate).Take(500).Select(v => new
+        {
+            v.Id,
+            v.VisitCode,
+            v.VisitCodeUser,
+            v.DealerCode,
+            v.DealerName,
+            v.VisitDate,
+            v.CustomerName,
+            v.CustomerPhone,
+            v.CustomerEmail,
+            v.InterestedModel,
+            v.SpecCode,
+            v.ColorName,
+            v.Vin,
+            v.VisitPurpose,
+            v.LeadSource,
+            v.SalesConsultantName,
+            v.HasTradeIn,
+            v.TradeInModel,
+            v.PaymentMethodExpected,
+            v.EstimatedPurchaseTime,
+            v.PurchaseProbability,
+            v.BudgetAmount,
+            v.IsTestDriveTaken,
+            v.LinkedDriveTestCode,
+            v.LinkedDealNo,
+            v.NextFollowUpDate,
+            v.FollowUpAction,
+            v.Status,
+            v.CreatedAt
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetCustomerVisitAsync(string visitCode)
+    {
+        visitCode = visitCode.Trim().ToUpperInvariant();
+        var visit = await db.CustomerVisits.FirstOrDefaultAsync(v => v.OrgId == Org && v.VisitCode == visitCode);
+        if (visit is null) return null;
+
+        var actions = await db.CustomerVisitActionLogs
+            .Where(a => a.OrgId == Org && a.CustomerVisitId == visit.Id)
+            .OrderBy(a => a.LineIndex)
+            .ToListAsync();
+
+        Vehicle? veh = null;
+        if (!string.IsNullOrWhiteSpace(visit.Vin))
+            veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == visit.Vin);
+
+        CustomerTestDrive? testDrive = null;
+        if (!string.IsNullOrWhiteSpace(visit.LinkedDriveTestCode))
+            testDrive = await db.CustomerTestDrives.FirstOrDefaultAsync(t => t.OrgId == Org && t.DriveTestCode == visit.LinkedDriveTestCode);
+
+        DealerDeal? deal = null;
+        if (!string.IsNullOrWhiteSpace(visit.LinkedDealNo))
+            deal = await db.DealerDeals.FirstOrDefaultAsync(d => d.OrgId == Org && d.DealNo == visit.LinkedDealNo);
+
+        return new
+        {
+            visit.Id,
+            visit.VisitCode,
+            visit.VisitCodeUser,
+            visit.DealerCode,
+            visit.DealerName,
+            visit.VisitDate,
+            visit.CustomerName,
+            visit.CustomerPhone,
+            visit.CustomerEmail,
+            visit.CustomerAddress,
+            visit.Gender,
+            visit.RangeAgeCode,
+            visit.CustomerType,
+            visit.InterestedModel,
+            visit.SpecCode,
+            visit.SpecDescription,
+            visit.ColorCode,
+            visit.ColorName,
+            visit.Vin,
+            vehicle = veh == null ? null : new { veh.Vin, veh.Model, veh.EngineNo, veh.Color, veh.StorageCode, status = veh.Status.ToString() },
+            visit.VisitPurpose,
+            visit.LeadSource,
+            visit.SalesConsultantCode,
+            visit.SalesConsultantName,
+            visit.HasTradeIn,
+            visit.TradeInModel,
+            visit.TradeInYear,
+            visit.TradeInEstimatedPrice,
+            visit.PaymentMethodExpected,
+            visit.LoanPercentExpected,
+            visit.EstimatedPurchaseTime,
+            visit.PurchaseProbability,
+            visit.BudgetAmount,
+            visit.CompetitorModel,
+            visit.IsTestDriveTaken,
+            visit.LinkedDriveTestCode,
+            testDrive = testDrive == null ? null : new { testDrive.DriveTestCode, testDrive.Vin, testDrive.Model, testDrive.DrvTestPlateNo, testDrive.DriveDTime, testDrive.Status, testDrive.ScoreOverall },
+            visit.LinkedDealNo,
+            deal = deal == null ? null : new { deal.DealNo, deal.DealNoUser, deal.DealDate, deal.FinalAmount, deal.DepositAmount, deal.Status },
+            visit.NextFollowUpDate,
+            visit.FollowUpAction,
+            visit.CustomerFeedback,
+            visit.Status,
+            visit.Remark,
+            visit.CreatedBy,
+            visit.CreatedAt,
+            visit.CompletedBy,
+            visit.CompletedAt,
+            visit.CancelledBy,
+            visit.CancelledAt,
+            visit.CancelReason,
+            actions
+        };
+    }
+
+    public async Task<object?> UpdateCustomerVisitAsync(string visitCode, UpdateCustomerVisitDto dto)
+    {
+        visitCode = visitCode.Trim().ToUpperInvariant();
+        var visit = await db.CustomerVisits.FirstOrDefaultAsync(v => v.OrgId == Org && v.VisitCode == visitCode);
+        if (visit is null || visit.Status is "Cancelled") return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.VisitCodeUser)) visit.VisitCodeUser = dto.VisitCodeUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerName)) visit.CustomerName = dto.CustomerName.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerPhone)) visit.CustomerPhone = dto.CustomerPhone.Trim();
+        if (dto.CustomerEmail != null) visit.CustomerEmail = dto.CustomerEmail.Trim();
+        if (dto.CustomerAddress != null) visit.CustomerAddress = dto.CustomerAddress.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Gender)) visit.Gender = dto.Gender.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.RangeAgeCode)) visit.RangeAgeCode = dto.RangeAgeCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerType)) visit.CustomerType = dto.CustomerType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.InterestedModel)) visit.InterestedModel = dto.InterestedModel.Trim();
+        if (dto.SpecCode != null) visit.SpecCode = dto.SpecCode.Trim();
+        if (dto.SpecDescription != null) visit.SpecDescription = dto.SpecDescription.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.ColorCode)) visit.ColorCode = dto.ColorCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.ColorName)) visit.ColorName = dto.ColorName.Trim();
+
+        var oldVin = visit.Vin;
+        if (dto.Vin != null) visit.Vin = string.IsNullOrWhiteSpace(dto.Vin) ? null : dto.Vin.Trim().ToUpperInvariant();
+
+        if (!string.IsNullOrWhiteSpace(dto.VisitPurpose)) visit.VisitPurpose = dto.VisitPurpose.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.LeadSource)) visit.LeadSource = dto.LeadSource.Trim();
+        if (dto.SalesConsultantCode != null) visit.SalesConsultantCode = dto.SalesConsultantCode.Trim();
+        if (dto.SalesConsultantName != null) visit.SalesConsultantName = dto.SalesConsultantName.Trim();
+        if (dto.HasTradeIn.HasValue) visit.HasTradeIn = dto.HasTradeIn.Value;
+        if (dto.TradeInModel != null) visit.TradeInModel = dto.TradeInModel.Trim();
+        if (dto.TradeInYear.HasValue) visit.TradeInYear = dto.TradeInYear.Value;
+        if (dto.TradeInEstimatedPrice.HasValue) visit.TradeInEstimatedPrice = dto.TradeInEstimatedPrice.Value;
+        if (!string.IsNullOrWhiteSpace(dto.PaymentMethodExpected)) visit.PaymentMethodExpected = dto.PaymentMethodExpected.Trim();
+        if (dto.LoanPercentExpected.HasValue) visit.LoanPercentExpected = dto.LoanPercentExpected.Value;
+        if (!string.IsNullOrWhiteSpace(dto.EstimatedPurchaseTime)) visit.EstimatedPurchaseTime = dto.EstimatedPurchaseTime.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PurchaseProbability)) visit.PurchaseProbability = dto.PurchaseProbability.Trim();
+        if (dto.BudgetAmount.HasValue) visit.BudgetAmount = dto.BudgetAmount.Value;
+        if (dto.CompetitorModel != null) visit.CompetitorModel = dto.CompetitorModel.Trim();
+        if (dto.IsTestDriveTaken.HasValue) visit.IsTestDriveTaken = dto.IsTestDriveTaken.Value;
+        if (dto.LinkedDriveTestCode != null) visit.LinkedDriveTestCode = dto.LinkedDriveTestCode.Trim();
+        if (dto.LinkedDealNo != null) visit.LinkedDealNo = dto.LinkedDealNo.Trim();
+        if (dto.NextFollowUpDate.HasValue) visit.NextFollowUpDate = dto.NextFollowUpDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.FollowUpAction)) visit.FollowUpAction = dto.FollowUpAction.Trim();
+        if (dto.CustomerFeedback != null) visit.CustomerFeedback = dto.CustomerFeedback.Trim();
+        if (dto.Remark != null) visit.Remark = dto.Remark.Trim();
+
+        if (!string.IsNullOrWhiteSpace(visit.Vin) && visit.Vin != oldVin)
+        {
+            var veh = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == visit.Vin);
+            if (veh != null)
+            {
+                veh.LastCustomerVisitNo = visit.VisitCode;
+                veh.LastCustomerVisitDate = visit.VisitDate;
+                veh.CustomerVisitCount++;
+                Log(visit.Vin, "CustomerVisitUpdated", $"{visit.VisitCode} Cập nhật quan tâm xe {visit.Vin} cho khách {visit.CustomerName}");
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            visit.VisitCode,
+            visit.CustomerName,
+            visit.CustomerPhone,
+            visit.InterestedModel,
+            visit.SpecCode,
+            visit.Vin,
+            visit.PurchaseProbability,
+            status = visit.Status
+        };
+    }
+
+    public async Task<object?> CustomerVisitTransitionAsync(string visitCode, string action, CustomerVisitTransitionDto? dto)
+    {
+        visitCode = visitCode.Trim().ToUpperInvariant();
+        var visit = await db.CustomerVisits.FirstOrDefaultAsync(v => v.OrgId == Org && v.VisitCode == visitCode);
+        if (visit is null) return null;
+
+        var now = dto?.TransitionDate ?? DateTime.Now;
+        var actor = dto?.Actor?.Trim() ?? "SalesConsultant";
+        var actType = "ProductConsultation";
+        var summary = dto?.Note?.Trim() ?? "";
+
+        switch (action.ToLowerInvariant())
+        {
+            case "consult":
+                if (visit.Status is "Cancelled" or "ConvertedToDeal") return null;
+                visit.Status = "InConsultation";
+                actType = "ProductConsultation";
+                summary = string.IsNullOrWhiteSpace(summary) ? "Tư vấn chi tiết cấu hình xe, trang bị và tính năng Hyundai SmartSense" : summary;
+                break;
+
+            case "quote":
+                if (visit.Status is "Cancelled" or "ConvertedToDeal") return null;
+                visit.Status = "Quoted";
+                actType = "QuotationSent";
+                summary = string.IsNullOrWhiteSpace(summary) ? "Lập và gửi bảng dự toán chi phí lăn bánh & gói quà tặng phụ kiện" : summary;
+                break;
+
+            case "deal":
+                if (visit.Status is "Cancelled") return null;
+                visit.Status = "ConvertedToDeal";
+                visit.CompletedBy = actor;
+                visit.CompletedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.LinkedDealNo)) visit.LinkedDealNo = dto.LinkedDealNo.Trim();
+                actType = "DealClosed";
+                summary = string.IsNullOrWhiteSpace(summary) ? $"Khách hàng đã đồng ý chốt hợp đồng / đặt cọc xe {visit.InterestedModel}. Mã hợp đồng: {visit.LinkedDealNo ?? "N/A"}" : summary;
+                break;
+
+            case "schedule_followup":
+                if (visit.Status is "Cancelled" or "ConvertedToDeal") return null;
+                visit.Status = "ScheduledFollowUp";
+                actType = "FollowUpCall";
+                summary = string.IsNullOrWhiteSpace(summary) ? "Lên lịch hẹn gọi điện / gửi thông tin chăm sóc khách hàng" : summary;
+                break;
+
+            case "lost":
+                if (visit.Status is "ConvertedToDeal" or "Cancelled") return null;
+                visit.Status = "ClosedLost";
+                visit.CompletedBy = actor;
+                visit.CompletedAt = now;
+                actType = "LostNote";
+                summary = string.IsNullOrWhiteSpace(summary) ? $"Ghi nhận đóng hồ sơ (Lost): {dto?.Reason ?? "Khách chưa có nhu cầu hoặc chọn mua dòng xe khác"}" : summary;
+                break;
+
+            case "cancel":
+                if (visit.Status is "ConvertedToDeal") return null;
+                visit.Status = "Cancelled";
+                visit.CancelledBy = actor;
+                visit.CancelledAt = now;
+                visit.CancelReason = dto?.Reason ?? "Hủy lượt tiếp đón";
+                actType = "LostNote";
+                summary = $"Hủy lượt tiếp đón: {visit.CancelReason}";
+                break;
+
+            case "reopen":
+                if (visit.Status is not ("ClosedLost" or "Cancelled")) return null;
+                visit.Status = "InConsultation";
+                visit.CancelledBy = null;
+                visit.CancelledAt = null;
+                visit.CancelReason = null;
+                visit.CompletedBy = null;
+                visit.CompletedAt = null;
+                actType = "ProductConsultation";
+                summary = "Mở lại hồ sơ tiếp đón & chăm sóc khách hàng tiềm năng";
+                break;
+
+            default:
+                return null;
+        }
+
+        var maxLineIndex = await db.CustomerVisitActionLogs
+            .Where(a => a.OrgId == Org && a.CustomerVisitId == visit.Id)
+            .MaxAsync(a => (int?)a.LineIndex) ?? 0;
+
+        db.CustomerVisitActionLogs.Add(new CustomerVisitActionLog
+        {
+            OrgId = Org,
+            CustomerVisitId = visit.Id,
+            VisitCode = visit.VisitCode,
+            ActionNo = $"ACT-{now:yyyyMMdd}-{(maxLineIndex + 1):D4}",
+            LineIndex = maxLineIndex + 1,
+            ActionType = actType,
+            ActionDate = now,
+            SalesConsultant = actor,
+            DiscussionSummary = summary,
+            CustomerResponse = visit.CustomerFeedback,
+            NextActionPlan = visit.FollowUpAction,
+            NextActionDate = visit.NextFollowUpDate,
+            Status = "Completed",
+            Remark = dto?.Note,
+            CreatedAt = now
+        });
+
+        if (!string.IsNullOrWhiteSpace(visit.Vin))
+        {
+            Log(visit.Vin, "CustomerVisitStateChanged", $"{visit.VisitCode} Trạng thái chuyển sang {visit.Status}. Diễn giải: {summary}");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            visit.VisitCode,
+            visit.CustomerName,
+            visit.DealerCode,
+            visit.InterestedModel,
+            status = visit.Status,
+            visit.CompletedAt,
+            visit.CancelledAt
+        };
+    }
+
+    public async Task<object?> RecordVisitFollowUpAsync(string visitCode, RecordVisitFollowUpDto dto)
+    {
+        visitCode = visitCode.Trim().ToUpperInvariant();
+        var visit = await db.CustomerVisits.FirstOrDefaultAsync(v => v.OrgId == Org && v.VisitCode == visitCode);
+        if (visit is null || visit.Status is "Cancelled") return null;
+
+        var now = DateTime.Now;
+        var maxLineIndex = await db.CustomerVisitActionLogs
+            .Where(a => a.OrgId == Org && a.CustomerVisitId == visit.Id)
+            .MaxAsync(a => (int?)a.LineIndex) ?? 0;
+
+        var actionLog = new CustomerVisitActionLog
+        {
+            OrgId = Org,
+            CustomerVisitId = visit.Id,
+            VisitCode = visit.VisitCode,
+            ActionNo = $"ACT-{now:yyyyMMdd}-{(maxLineIndex + 1):D4}",
+            LineIndex = maxLineIndex + 1,
+            ActionType = string.IsNullOrWhiteSpace(dto.ActionType) ? "FollowUpCall" : dto.ActionType.Trim(),
+            ActionDate = now,
+            SalesConsultant = dto.SalesConsultant?.Trim() ?? visit.SalesConsultantName ?? dto.Actor?.Trim(),
+            DiscussionSummary = dto.DiscussionSummary.Trim(),
+            CustomerResponse = dto.CustomerResponse?.Trim(),
+            NextActionPlan = dto.NextActionPlan?.Trim() ?? dto.FollowUpAction?.Trim(),
+            NextActionDate = dto.NextActionDate ?? dto.NextFollowUpDate,
+            Status = "Completed",
+            Remark = dto.Remark?.Trim(),
+            CreatedAt = now
+        };
+        db.CustomerVisitActionLogs.Add(actionLog);
+
+        if (!string.IsNullOrWhiteSpace(dto.NewStatus)) visit.Status = dto.NewStatus.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.NewPurchaseProbability)) visit.PurchaseProbability = dto.NewPurchaseProbability.Trim();
+        if (dto.NextFollowUpDate.HasValue) visit.NextFollowUpDate = dto.NextFollowUpDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.FollowUpAction)) visit.FollowUpAction = dto.FollowUpAction.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.CustomerResponse)) visit.CustomerFeedback = dto.CustomerResponse.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            visit.VisitCode,
+            actionLog.ActionNo,
+            actionLog.ActionType,
+            actionLog.DiscussionSummary,
+            actionLog.CustomerResponse,
+            visit.Status,
+            visit.PurchaseProbability,
+            visit.NextFollowUpDate,
+            visit.FollowUpAction
+        };
+    }
+
+    public async Task<object?> ConvertVisitToTestDriveAsync(string visitCode, ConvertToTestDriveDto dto)
+    {
+        visitCode = visitCode.Trim().ToUpperInvariant();
+        var visit = await db.CustomerVisits.FirstOrDefaultAsync(v => v.OrgId == Org && v.VisitCode == visitCode);
+        if (visit is null || visit.Status is "Cancelled") return null;
+
+        var dtCode = !string.IsNullOrWhiteSpace(dto.DriveTestCode)
+            ? dto.DriveTestCode.Trim().ToUpperInvariant()
+            : "DT" + DateTime.Now.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
+
+        var vin = visit.Vin ?? "DEMOVIN00000001";
+        var model = visit.InterestedModel;
+
+        var testDrive = new CustomerTestDrive
+        {
+            OrgId = Org,
+            DriveTestCode = dtCode,
+            DealerCode = visit.DealerCode,
+            DealerName = visit.DealerName,
+            Vin = vin,
+            Model = model,
+            SpecCode = visit.SpecCode,
+            DrvTestPlateNo = dto.DrvTestPlateNo?.Trim() ?? "30E-999.88",
+            FullName = visit.CustomerName,
+            PhoneNo = visit.CustomerPhone,
+            Email = visit.CustomerEmail,
+            CusAddress = visit.CustomerAddress,
+            Gender = visit.Gender,
+            DriverLicenseNo = string.IsNullOrWhiteSpace(dto.DriverLicenseNo) ? "GPLX-" + visit.CustomerPhone : dto.DriverLicenseNo.Trim(),
+            LicenseClass = dto.LicenseClass?.Trim() ?? "B2",
+            DriveTestType = dto.DriveTestType?.Trim() ?? "Showroom",
+            RoutePath = dto.RoutePath?.Trim() ?? "Đường đô thị & Cao tốc ngoại thành",
+            DriveDTime = dto.DriveDTime ?? DateTime.Now,
+            DurationMinutes = dto.DurationMinutes ?? 30,
+            OdoStart = dto.OdoStart ?? 1000,
+            SalesManCode = dto.SalesManCode?.Trim() ?? visit.SalesConsultantCode,
+            SalesManName = dto.SalesManName?.Trim() ?? visit.SalesConsultantName,
+            Instructor = dto.Instructor?.Trim() ?? "KTV Hướng Dẫn",
+            PurchaseIntent = visit.PurchaseProbability,
+            CompetitorModel = visit.CompetitorModel,
+            Status = "InProgress",
+            Remark = dto.Remark?.Trim() ?? $"Chuyển đổi từ lượt khách tham quan {visit.VisitCode}",
+            CreatedBy = dto.Actor?.Trim() ?? "SalesAdvisor",
+            CreatedAt = DateTime.Now
+        };
+
+        db.CustomerTestDrives.Add(testDrive);
+
+        visit.IsTestDriveTaken = true;
+        visit.LinkedDriveTestCode = dtCode;
+        visit.Status = "InConsultation";
+
+        var maxLineIndex = await db.CustomerVisitActionLogs
+            .Where(a => a.OrgId == Org && a.CustomerVisitId == visit.Id)
+            .MaxAsync(a => (int?)a.LineIndex) ?? 0;
+
+        db.CustomerVisitActionLogs.Add(new CustomerVisitActionLog
+        {
+            OrgId = Org,
+            CustomerVisitId = visit.Id,
+            VisitCode = visit.VisitCode,
+            ActionNo = $"ACT-{DateTime.Now:yyyyMMdd}-{(maxLineIndex + 1):D4}",
+            LineIndex = maxLineIndex + 1,
+            ActionType = "TestDriveDone",
+            ActionDate = DateTime.Now,
+            SalesConsultant = testDrive.SalesManName,
+            DiscussionSummary = $"Khách hàng trải nghiệm lái thử thực tế xe {model} ({testDrive.DrvTestPlateNo}). Phiếu lái thử: {dtCode}",
+            CustomerResponse = "Khách hàng đánh giá rất tích cực cảm giác lái và độ êm ái",
+            NextActionPlan = "Lập bảng báo giá chi tiết và phương án trả góp",
+            NextActionDate = DateTime.Now.AddDays(1),
+            Status = "Completed",
+            CreatedAt = DateTime.Now
+        });
+
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var veh = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+            if (veh != null)
+            {
+                veh.LastTestDriveNo = dtCode;
+                veh.LastTestDriveDate = DateTime.Now;
+                veh.TestDriveCount++;
+                Log(vin, "CustomerTestDriveCreated", $"{dtCode} Khách hàng {visit.CustomerName} thực hiện lái thử từ lượt tham quan {visit.VisitCode}");
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            visit.VisitCode,
+            driveTestCode = dtCode,
+            testDrive.Vin,
+            testDrive.Model,
+            testDrive.DrvTestPlateNo,
+            status = testDrive.Status,
+            visitStatus = visit.Status
+        };
+    }
+
+    public async Task<object?> ConvertVisitToDealAsync(string visitCode, ConvertToDealDto dto)
+    {
+        visitCode = visitCode.Trim().ToUpperInvariant();
+        var visit = await db.CustomerVisits.FirstOrDefaultAsync(v => v.OrgId == Org && v.VisitCode == visitCode);
+        if (visit is null || visit.Status is "Cancelled") return null;
+
+        var dealNo = !string.IsNullOrWhiteSpace(dto.DealNo)
+            ? dto.DealNo.Trim().ToUpperInvariant()
+            : "DEAL-" + DateTime.Now.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
+
+        var vin = !string.IsNullOrWhiteSpace(dto.Vin) ? dto.Vin.Trim().ToUpperInvariant() : (visit.Vin ?? "DEMOVIN00000001");
+        var model = visit.InterestedModel;
+        var unitPrice = dto.UnitPrice > 0 ? dto.UnitPrice : (visit.BudgetAmount > 0 ? visit.BudgetAmount : 550000000m);
+        var discount = dto.Discount ?? 15000000m;
+        var finalAmount = unitPrice - discount;
+        var depositAmount = dto.DepositAmount ?? 20000000m;
+
+        var deal = new DealerDeal
+        {
+            OrgId = Org,
+            DealNo = dealNo,
+            DealNoUser = dto.DealNoUser?.Trim() ?? $"HDBL-{DateTime.Now:yyyyMMdd}-{visit.DealerCode}",
+            DealerCode = visit.DealerCode,
+            CustomerName = visit.CustomerName,
+            CustomerPhone = visit.CustomerPhone,
+            Address = visit.CustomerAddress,
+            CustomerType = visit.CustomerType,
+            SalesManCode = dto.SalesManCode?.Trim() ?? visit.SalesConsultantCode,
+            SalesManName = dto.SalesManName?.Trim() ?? visit.SalesConsultantName,
+            SalesType = "Retail",
+            PaymentType = dto.PaymentType?.Trim() ?? visit.PaymentMethodExpected,
+            BankCode = dto.BankCode?.Trim(),
+            LoanAmount = dto.LoanAmount ?? 0,
+            TotalAmount = unitPrice,
+            DiscountAmount = discount,
+            FinalAmount = finalAmount,
+            DepositAmount = depositAmount,
+            DealDate = DateTime.Now,
+            Status = "Approved",
+            Remark = dto.Remark?.Trim() ?? $"Ký hợp đồng bán lẻ chuyển đổi từ lượt khách tham quan showroom {visit.VisitCode}",
+            CreatedBy = dto.Actor?.Trim() ?? "SalesAdvisor",
+            CreatedAt = DateTime.Now,
+            ApprovedBy = dto.Actor?.Trim() ?? "SalesManager",
+            ApprovedAt = DateTime.Now
+        };
+
+        db.DealerDeals.Add(deal);
+        await db.SaveChangesAsync();
+
+        db.DealerDealLines.Add(new DealerDealLine
+        {
+            OrgId = Org,
+            DealerDealId = deal.Id,
+            DealNo = deal.DealNo,
+            Vin = vin,
+            Model = model,
+            Color = visit.ColorName,
+            UnitPrice = unitPrice,
+            Discount = discount,
+            Price = finalAmount,
+            DeliveryOdoKm = 10,
+            Status = "Approved",
+            Remark = "Xe giao dịch theo hợp đồng bán lẻ"
+        });
+
+        visit.LinkedDealNo = dealNo;
+        visit.Status = "ConvertedToDeal";
+        visit.CompletedBy = dto.Actor?.Trim() ?? "SalesAdvisor";
+        visit.CompletedAt = DateTime.Now;
+
+        var maxLineIndex = await db.CustomerVisitActionLogs
+            .Where(a => a.OrgId == Org && a.CustomerVisitId == visit.Id)
+            .MaxAsync(a => (int?)a.LineIndex) ?? 0;
+
+        db.CustomerVisitActionLogs.Add(new CustomerVisitActionLog
+        {
+            OrgId = Org,
+            CustomerVisitId = visit.Id,
+            VisitCode = visit.VisitCode,
+            ActionNo = $"ACT-{DateTime.Now:yyyyMMdd}-{(maxLineIndex + 1):D4}",
+            LineIndex = maxLineIndex + 1,
+            ActionType = "DealClosed",
+            ActionDate = DateTime.Now,
+            SalesConsultant = deal.SalesManName,
+            DiscussionSummary = $"Khách hàng {visit.CustomerName} chính thức ký hợp đồng bán lẻ {dealNo} mua xe {model} (VIN: {vin}). Tổng giá trị: {finalAmount:N0} VNĐ. Đặt cọc: {depositAmount:N0} VNĐ.",
+            CustomerResponse = "Đã ký kết hợp đồng và chuyển khoản đặt cọc thành công",
+            NextActionPlan = "Làm thủ tục xuất hóa đơn, đăng ký xe và chuẩn bị lễ bàn giao",
+            NextActionDate = DateTime.Now.AddDays(3),
+            Status = "Completed",
+            CreatedAt = DateTime.Now
+        });
+
+        var veh = await db.Vehicles.FirstOrDefaultAsync(x => x.OrgId == Org && x.Vin == vin);
+        if (veh != null)
+        {
+            veh.DealerCode = visit.DealerCode;
+            veh.OwnerName = visit.CustomerName;
+            veh.OwnerPhone = visit.CustomerPhone;
+            Log(vin, "DealClosedFromVisit", $"{dealNo} Chốt hợp đồng bán lẻ cho khách {visit.CustomerName} từ lượt tham quan {visit.VisitCode}");
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            visit.VisitCode,
+            dealNo,
+            deal.CustomerName,
+            vin,
+            model,
+            finalAmount,
+            depositAmount,
+            dealStatus = deal.Status,
+            visitStatus = visit.Status
+        };
+    }
+
+    public async Task<object?> AddVisitActionLogsAsync(string visitCode, List<CustomerVisitActionInputDto> items)
+    {
+        visitCode = visitCode.Trim().ToUpperInvariant();
+        var visit = await db.CustomerVisits.FirstOrDefaultAsync(v => v.OrgId == Org && v.VisitCode == visitCode);
+        if (visit is null || visit.Status is "Cancelled") return null;
+
+        var now = DateTime.Now;
+        var maxLineIndex = await db.CustomerVisitActionLogs
+            .Where(a => a.OrgId == Org && a.CustomerVisitId == visit.Id)
+            .MaxAsync(a => (int?)a.LineIndex) ?? 0;
+
+        var addedLogs = new List<CustomerVisitActionLog>();
+        foreach (var item in items)
+        {
+            maxLineIndex++;
+            var log = new CustomerVisitActionLog
+            {
+                OrgId = Org,
+                CustomerVisitId = visit.Id,
+                VisitCode = visit.VisitCode,
+                ActionNo = $"ACT-{now:yyyyMMdd}-{maxLineIndex:D4}",
+                LineIndex = maxLineIndex,
+                ActionType = string.IsNullOrWhiteSpace(item.ActionType) ? "FollowUpCall" : item.ActionType.Trim(),
+                ActionDate = now,
+                SalesConsultant = item.SalesConsultant?.Trim() ?? visit.SalesConsultantName,
+                DiscussionSummary = item.DiscussionSummary.Trim(),
+                CustomerResponse = item.CustomerResponse?.Trim(),
+                NextActionPlan = item.NextActionPlan?.Trim(),
+                NextActionDate = item.NextActionDate,
+                Status = string.IsNullOrWhiteSpace(item.Status) ? "Completed" : item.Status.Trim(),
+                Remark = item.Remark?.Trim(),
+                CreatedAt = now
+            };
+            db.CustomerVisitActionLogs.Add(log);
+            addedLogs.Add(log);
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            visit.VisitCode,
+            addedCount = addedLogs.Count,
+            actions = addedLogs
+        };
+    }
+
+    public async Task<object?> UpdateVisitActionLogAsync(string visitCode, long lineId, UpdateVisitActionLogDto dto)
+    {
+        visitCode = visitCode.Trim().ToUpperInvariant();
+        var visit = await db.CustomerVisits.FirstOrDefaultAsync(v => v.OrgId == Org && v.VisitCode == visitCode);
+        if (visit is null) return null;
+
+        var log = await db.CustomerVisitActionLogs.FirstOrDefaultAsync(a => a.OrgId == Org && a.CustomerVisitId == visit.Id && a.Id == lineId);
+        if (log is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.ActionType)) log.ActionType = dto.ActionType.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DiscussionSummary)) log.DiscussionSummary = dto.DiscussionSummary.Trim();
+        if (dto.CustomerResponse != null) log.CustomerResponse = dto.CustomerResponse.Trim();
+        if (dto.NextActionPlan != null) log.NextActionPlan = dto.NextActionPlan.Trim();
+        if (dto.NextActionDate.HasValue) log.NextActionDate = dto.NextActionDate.Value;
+        if (dto.SalesConsultant != null) log.SalesConsultant = dto.SalesConsultant.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Status)) log.Status = dto.Status.Trim();
+        if (dto.Remark != null) log.Remark = dto.Remark.Trim();
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            visit.VisitCode,
+            log.Id,
+            log.ActionNo,
+            log.ActionType,
+            log.DiscussionSummary,
+            log.CustomerResponse,
+            log.Status
+        };
+    }
+
+    public async Task<object?> RemoveVisitActionLogAsync(string visitCode, long lineId)
+    {
+        visitCode = visitCode.Trim().ToUpperInvariant();
+        var visit = await db.CustomerVisits.FirstOrDefaultAsync(v => v.OrgId == Org && v.VisitCode == visitCode);
+        if (visit is null) return null;
+
+        var log = await db.CustomerVisitActionLogs.FirstOrDefaultAsync(a => a.OrgId == Org && a.CustomerVisitId == visit.Id && a.Id == lineId);
+        if (log is null) return null;
+
+        db.CustomerVisitActionLogs.Remove(log);
+        await db.SaveChangesAsync();
+
+        return new { visit.VisitCode, deletedLineId = lineId, success = true };
+    }
+
+    public async Task<CustomerVisitSummaryDto> GetCustomerVisitSummaryAsync(string? dealer, int? year, int? month)
+    {
+        var q = db.CustomerVisits.Where(v => v.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(v => v.DealerCode == dealer.Trim().ToUpperInvariant());
+        if (year.HasValue) q = q.Where(v => v.VisitDate.Year == year.Value);
+        if (month.HasValue) q = q.Where(v => v.VisitDate.Month == month.Value);
+
+        var visits = await q.ToListAsync();
+
+        var totalVisits = visits.Count;
+        var totalCheckedIn = visits.Count(v => v.Status == "CheckedIn");
+        var totalInConsultation = visits.Count(v => v.Status == "InConsultation");
+        var totalQuoted = visits.Count(v => v.Status == "Quoted");
+        var totalConvertedToDeal = visits.Count(v => v.Status == "ConvertedToDeal");
+        var totalScheduledFollowUp = visits.Count(v => v.Status == "ScheduledFollowUp");
+        var totalClosedLost = visits.Count(v => v.Status == "ClosedLost");
+        var totalCancelled = visits.Count(v => v.Status == "Cancelled");
+
+        var totalTestDriveTaken = visits.Count(v => v.IsTestDriveTaken);
+        var totalTradeInRequested = visits.Count(v => v.HasTradeIn);
+        var totalHighPotentialVisits = visits.Count(v => v.PurchaseProbability is "VeryHigh" or "High");
+
+        var overallConversionRate = totalVisits > 0 ? Math.Round(((decimal)totalConvertedToDeal / totalVisits) * 100m, 1) : 0m;
+        var totalBudget = visits.Sum(v => v.BudgetAmount);
+        var avgBudget = totalVisits > 0 ? Math.Round(totalBudget / totalVisits, 0) : 0m;
+
+        var byModel = visits.GroupBy(v => v.InterestedModel).Select(g =>
+        {
+            var count = g.Count();
+            var conv = g.Count(v => v.Status == "ConvertedToDeal");
+            var td = g.Count(v => v.IsTestDriveTaken);
+            var rate = count > 0 ? Math.Round(((decimal)conv / count) * 100m, 1) : 0m;
+            return new VisitModelStatsDto(g.Key, count, conv, td, rate);
+        }).OrderByDescending(m => m.TotalVisits).ToList();
+
+        var byDealer = visits.GroupBy(v => v.DealerCode).Select(g =>
+        {
+            var count = g.Count();
+            var conv = g.Count(v => v.Status == "ConvertedToDeal");
+            var td = g.Count(v => v.IsTestDriveTaken);
+            var rate = count > 0 ? Math.Round(((decimal)conv / count) * 100m, 1) : 0m;
+            var name = g.First().DealerName ?? g.Key;
+            return new VisitDealerStatsDto(g.Key, name, count, conv, td, rate);
+        }).OrderByDescending(d => d.TotalVisits).ToList();
+
+        var byLeadSource = visits.GroupBy(v => v.LeadSource).Select(g =>
+        {
+            var count = g.Count();
+            var conv = g.Count(v => v.Status == "ConvertedToDeal");
+            var rate = count > 0 ? Math.Round(((decimal)conv / count) * 100m, 1) : 0m;
+            var name = g.Key switch
+            {
+                "ShowroomWalkIn" => "Khách vãng lai Showroom",
+                "DigitalAds" => "Quảng cáo Online Facebook/Google",
+                "WebsiteHyundai" => "Đăng ký Website Hyundai",
+                "Referral" => "Người quen giới thiệu",
+                "RoadshowEvent" => "Sự kiện / Lái thử lưu động",
+                "Hotline" => "Tổng đài đại lý",
+                _ => g.Key
+            };
+            return new VisitLeadSourceStatsDto(g.Key, name, count, conv, rate);
+        }).OrderByDescending(s => s.TotalVisits).ToList();
+
+        var bySalesConsultant = visits.Where(v => !string.IsNullOrWhiteSpace(v.SalesConsultantCode)).GroupBy(v => v.SalesConsultantCode!).Select(g =>
+        {
+            var count = g.Count();
+            var conv = g.Count(v => v.Status == "ConvertedToDeal");
+            var rate = count > 0 ? Math.Round(((decimal)conv / count) * 100m, 1) : 0m;
+            var name = g.First().SalesConsultantName ?? g.Key;
+            var dlr = g.First().DealerCode;
+            return new VisitSalesConsultantStatsDto(g.Key, name, dlr, count, conv, rate);
+        }).OrderByDescending(c => c.TotalVisits).ToList();
+
+        var byPurchaseTime = visits.GroupBy(v => v.EstimatedPurchaseTime).Select(g =>
+        {
+            var name = g.Key switch
+            {
+                "TrongTuan" => "Trong tuần này (7 ngày)",
+                "TrongThang" => "Trong tháng này (30 ngày)",
+                "1Den3Thang" => "Trong 1 đến 3 tháng tới",
+                "ThamKhao" => "Đang tham khảo / Chưa xác định",
+                _ => g.Key
+            };
+            return new VisitPurchaseTimeStatsDto(g.Key, name, g.Count(), g.Count(v => v.Status == "ConvertedToDeal"));
+        }).OrderByDescending(p => p.TotalVisits).ToList();
+
+        return new CustomerVisitSummaryDto(
+            totalVisits,
+            totalCheckedIn,
+            totalInConsultation,
+            totalQuoted,
+            totalConvertedToDeal,
+            totalScheduledFollowUp,
+            totalClosedLost,
+            totalCancelled,
+            totalTestDriveTaken,
+            totalTradeInRequested,
+            totalHighPotentialVisits,
+            overallConversionRate,
+            totalBudget,
+            avgBudget,
+            byModel,
+            byDealer,
+            byLeadSource,
+            bySalesConsultant,
+            byPurchaseTime
+        );
+    }
+
+    public async Task<ShowroomFunnelAnalyticsDto> GetShowroomFunnelAnalyticsAsync(string? dealer, int? year, int? month)
+    {
+        var q = db.CustomerVisits.Where(v => v.OrgId == Org && v.Status != "Cancelled");
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(v => v.DealerCode == dealer.Trim().ToUpperInvariant());
+        if (year.HasValue) q = q.Where(v => v.VisitDate.Year == year.Value);
+        if (month.HasValue) q = q.Where(v => v.VisitDate.Month == month.Value);
+
+        var visits = await q.ToListAsync();
+
+        var step1_CheckedIn = visits.Count;
+        var step2_InConsultation = visits.Count(v => v.Status is "InConsultation" or "Quoted" or "ConvertedToDeal" or "ScheduledFollowUp" or "ClosedLost");
+        var step3_TestDriveTaken = visits.Count(v => v.IsTestDriveTaken || !string.IsNullOrWhiteSpace(v.LinkedDriveTestCode));
+        var step4_Quoted = visits.Count(v => v.Status is "Quoted" or "ConvertedToDeal");
+        var step5_ConvertedToDeal = visits.Count(v => v.Status == "ConvertedToDeal" || !string.IsNullOrWhiteSpace(v.LinkedDealNo));
+
+        var funnelRate = step1_CheckedIn > 0 ? Math.Round(((decimal)step5_ConvertedToDeal / step1_CheckedIn) * 100m, 1) : 0m;
+
+        var stages = new List<ShowroomFunnelStageDto>
+        {
+            new(1, "CheckedIn", "1. Tiếp đón Showroom Traffic", step1_CheckedIn, 100m, 100m),
+            new(2, "InConsultation", "2. Tư vấn sản phẩm chuyên sâu", step2_InConsultation,
+                step1_CheckedIn > 0 ? Math.Round(((decimal)step2_InConsultation / step1_CheckedIn) * 100m, 1) : 0m,
+                step1_CheckedIn > 0 ? Math.Round(((decimal)step2_InConsultation / step1_CheckedIn) * 100m, 1) : 0m),
+            new(3, "TestDriveTaken", "3. Trải nghiệm Lái thử xe", step3_TestDriveTaken,
+                step2_InConsultation > 0 ? Math.Round(((decimal)step3_TestDriveTaken / step2_InConsultation) * 100m, 1) : 0m,
+                step1_CheckedIn > 0 ? Math.Round(((decimal)step3_TestDriveTaken / step1_CheckedIn) * 100m, 1) : 0m),
+            new(4, "Quoted", "4. Lập báo giá & Phương án tài chính", step4_Quoted,
+                step3_TestDriveTaken > 0 ? Math.Round(((decimal)step4_Quoted / step3_TestDriveTaken) * 100m, 1) : 0m,
+                step1_CheckedIn > 0 ? Math.Round(((decimal)step4_Quoted / step1_CheckedIn) * 100m, 1) : 0m),
+            new(5, "ConvertedToDeal", "5. Chốt Hợp đồng & Đặt cọc", step5_ConvertedToDeal,
+                step4_Quoted > 0 ? Math.Round(((decimal)step5_ConvertedToDeal / step4_Quoted) * 100m, 1) : 0m,
+                step1_CheckedIn > 0 ? Math.Round(((decimal)step5_ConvertedToDeal / step1_CheckedIn) * 100m, 1) : 0m)
+        };
+
+        return new ShowroomFunnelAnalyticsDto(
+            dealer,
+            step1_CheckedIn,
+            step1_CheckedIn,
+            step2_InConsultation,
+            step3_TestDriveTaken,
+            step4_Quoted,
+            step5_ConvertedToDeal,
+            funnelRate,
+            stages
+        );
+    }
+
+    public async Task<VehicleVisitInfoDto?> GetVehicleVisitInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var history = await db.CustomerVisits
+            .Where(v => v.OrgId == Org && (v.Vin == vin || v.InterestedModel == veh.Model))
+            .OrderByDescending(v => v.VisitDate)
+            .Take(50)
+            .ToListAsync();
+
+        var lastVisit = history.FirstOrDefault();
+
+        return new VehicleVisitInfoDto(
+            veh.Vin,
+            veh.Model,
+            veh.EngineNo,
+            veh.Color,
+            veh.StorageCode,
+            veh.DealerCode,
+            veh.LastCustomerVisitNo,
+            veh.LastCustomerVisitDate,
+            veh.CustomerVisitCount,
+            lastVisit,
+            history
+        );
+    }
+
+    public async Task<object?> GetVehicleVisitHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var veh = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (veh is null) return null;
+
+        var visits = await db.CustomerVisits
+            .Where(v => v.OrgId == Org && (v.Vin == vin || v.InterestedModel == veh.Model))
+            .OrderByDescending(v => v.VisitDate)
+            .Select(v => new
+            {
+                v.VisitCode,
+                v.DealerCode,
+                v.DealerName,
+                v.VisitDate,
+                v.CustomerName,
+                v.CustomerPhone,
+                v.InterestedModel,
+                v.SpecCode,
+                v.VisitPurpose,
+                v.LeadSource,
+                v.SalesConsultantName,
+                v.PurchaseProbability,
+                v.IsTestDriveTaken,
+                v.LinkedDriveTestCode,
+                v.LinkedDealNo,
+                v.Status
+            }).ToListAsync();
+
+        return new { vin, model = veh.Model, visitCount = visits.Count, visits };
+    }
+
+    public async Task<CustomerVisitHistoryDto?> GetCustomerVisitByPhoneAsync(string phone)
+    {
+        phone = phone.Trim();
+        var visits = await db.CustomerVisits
+            .Where(v => v.OrgId == Org && v.CustomerPhone == phone)
+            .OrderByDescending(v => v.VisitDate)
+            .ToListAsync();
+
+        if (visits.Count == 0) return null;
+
+        var first = visits.First();
+        var convCount = visits.Count(v => v.Status == "ConvertedToDeal");
+
+        return new CustomerVisitHistoryDto(
+            phone,
+            first.CustomerName,
+            visits.Count,
+            convCount,
+            visits
+        );
+    }
 }
+
 

@@ -5305,6 +5305,142 @@ app.MapGet("/api/vehicles/{vin}/ssi-history", async (string vin, IVehicleService
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Quản lý Khách hàng Tham quan Showroom & Phễu Bán hàng (BizHTC.RetailContract / DLR_CtmVisit, FrmCusVisit / CustomerVisit) =====
+
+app.MapPost("/api/customer-visits", async (CreateCustomerVisitDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.CreateCustomerVisitAsync(dto);
+        return Results.Created($"/api/customer-visits/{(r as dynamic)?.visitCode}", r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/customer-visits", async (string? status, string? dealer, string? model, string? phone, string? consultant, string? leadSource, DateTime? fromDate, DateTime? toDate, IVehicleService svc) =>
+{
+    var r = await svc.ListCustomerVisitsAsync(status, dealer, model, phone, consultant, leadSource, fromDate, toDate);
+    return Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/customer-visits/summary", async (string? dealer, int? year, int? month, IVehicleService svc) =>
+{
+    var r = await svc.GetCustomerVisitSummaryAsync(dealer, year, month);
+    return Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/customer-visits/funnel", async (string? dealer, int? year, int? month, IVehicleService svc) =>
+{
+    var r = await svc.GetShowroomFunnelAnalyticsAsync(dealer, year, month);
+    return Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/customer-visits/by-phone/{phone}", async (string phone, IVehicleService svc) =>
+{
+    var r = await svc.GetCustomerVisitByPhoneAsync(phone);
+    return r is null ? Results.NotFound(new { phone, error = "Không tìm thấy lượt khách nào với số điện thoại này." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/customer-visits/{visitCode}", async (string visitCode, IVehicleService svc) =>
+{
+    var r = await svc.GetCustomerVisitAsync(visitCode);
+    return r is null ? Results.NotFound(new { visitCode, error = "Không tìm thấy mã lượt khách." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/customer-visits/{visitCode}", async (string visitCode, UpdateCustomerVisitDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateCustomerVisitAsync(visitCode, dto);
+        return r is null ? Results.NotFound(new { visitCode, error = "Không tìm thấy hoặc không thể cập nhật lượt khách." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-visits/{visitCode}/transition", async (string visitCode, string action, CustomerVisitTransitionDto? dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.CustomerVisitTransitionAsync(visitCode, action, dto);
+        return r is null ? Results.BadRequest(new { visitCode, action, error = "Chuyển trạng thái không hợp lệ." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-visits/{visitCode}/follow-up", async (string visitCode, RecordVisitFollowUpDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RecordVisitFollowUpAsync(visitCode, dto);
+        return r is null ? Results.NotFound(new { visitCode, error = "Không tìm thấy lượt khách." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-visits/{visitCode}/convert-to-test-drive", async (string visitCode, ConvertToTestDriveDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.ConvertVisitToTestDriveAsync(visitCode, dto);
+        return r is null ? Results.NotFound(new { visitCode, error = "Không tìm thấy lượt khách." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-visits/{visitCode}/convert-to-deal", async (string visitCode, ConvertToDealDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.ConvertVisitToDealAsync(visitCode, dto);
+        return r is null ? Results.NotFound(new { visitCode, error = "Không tìm thấy lượt khách." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/customer-visits/{visitCode}/actions", async (string visitCode, List<CustomerVisitActionInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách hành động items." });
+    try
+    {
+        var r = await svc.AddVisitActionLogsAsync(visitCode, items);
+        return r is null ? Results.NotFound(new { visitCode, error = "Không tìm thấy lượt khách." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/customer-visits/{visitCode}/actions/{lineId:long}", async (string visitCode, long lineId, UpdateVisitActionLogDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdateVisitActionLogAsync(visitCode, lineId, dto);
+        return r is null ? Results.NotFound(new { visitCode, lineId, error = "Không tìm thấy hành động tương tác." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/customer-visits/{visitCode}/actions/{lineId:long}", async (string visitCode, long lineId, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemoveVisitActionLogAsync(visitCode, lineId);
+        return r is null ? Results.NotFound(new { visitCode, lineId, error = "Không tìm thấy hành động tương tác." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/visit-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleVisitInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/visits", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehicleVisitHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {

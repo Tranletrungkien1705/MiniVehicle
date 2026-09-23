@@ -151,6 +151,9 @@ public sealed class Vehicle
     public decimal? LastSsiScore { get; set; }          // Điểm chỉ số hài lòng bán hàng SSI gần nhất (1.0 - 5.0 sao)
     public int? LastSsiIndex1000 { get; set; }          // Điểm chỉ số SSI quy đổi thang 1000 điểm tiêu chuẩn J.D. Power (0 - 1000)
     public int SsiSurveyCount { get; set; } = 0;        // Tổng số lượt đã thực hiện khảo sát SSI cho xe này
+    public string? LastCustomerVisitNo { get; set; }    // Mã phiếu khách tham quan showroom quan tâm xe gần nhất (BizHTC.RetailContract.CtmVisit / CustomerVisit)
+    public DateTime? LastCustomerVisitDate { get; set; } // Ngày lượt khách gần nhất đến xem xe
+    public int CustomerVisitCount { get; set; } = 0;    // Tổng số lượt khách đã đến xem / quan tâm dòng xe này
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -6405,6 +6408,327 @@ public sealed record VehicleSsiInfoDto(
     SalesSatisfactionSurvey? LastSurvey,
     List<SalesSatisfactionSurvey> SurveyHistory
 );
+
+// ===== Quản lý Khách hàng Tham quan Showroom / Tiếp đón khách xem xe tại Đại lý & Phân tích Phễu Bán hàng (BizHTC.RetailContract / DLR_CtmVisit, FrmCusVisit, RptPivot_DlrCtmVisit / CustomerVisit) =====
+
+/// <summary>Phiếu Tiếp đón & Quản lý Khách hàng Tham quan Showroom Đại lý (BizHTC.RetailContract / DLR_CtmVisit / CustomerVisit): ghi nhận khách hàng đến showroom xem xe, lái thử, nhu cầu dòng xe quan tâm, xe cũ đổi xe mới Trade-in, TVBH tiếp đón, ngân sách dự kiến, nguồn khách hàng và theo dõi phễu bán hàng Showroom Traffic.</summary>
+public sealed class CustomerVisit
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string VisitCode { get; set; } = "";             // Mã lượt khách tham quan (VIS-2026-03-0001, VIS...)
+    public string? VisitCodeUser { get; set; }            // Ký hiệu tham chiếu phiếu nội bộ đại lý
+    public string DealerCode { get; set; } = "";          // Mã đại lý tiếp đón khách (DLR-HN01, DLR-HCM01...)
+    public string? DealerName { get; set; }               // Tên đại lý
+    public DateTime VisitDate { get; set; } = DateTime.Now; // Ngày giờ khách vào showroom
+    public string CustomerName { get; set; } = "";        // Họ tên khách hàng
+    public string CustomerPhone { get; set; } = "";       // SĐT khách hàng
+    public string? CustomerEmail { get; set; }            // Email khách hàng
+    public string? CustomerAddress { get; set; }          // Địa chỉ khách hàng
+    public string Gender { get; set; } = "Nam";           // Giới tính: Nam, Nữ, Khác
+    public string RangeAgeCode { get; set; } = "26-35";   // Nhóm tuổi: 18-25, 26-35, 36-45, 46-55, Over55
+    public string CustomerType { get; set; } = "Individual"; // Individual (Cá nhân), Corporate (Doanh nghiệp)
+
+    // Nhu cầu xe quan tâm
+    public string InterestedModel { get; set; } = "";     // Dòng xe quan tâm (SantaFe, Tucson, Accent, Creta, Custin, Stargazer, Palisade, Venue, Ioniq 5...)
+    public string? SpecCode { get; set; }                 // Phiên bản xe quan tâm (1.5 AT Tiêu Chuẩn, 1.6T HTRAC, Calligraphy, EV...)
+    public string? SpecDescription { get; set; }          // Mô tả chi tiết cấu hình
+    public string? ColorCode { get; set; } = "NWAC";      // Mã màu sắc ưa thích (NWAC, SAW, R2P, T2X...)
+    public string? ColorName { get; set; } = "Trắng ngọc trai";
+    public string? Vin { get; set; }                      // Số khung VIN cụ thể nếu khách ưng ý xe có sẵn tại showroom
+
+    // Mục đích & Nguồn gốc tiếp cận
+    public string VisitPurpose { get; set; } = "XemXeMoi"; // XemXeMoi (Tham quan xe mới), LaiThu (Trải nghiệm lái thử), BaoGia (Đề nghị báo giá), DamPhanHopDong (Thương lượng hợp đồng), NhanBanGiaoXe (Nhận xe bàn giao), DichVuHauMai (Dịch vụ bảo dưỡng)
+    public string LeadSource { get; set; } = "ShowroomWalkIn"; // ShowroomWalkIn (Khách vãng lai), DigitalAds (Quảng cáo online), WebsiteHyundai (Đăng ký web), Referral (Giới thiệu), RoadshowEvent (Sự kiện lưu động), Hotline (Tổng đài đại lý), Other (Khác)
+
+    // Nhân sự tiếp đón & Dự định tài chính
+    public string? SalesConsultantCode { get; set; }      // Mã tư vấn bán hàng TVBH tiếp đón
+    public string? SalesConsultantName { get; set; }      // Tên tư vấn bán hàng TVBH
+    public bool HasTradeIn { get; set; } = false;         // Có nhu cầu đổi xe cũ lấy xe mới Trade-in
+    public string? TradeInModel { get; set; }             // Dòng xe cũ muốn đổi (VD: Grand i10 2018, Accent 2020...)
+    public int? TradeInYear { get; set; }                 // Năm sản xuất xe cũ
+    public decimal TradeInEstimatedPrice { get; set; } = 0; // Giá định giá xe cũ ước tính (VNĐ)
+    public string PaymentMethodExpected { get; set; } = "Cash"; // Cash (Tiền mặt/Chuyển khoản), BankLoan (Trả góp ngân hàng), Installment (Kỳ hạn)
+    public decimal LoanPercentExpected { get; set; } = 0; // Tỷ lệ vay ngân hàng dự kiến (%) (VD: 70%, 80%)
+    public string EstimatedPurchaseTime { get; set; } = "TrongThang"; // TrongTuan (Trong 7 ngày), TrongThang (Trong 30 ngày), 1Den3Thang (1-3 tháng), ThamKhao (Chỉ tham khảo/Chưa xác định)
+    public string PurchaseProbability { get; set; } = "High"; // VeryHigh (Rất cao - Hot Lead), High (Cao - Warm Lead), Medium (Trung bình - Cool Lead), Low (Thấp - Cold Lead)
+    public decimal BudgetAmount { get; set; } = 0;        // Ngân sách dự kiến của khách (VNĐ)
+    public string? CompetitorModel { get; set; }          // Dòng xe đối thủ đang cân nhắc (Mazda CX-5, Ford Territory, Honda CR-V, Toyota Vios...)
+
+    // Trải nghiệm & Chuyển đổi
+    public bool IsTestDriveTaken { get; set; } = false;   // Đã lái thử trực tiếp trong buổi đến showroom
+    public string? LinkedDriveTestCode { get; set; }      // Mã phiếu lái thử liên kết (CustomerTestDrive)
+    public string? LinkedDealNo { get; set; }             // Mã hợp đồng bán lẻ sinh ra nếu chốt deal ngay (DealerDeal)
+    public DateTime? NextFollowUpDate { get; set; }       // Lịch hẹn liên hệ chăm sóc lại tiếp theo
+    public string? FollowUpAction { get; set; } = "CallBack"; // CallBack (Gọi điện chăm sóc), SendQuotation (Gửi báo giá), ScheduleTestDrive (Hẹn lái thử), InviteShowroomEvent (Mời sự kiện), NegotiateContract (Đàm phán HĐ)
+    public string? CustomerFeedback { get; set; }         // Ý kiến trao đổi & cảm nhận của khách hàng
+
+    // Trạng thái & Kiểm toán
+    public string Status { get; set; } = "CheckedIn";     // CheckedIn (Đang tiếp đón tại showroom), InConsultation (Đang tư vấn chi tiết), Quoted (Đã gửi báo giá), ConvertedToDeal (Đã ký hợp đồng/chốt cọc), ScheduledFollowUp (Đã hẹn lịch chăm sóc), ClosedLost (Không mua/mua đối thủ), Cancelled (Hủy lượt)
+    public string? Remark { get; set; }                   // Ghi chú nghiệp vụ
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? CompletedBy { get; set; }              // Người xác nhận hoàn tất / chốt hồ sơ
+    public DateTime? CompletedAt { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Nhật ký Tiến trình Chăm sóc & Follow-up Khách hàng sau khi rời Showroom (BizHTC.RetailContract / CustomerVisitActionLog): ghi nhận từng lần gọi điện, gửi báo giá, lái thử tại nhà, đàm phán giá và chốt hợp đồng.</summary>
+public sealed class CustomerVisitActionLog
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long CustomerVisitId { get; set; }
+    public string VisitCode { get; set; } = "";
+    public string ActionNo { get; set; } = "";             // Mã hành động (ACT-2026-0001...)
+    public int LineIndex { get; set; } = 1;
+    public string ActionType { get; set; } = "ShowroomGreeting"; // ShowroomGreeting (Tiếp đón showroom), ProductConsultation (Tư vấn sản phẩm), TestDriveDone (Thực hiện lái thử), QuotationSent (Gửi bảng giá), FollowUpCall (Gọi điện chăm sóc), HomeVisit (Gặp khách tại nhà), PriceNegotiation (Đàm phán giá), DealClosed (Chốt hợp đồng), LostNote (Ghi nhận mất khách)
+    public DateTime ActionDate { get; set; } = DateTime.Now; // Ngày giờ thực hiện tương tác
+    public string? SalesConsultant { get; set; }          // TVBH thực hiện
+    public string DiscussionSummary { get; set; } = "";   // Tóm tắt nội dung trao đổi
+    public string? CustomerResponse { get; set; }         // Phản hồi của khách hàng
+    public string? NextActionPlan { get; set; }           // Kế hoạch hành động tiếp theo
+    public DateTime? NextActionDate { get; set; }         // Hạn thực hiện kế hoạch tiếp theo
+    public string Status { get; set; } = "Completed";     // Completed, Pending, Cancelled
+    public string? Remark { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+// ===== DTOs cho Quản lý Khách hàng Tham quan Showroom & Phễu Bán hàng (CustomerVisit) =====
+
+public sealed record CreateCustomerVisitDto(
+    string? VisitCode,
+    string? VisitCodeUser,
+    string DealerCode,
+    string? DealerName,
+    string CustomerName,
+    string CustomerPhone,
+    string? CustomerEmail,
+    string? CustomerAddress,
+    string? Gender,
+    string? RangeAgeCode,
+    string? CustomerType,
+    string InterestedModel,
+    string? SpecCode,
+    string? SpecDescription,
+    string? ColorCode,
+    string? ColorName,
+    string? Vin,
+    string? VisitPurpose,
+    string? LeadSource,
+    string? SalesConsultantCode,
+    string? SalesConsultantName,
+    bool? HasTradeIn,
+    string? TradeInModel,
+    int? TradeInYear,
+    decimal? TradeInEstimatedPrice,
+    string? PaymentMethodExpected,
+    decimal? LoanPercentExpected,
+    string? EstimatedPurchaseTime,
+    string? PurchaseProbability,
+    decimal? BudgetAmount,
+    string? CompetitorModel,
+    bool? IsTestDriveTaken,
+    string? LinkedDriveTestCode,
+    string? LinkedDealNo,
+    DateTime? NextFollowUpDate,
+    string? FollowUpAction,
+    string? CustomerFeedback,
+    string? Remark,
+    string? CreatedBy,
+    List<CustomerVisitActionInputDto>? InitialActions
+);
+
+public sealed record CustomerVisitActionInputDto(
+    string ActionType,
+    string DiscussionSummary,
+    string? CustomerResponse,
+    string? NextActionPlan,
+    DateTime? NextActionDate,
+    string? SalesConsultant,
+    string? Status,
+    string? Remark
+);
+
+public sealed record UpdateCustomerVisitDto(
+    string? VisitCodeUser,
+    string? CustomerName,
+    string? CustomerPhone,
+    string? CustomerEmail,
+    string? CustomerAddress,
+    string? Gender,
+    string? RangeAgeCode,
+    string? CustomerType,
+    string? InterestedModel,
+    string? SpecCode,
+    string? SpecDescription,
+    string? ColorCode,
+    string? ColorName,
+    string? Vin,
+    string? VisitPurpose,
+    string? LeadSource,
+    string? SalesConsultantCode,
+    string? SalesConsultantName,
+    bool? HasTradeIn,
+    string? TradeInModel,
+    int? TradeInYear,
+    decimal? TradeInEstimatedPrice,
+    string? PaymentMethodExpected,
+    decimal? LoanPercentExpected,
+    string? EstimatedPurchaseTime,
+    string? PurchaseProbability,
+    decimal? BudgetAmount,
+    string? CompetitorModel,
+    bool? IsTestDriveTaken,
+    string? LinkedDriveTestCode,
+    string? LinkedDealNo,
+    DateTime? NextFollowUpDate,
+    string? FollowUpAction,
+    string? CustomerFeedback,
+    string? Remark
+);
+
+public sealed record CustomerVisitTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    string? LinkedDriveTestCode,
+    string? LinkedDealNo,
+    DateTime? TransitionDate
+);
+
+public sealed record RecordVisitFollowUpDto(
+    string ActionType,
+    string DiscussionSummary,
+    string? CustomerResponse,
+    string? NextActionPlan,
+    DateTime? NextActionDate,
+    string? SalesConsultant,
+    string? NewStatus,
+    string? NewPurchaseProbability,
+    DateTime? NextFollowUpDate,
+    string? FollowUpAction,
+    string? Actor,
+    string? Remark
+);
+
+public sealed record ConvertToTestDriveDto(
+    string? DriveTestCode,
+    string? DrvTestPlateNo,
+    string? DriverLicenseNo,
+    string? LicenseClass,
+    string? DriveTestType,
+    string? RoutePath,
+    DateTime? DriveDTime,
+    int? DurationMinutes,
+    int? OdoStart,
+    string? Instructor,
+    string? SalesManCode,
+    string? SalesManName,
+    string? Actor,
+    string? Remark
+);
+
+public sealed record ConvertToDealDto(
+    string? DealNo,
+    string? DealNoUser,
+    decimal UnitPrice,
+    decimal? Discount,
+    decimal? DepositAmount,
+    string? PaymentType,
+    string? BankCode,
+    decimal? LoanAmount,
+    string? Vin,
+    string? SalesManCode,
+    string? SalesManName,
+    string? Actor,
+    string? Remark
+);
+
+public sealed record UpdateVisitActionLogDto(
+    string? ActionType,
+    string? DiscussionSummary,
+    string? CustomerResponse,
+    string? NextActionPlan,
+    DateTime? NextActionDate,
+    string? SalesConsultant,
+    string? Status,
+    string? Remark
+);
+
+public sealed record CustomerVisitSummaryDto(
+    int TotalVisits,
+    int TotalCheckedIn,
+    int TotalInConsultation,
+    int TotalQuoted,
+    int TotalConvertedToDeal,
+    int TotalScheduledFollowUp,
+    int TotalClosedLost,
+    int TotalCancelled,
+    int TotalTestDriveTaken,
+    int TotalTradeInRequested,
+    int TotalHighPotentialVisits,
+    decimal OverallConversionRatePercent,
+    decimal TotalBudgetAmount,
+    decimal AverageBudgetAmount,
+    List<VisitModelStatsDto> ByModel,
+    List<VisitDealerStatsDto> ByDealer,
+    List<VisitLeadSourceStatsDto> ByLeadSource,
+    List<VisitSalesConsultantStatsDto> BySalesConsultant,
+    List<VisitPurchaseTimeStatsDto> ByPurchaseTime
+);
+
+public sealed record VisitModelStatsDto(string Model, int TotalVisits, int ConvertedCount, int TestDriveCount, decimal ConversionRatePercent);
+public sealed record VisitDealerStatsDto(string DealerCode, string DealerName, int TotalVisits, int ConvertedCount, int TestDriveCount, decimal ConversionRatePercent);
+public sealed record VisitLeadSourceStatsDto(string LeadSource, string LeadSourceName, int TotalVisits, int ConvertedCount, decimal ConversionRatePercent);
+public sealed record VisitSalesConsultantStatsDto(string SalesConsultantCode, string SalesConsultantName, string DealerCode, int TotalVisits, int ConvertedCount, decimal ConversionRatePercent);
+public sealed record VisitPurchaseTimeStatsDto(string EstimatedPurchaseTime, string PurchaseTimeName, int TotalVisits, int ConvertedCount);
+
+public sealed record ShowroomFunnelAnalyticsDto(
+    string? DealerCode,
+    int TotalTraffic,
+    int Step1_CheckedIn,
+    int Step2_InConsultation,
+    int Step3_TestDriveTaken,
+    int Step4_Quoted,
+    int Step5_ConvertedToDeal,
+    decimal FunnelConversionRatePercent,
+    List<ShowroomFunnelStageDto> Stages
+);
+
+public sealed record ShowroomFunnelStageDto(
+    int StageOrder,
+    string StageCode,
+    string StageName,
+    int Count,
+    decimal ConversionFromPreviousPercent,
+    decimal ConversionFromTotalPercent
+);
+
+public sealed record VehicleVisitInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    string? LastCustomerVisitNo,
+    DateTime? LastCustomerVisitDate,
+    int CustomerVisitCount,
+    CustomerVisit? LastVisit,
+    List<CustomerVisit> VisitHistory
+);
+
+public sealed record CustomerVisitHistoryDto(
+    string CustomerPhone,
+    string CustomerName,
+    int TotalVisits,
+    int ConvertedDealsCount,
+    List<CustomerVisit> Visits
+);
+
 
 
 
