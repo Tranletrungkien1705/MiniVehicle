@@ -93,6 +93,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
     public DbSet<ProductionOrderLine> ProductionOrderLines => Set<ProductionOrderLine>();
     public DbSet<ProformaInvoice> ProformaInvoices => Set<ProformaInvoice>();
     public DbSet<ProformaInvoiceLine> ProformaInvoiceLines => Set<ProformaInvoiceLine>();
+    public DbSet<PdiPayment> PdiPayments => Set<PdiPayment>();
+    public DbSet<PdiPaymentLine> PdiPaymentLines => Set<PdiPaymentLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -138,5 +140,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> opt) : DbContext
         b.Entity<CustomerCare>().HasIndex(x => new { x.OrgId, x.CareNo }).IsUnique();
         b.Entity<ProductionOrder>().HasIndex(x => new { x.OrgId, x.OrderNo }).IsUnique();
         b.Entity<ProformaInvoice>().HasIndex(x => new { x.OrgId, x.RefNo }).IsUnique();
+        b.Entity<PdiPayment>().HasIndex(x => new { x.OrgId, x.PmtPdiNo }).IsUnique();
     }
 }

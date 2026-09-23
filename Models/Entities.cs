@@ -80,6 +80,11 @@ public sealed class Vehicle
     public string? LastPiNo { get; set; }             // Mã số Proforma Invoice gần nhất (Ord_PI / PerformanceInvoice)
     public DateTime? LastPiDate { get; set; }         // Ngày ban hành Proforma Invoice
     public int PiCount { get; set; } = 0;             // Tổng số lần lập PI liên quan đến xe
+    public bool IsPdiPaid { get; set; } = false;      // Đã quyết toán/thanh toán chi phí kiểm tra PDI (BizHTC.Payment.Pmt_PaymentPDI)
+    public decimal PdiPaidAmount { get; set; } = 0;   // Tổng tiền PDI đã thanh toán cho xe (VNĐ)
+    public string? LastPdiPaymentNo { get; set; }     // Mã bảng kê quyết toán PDI gần nhất (Pmt_PaymentPDI)
+    public DateTime? LastPdiPaymentDate { get; set; } // Ngày quyết toán PDI gần nhất
+    public int PdiPaymentCount { get; set; } = 0;     // Tổng số lần phát sinh quyết toán PDI
     public string? SOCode { get; set; }             // Đơn đặt hàng SO được phân bổ (Ord_SalesOrder)
     public string? DealerCode { get; set; }         // đại lý được phân bổ/giao
     public string? OwnerName { get; set; }
@@ -2476,3 +2481,188 @@ public sealed record VehiclePiInfoDto(
     ProformaInvoice? ProformaInvoice,
     ProformaInvoiceLine? ProformaInvoiceLine
 );
+
+/// <summary>Bảng kê & Quyết toán chi phí kiểm tra xe PDI cho Đại lý & Kho bãi (BizHTC.Payment.Pmt_PaymentPDI / PdiPayment): OEM thanh toán tiền công/chi phí kiểm tra xe PDI nhập bãi (PDIN / CostInCheck) và PDI xuất bãi/giao xe (PDIX / CostOutCheck) cho đại lý hoặc đơn vị vận hành bãi kho.</summary>
+public sealed class PdiPayment
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public string PmtPdiNo { get; set; } = "";             // Mã bảng kê quyết toán PDI (PDI-PAY-2026-03-0001, PDI202603-HN01-01...)
+    public string? PmtPdiNoUser { get; set; }            // Mã số bảng kê nội bộ tham chiếu
+    public string DealerCode { get; set; } = "";          // Mã đại lý thụ hưởng chi phí PDI
+    public string? DealerName { get; set; }               // Tên đại lý
+    public string? StorageCode { get; set; }              // Mã kho bãi kiểm tra (nếu có)
+    public string PeriodMonth { get; set; } = "";         // Kỳ quyết toán (YYYY-MM, ví dụ: 2026-03)
+    public DateTime PaymentDate { get; set; } = DateTime.Now; // Ngày lập bảng kê quyết toán
+    public int TotalVehicleCount { get; set; } = 0;       // Tổng số lượng xe quyết toán PDI trong kỳ
+    public decimal TotalCostIn { get; set; } = 0;         // Tổng chi phí PDI nhập bãi/kho trước thuế (VNĐ)
+    public decimal TotalCostOut { get; set; } = 0;        // Tổng chi phí PDI xuất bãi/giao xe trước thuế (VNĐ)
+    public decimal TotalAmount { get; set; } = 0;         // Tổng chi phí PDI trước thuế = TotalCostIn + TotalCostOut (VNĐ)
+    public decimal VatRate { get; set; } = 10m;           // Thuế suất GTGT VAT (%)
+    public decimal VatAmount { get; set; } = 0;           // Tiền thuế VAT (VNĐ) = TotalAmount * VatRate / 100
+    public decimal TotalAmountAfterVAT { get; set; } = 0; // Tổng tiền thanh toán sau thuế = TotalAmount + VatAmount (VNĐ)
+    public string? FileSigned { get; set; }               // Tệp văn bản bảng kê quyết toán PDI ký số điện tử
+    public string? BankRefNo { get; set; }                // Mã giao dịch / Ủy nhiệm chi ngân hàng chuyển khoản thanh toán
+    public DateTime? SettledDate { get; set; }            // Ngày thực tế thanh toán / bù trừ công nợ tiền PDI
+    public string Status { get; set; } = "Draft";         // Draft → Submitted → Approved1 → Approved2 → TCMSSigned → HTVSigned (Settled) (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }                   // Ghi chú giải trình bảng kê
+    public string? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string? Approved1By { get; set; }              // Kỹ thuật/Dịch vụ xưởng OEM duyệt danh sách xe đủ tiêu chuẩn
+    public DateTime? Approved1At { get; set; }
+    public string? Approved2By { get; set; }              // Kế toán/Tài chính OEM duyệt chi phí
+    public DateTime? Approved2At { get; set; }
+    public string? TCMSSignedBy { get; set; }             // Lãnh đạo Khối Phân phối OEM ký số
+    public DateTime? TCMSSignedAt { get; set; }
+    public string? HTVSignedBy { get; set; }              // Lãnh đạo Nhà máy HTV ký số
+    public DateTime? HTVSignedAt { get; set; }
+    public string? SettledBy { get; set; }                // Kế toán thanh toán xác nhận đã chi tiền
+    public DateTime? SettledAt { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectReason { get; set; }
+    public string? CancelledBy { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public string? CancelReason { get; set; }
+}
+
+/// <summary>Chi tiết xe trong bảng kê quyết toán chi phí PDI (BizHTC.Payment.Pmt_PaymentPDIDetail / PdiPaymentLine): danh sách VIN, chi phí PDI nhập bãi (CostInCheck), chi phí PDI xuất bãi (CostOutCheck), tổng chi phí và kết quả kiểm tra PDI.</summary>
+public sealed class PdiPaymentLine
+{
+    public long Id { get; set; }
+    public Guid OrgId { get; set; }
+    public long PdiPaymentId { get; set; }
+    public string PmtPdiNo { get; set; } = "";
+    public int LineIndex { get; set; } = 1;               // Thứ tự dòng trong bảng kê
+    public string Vin { get; set; } = "";                 // Số khung VIN
+    public string Model { get; set; } = "";               // Dòng xe (Accent, Creta, Tucson, SantaFe...)
+    public string? SpecCode { get; set; }                 // Phiên bản xe
+    public string? EngineNo { get; set; }                 // Số máy
+    public string? Color { get; set; }                    // Màu sắc
+    public string? StorageCode { get; set; }              // Kho bãi kiểm tra
+    public string? DealerCode { get; set; }               // Đại lý thực hiện PDI
+    public string? PdiReqNo { get; set; }                 // Mã yêu cầu PDI gốc liên kết (Dlr_PDIRequest)
+    public string? DlvMnNo { get; set; }                  // Mã biên bản giao xe liên kết (Sto_DlvMinutes)
+    public decimal CostInCheck { get; set; } = 0;         // Chi phí PDI nhập bãi / kho (VNĐ)
+    public decimal CostOutCheck { get; set; } = 0;        // Chi phí PDI xuất bãi / giao xe (VNĐ)
+    public decimal TotalCostCheck { get; set; } = 0;      // Tổng chi phí kiểm tra xe = CostInCheck + CostOutCheck (VNĐ)
+    public DateTime? PdiCompletedDate { get; set; }       // Ngày nghiệm thu hoàn thành PDI
+    public string PdiResult { get; set; } = "Passed";     // Kết quả PDI: Passed, Approved, DefectResolved
+    public string Status { get; set; } = "Pending";       // Pending → Submitted → Approved1 → Approved2 → TCMSSigned → Settled (hoặc Rejected / Cancelled)
+    public string? Remark { get; set; }
+}
+
+// ===== DTOs cho Bảng kê & Quyết toán chi phí kiểm tra PDI (BizHTC.Payment.Pmt_PaymentPDI / PdiPayment) =====
+
+public sealed record CreatePdiPaymentDto(
+    string? PmtPdiNo,
+    string? PmtPdiNoUser,
+    string DealerCode,
+    string? DealerName,
+    string? StorageCode,
+    string PeriodMonth,
+    DateTime? PaymentDate,
+    decimal? VatRate,
+    string? Remark,
+    string? CreatedBy,
+    List<PdiPaymentItemInputDto>? Items,
+    List<string>? Vins
+);
+
+public sealed record PdiPaymentItemInputDto(
+    string Vin,
+    string? Model,
+    string? SpecCode,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    string? PdiReqNo,
+    string? DlvMnNo,
+    decimal? CostInCheck,
+    decimal? CostOutCheck,
+    DateTime? PdiCompletedDate,
+    string? PdiResult,
+    string? Remark
+);
+
+public sealed record UpdatePdiPaymentHeaderDto(
+    string? PmtPdiNoUser,
+    string? DealerCode,
+    string? DealerName,
+    string? StorageCode,
+    string? PeriodMonth,
+    DateTime? PaymentDate,
+    decimal? VatRate,
+    string? BankRefNo,
+    DateTime? SettledDate,
+    string? FileSigned,
+    string? Remark
+);
+
+public sealed record PdiPaymentTransitionDto(
+    string? Note,
+    string? Actor,
+    string? Reason,
+    DateTime? TransitionDate,
+    string? BankRefNo,
+    string? FileSigned
+);
+
+public sealed record UpdatePdiPaymentLineDto(
+    string? Model,
+    string? SpecCode,
+    string? EngineNo,
+    string? Color,
+    string? StorageCode,
+    string? DealerCode,
+    string? PdiReqNo,
+    string? DlvMnNo,
+    decimal? CostInCheck,
+    decimal? CostOutCheck,
+    DateTime? PdiCompletedDate,
+    string? PdiResult,
+    string? Status,
+    string? Remark
+);
+
+public sealed record PdiPaymentSummaryDto(
+    int TotalPayments,
+    int TotalDraft,
+    int TotalSubmitted,
+    int TotalApproved1,
+    int TotalApproved2,
+    int TotalTCMSSigned,
+    int TotalSettled,
+    int TotalCancelled,
+    int TotalVehicleCount,
+    decimal TotalCostIn,
+    decimal TotalCostOut,
+    decimal TotalAmount,
+    decimal TotalVatAmount,
+    decimal TotalAmountAfterVAT,
+    decimal SettlementRatePercent,
+    List<PdiPaymentDealerStatsDto> ByDealer,
+    List<PdiPaymentStorageStatsDto> ByStorage,
+    List<PdiPaymentMonthStatsDto> ByPeriodMonth
+);
+
+public sealed record PdiPaymentDealerStatsDto(string DealerCode, string DealerName, int PaymentCount, int TotalVehicles, decimal TotalAmount, decimal SettledAmount);
+public sealed record PdiPaymentStorageStatsDto(string StorageCode, int PaymentCount, int TotalVehicles, decimal TotalAmount);
+public sealed record PdiPaymentMonthStatsDto(string PeriodMonth, int PaymentCount, int TotalVehicles, decimal TotalAmount);
+
+public sealed record VehiclePdiPaymentInfoDto(
+    string Vin,
+    string Model,
+    string? EngineNo,
+    string? Color,
+    int? ModelYear,
+    bool IsPdiPaid,
+    decimal PdiPaidAmount,
+    string? LastPdiPaymentNo,
+    DateTime? LastPdiPaymentDate,
+    int PdiPaymentCount,
+    PdiPayment? PdiPayment,
+    PdiPaymentLine? PdiPaymentLine
+);
+

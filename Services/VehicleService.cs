@@ -1914,6 +1914,19 @@ public interface IVehicleService
     Task<object?> GetVehiclePiInfoAsync(string vin);
     Task<object?> GetVehiclePiHistoryAsync(string vin);
     Task<object> GetProformaInvoiceSummaryAsync(string? dealerCode, string? orderMonth);
+
+    // Bảng kê & Quyết toán chi phí kiểm tra PDI xe cho Đại lý & Kho bãi (BizHTC.Payment.Pmt_PaymentPDI / PdiPayment)
+    Task<object> CreatePdiPaymentAsync(CreatePdiPaymentDto dto);
+    Task<object> ListPdiPaymentsAsync(string? status, string? dealer, string? storage, string? periodMonth, string? pmtPdiNo, string? vin);
+    Task<object?> GetPdiPaymentAsync(string pmtPdiNo);
+    Task<object?> UpdatePdiPaymentHeaderAsync(string pmtPdiNo, UpdatePdiPaymentHeaderDto dto);
+    Task<object?> PdiPaymentTransitionAsync(string pmtPdiNo, string action, PdiPaymentTransitionDto? dto);
+    Task<object?> AddPdiPaymentLinesAsync(string pmtPdiNo, List<PdiPaymentItemInputDto> items);
+    Task<object?> UpdatePdiPaymentLineAsync(string pmtPdiNo, string vin, UpdatePdiPaymentLineDto dto);
+    Task<object?> RemovePdiPaymentLineAsync(string pmtPdiNo, string vin);
+    Task<object?> GetVehiclePdiPaymentInfoAsync(string vin);
+    Task<object?> GetVehiclePdiPaymentHistoryAsync(string vin);
+    Task<object> GetPdiPaymentSummaryAsync(string? dealerCode, string? periodMonth, string? storageCode);
 }
 
 public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVehicleService
@@ -23725,6 +23738,949 @@ public sealed class VehicleService(AppDbContext db, ITenantContext tenant) : IVe
             byModel,
             byDealer,
             byOrderMonth
+        };
+    }
+
+    // ===== Bảng kê & Quyết toán chi phí kiểm tra PDI xe cho Đại lý & Kho bãi (BizHTC.Payment.Pmt_PaymentPDI / PdiPayment) =====
+
+    public async Task<object> CreatePdiPaymentAsync(CreatePdiPaymentDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DealerCode))
+            throw new InvalidOperationException("Cần mã đại lý DealerCode.");
+        if (string.IsNullOrWhiteSpace(dto.PeriodMonth))
+            throw new InvalidOperationException("Cần kỳ quyết toán PeriodMonth (YYYY-MM).");
+
+        var dealer = dto.DealerCode.Trim().ToUpperInvariant();
+        var periodMonth = dto.PeriodMonth.Trim();
+        var inputItems = new List<PdiPaymentItemInputDto>();
+        var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (dto.Items != null && dto.Items.Count > 0)
+        {
+            foreach (var item in dto.Items)
+            {
+                if (string.IsNullOrWhiteSpace(item.Vin)) continue;
+                var cleanVin = item.Vin.Trim().ToUpperInvariant();
+                if (seenVins.Add(cleanVin))
+                {
+                    inputItems.Add(item with { Vin = cleanVin });
+                }
+            }
+        }
+        else if (dto.Vins != null && dto.Vins.Count > 0)
+        {
+            foreach (var v in dto.Vins)
+            {
+                if (string.IsNullOrWhiteSpace(v)) continue;
+                var cleanVin = v.Trim().ToUpperInvariant();
+                if (seenVins.Add(cleanVin))
+                {
+                    inputItems.Add(new PdiPaymentItemInputDto(
+                        Vin: cleanVin,
+                        Model: null,
+                        SpecCode: null,
+                        EngineNo: null,
+                        Color: null,
+                        StorageCode: dto.StorageCode,
+                        DealerCode: dealer,
+                        PdiReqNo: null,
+                        DlvMnNo: null,
+                        CostInCheck: null,
+                        CostOutCheck: null,
+                        PdiCompletedDate: null,
+                        PdiResult: "Passed",
+                        Remark: null
+                    ));
+                }
+            }
+        }
+
+        if (inputItems.Count == 0)
+            throw new InvalidOperationException("Cần danh sách xe Items hoặc Vins trong bảng kê quyết toán PDI.");
+
+        var allVins = inputItems.Select(i => i.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && allVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        foreach (var vin in allVins)
+        {
+            if (!vehicles.ContainsKey(vin))
+                throw new InvalidOperationException($"Không tìm thấy số khung VIN {vin} trong hệ thống.");
+        }
+
+        var seq = await db.PdiPayments.CountAsync(p => p.OrgId == Org && p.PeriodMonth == periodMonth) + 1;
+        var pmtPdiNo = string.IsNullOrWhiteSpace(dto.PmtPdiNo)
+            ? $"PDI-PAY-{periodMonth.Replace("-", "")}-{seq:D4}"
+            : dto.PmtPdiNo.Trim().ToUpperInvariant();
+
+        if (await db.PdiPayments.AnyAsync(p => p.OrgId == Org && p.PmtPdiNo == pmtPdiNo))
+            throw new InvalidOperationException($"Mã bảng kê quyết toán PDI {pmtPdiNo} đã tồn tại.");
+
+        var vatRate = dto.VatRate ?? 10m;
+        var payment = new PdiPayment
+        {
+            OrgId = Org,
+            PmtPdiNo = pmtPdiNo,
+            PmtPdiNoUser = dto.PmtPdiNoUser?.Trim(),
+            DealerCode = dealer,
+            DealerName = dto.DealerName?.Trim(),
+            StorageCode = dto.StorageCode?.Trim(),
+            PeriodMonth = periodMonth,
+            PaymentDate = dto.PaymentDate ?? DateTime.Now,
+            VatRate = vatRate,
+            Status = "Draft",
+            Remark = dto.Remark?.Trim(),
+            CreatedBy = dto.CreatedBy?.Trim() ?? "PdiCoordinator",
+            CreatedAt = DateTime.Now
+        };
+
+        db.PdiPayments.Add(payment);
+        await db.SaveChangesAsync();
+
+        decimal totalCostIn = 0;
+        decimal totalCostOut = 0;
+        int lineIndex = 1;
+
+        foreach (var it in inputItems)
+        {
+            var v = vehicles[it.Vin];
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : v.Model;
+            var spec = it.SpecCode ?? v.ModelYear?.ToString();
+            var engine = it.EngineNo ?? v.EngineNo;
+            var color = it.Color ?? v.Color;
+            var storage = it.StorageCode ?? v.StorageCode ?? payment.StorageCode;
+            var lineDealer = it.DealerCode ?? v.DealerCode ?? payment.DealerCode;
+
+            // Đơn giá định mức chi phí kiểm tra PDI chuẩn theo quy chế OEM (CostInCheck = 250k, CostOutCheck = 200k)
+            var costIn = it.CostInCheck.HasValue && it.CostInCheck.Value >= 0 ? it.CostInCheck.Value : 250000m;
+            var costOut = it.CostOutCheck.HasValue && it.CostOutCheck.Value >= 0 ? it.CostOutCheck.Value : 200000m;
+            var totalLineCost = costIn + costOut;
+
+            totalCostIn += costIn;
+            totalCostOut += costOut;
+
+            var line = new PdiPaymentLine
+            {
+                OrgId = Org,
+                PdiPaymentId = payment.Id,
+                PmtPdiNo = pmtPdiNo,
+                LineIndex = lineIndex++,
+                Vin = it.Vin,
+                Model = model,
+                SpecCode = spec,
+                EngineNo = engine,
+                Color = color,
+                StorageCode = storage,
+                DealerCode = lineDealer,
+                PdiReqNo = it.PdiReqNo?.Trim(),
+                DlvMnNo = it.DlvMnNo?.Trim(),
+                CostInCheck = costIn,
+                CostOutCheck = costOut,
+                TotalCostCheck = totalLineCost,
+                PdiCompletedDate = it.PdiCompletedDate ?? DateTime.Now,
+                PdiResult = string.IsNullOrWhiteSpace(it.PdiResult) ? "Passed" : it.PdiResult.Trim(),
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            db.PdiPaymentLines.Add(line);
+            Log(it.Vin, "PdiPaymentDraftCreated", $"{pmtPdiNo} Lập bảng kê quyết toán chi phí PDI kỳ {periodMonth}. Số tiền: {totalLineCost:N0} VNĐ (Nhập: {costIn:N0}, Xuất: {costOut:N0})");
+        }
+
+        var totalAmount = totalCostIn + totalCostOut;
+        var vatAmount = Math.Round(totalAmount * vatRate / 100, 0);
+
+        payment.TotalVehicleCount = inputItems.Count;
+        payment.TotalCostIn = totalCostIn;
+        payment.TotalCostOut = totalCostOut;
+        payment.TotalAmount = totalAmount;
+        payment.VatAmount = vatAmount;
+        payment.TotalAmountAfterVAT = totalAmount + vatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            payment.PmtPdiNo,
+            payment.PmtPdiNoUser,
+            payment.DealerCode,
+            payment.DealerName,
+            payment.PeriodMonth,
+            payment.PaymentDate,
+            payment.TotalVehicleCount,
+            payment.TotalCostIn,
+            payment.TotalCostOut,
+            payment.TotalAmount,
+            payment.VatRate,
+            payment.VatAmount,
+            payment.TotalAmountAfterVAT,
+            payment.Status,
+            linesCount = inputItems.Count
+        };
+    }
+
+    public async Task<object> ListPdiPaymentsAsync(string? status, string? dealer, string? storage, string? periodMonth, string? pmtPdiNo, string? vin)
+    {
+        var q = db.PdiPayments.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(p => p.Status.ToLower() == status.Trim().ToLower());
+        if (!string.IsNullOrWhiteSpace(dealer)) q = q.Where(p => p.DealerCode.ToLower().Contains(dealer.Trim().ToLower()));
+        if (!string.IsNullOrWhiteSpace(storage)) q = q.Where(p => p.StorageCode != null && p.StorageCode.ToLower().Contains(storage.Trim().ToLower()));
+        if (!string.IsNullOrWhiteSpace(periodMonth)) q = q.Where(p => p.PeriodMonth == periodMonth.Trim());
+        if (!string.IsNullOrWhiteSpace(pmtPdiNo)) q = q.Where(p => p.PmtPdiNo.ToLower().Contains(pmtPdiNo.Trim().ToLower()));
+        if (!string.IsNullOrWhiteSpace(vin))
+        {
+            var vv = vin.Trim().ToUpperInvariant();
+            var matchedNos = await db.PdiPaymentLines.Where(l => l.OrgId == Org && l.Vin == vv).Select(l => l.PmtPdiNo).Distinct().ToListAsync();
+            q = q.Where(p => matchedNos.Contains(p.PmtPdiNo));
+        }
+
+        var items = await q.OrderByDescending(p => p.Id).Take(500).Select(p => new
+        {
+            p.Id,
+            p.PmtPdiNo,
+            p.PmtPdiNoUser,
+            p.DealerCode,
+            p.DealerName,
+            p.StorageCode,
+            p.PeriodMonth,
+            p.PaymentDate,
+            p.TotalVehicleCount,
+            p.TotalCostIn,
+            p.TotalCostOut,
+            p.TotalAmount,
+            p.VatRate,
+            p.VatAmount,
+            p.TotalAmountAfterVAT,
+            p.Status,
+            p.CreatedBy,
+            p.CreatedAt,
+            p.Approved1By,
+            p.Approved1At,
+            p.Approved2By,
+            p.Approved2At,
+            p.TCMSSignedBy,
+            p.TCMSSignedAt,
+            p.HTVSignedBy,
+            p.HTVSignedAt,
+            p.SettledBy,
+            p.SettledAt,
+            p.BankRefNo,
+            p.SettledDate,
+            p.FileSigned,
+            p.Remark
+        }).ToListAsync();
+
+        return new { count = items.Count, items };
+    }
+
+    public async Task<object?> GetPdiPaymentAsync(string pmtPdiNo)
+    {
+        pmtPdiNo = pmtPdiNo.Trim().ToUpperInvariant();
+        var payment = await db.PdiPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PmtPdiNo == pmtPdiNo);
+        if (payment is null) return null;
+
+        var lines = await db.PdiPaymentLines.Where(l => l.OrgId == Org && l.PdiPaymentId == payment.Id).OrderBy(l => l.LineIndex).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var details = lines.Select(l => new
+        {
+            l.Id,
+            l.PmtPdiNo,
+            l.LineIndex,
+            l.Vin,
+            l.Model,
+            l.SpecCode,
+            l.EngineNo,
+            l.Color,
+            l.StorageCode,
+            l.DealerCode,
+            l.PdiReqNo,
+            l.DlvMnNo,
+            l.CostInCheck,
+            l.CostOutCheck,
+            l.TotalCostCheck,
+            l.PdiCompletedDate,
+            l.PdiResult,
+            l.Status,
+            l.Remark,
+            vehicle = vehicles.TryGetValue(l.Vin, out var v) ? new
+            {
+                v.Model,
+                v.Color,
+                v.EngineNo,
+                status = v.Status.ToString(),
+                v.DealerCode,
+                v.StorageCode,
+                v.IsPdiPaid,
+                v.PdiPaidAmount,
+                v.LastPdiPaymentNo,
+                v.LastPdiPaymentDate
+            } : null
+        }).ToList();
+
+        return new
+        {
+            payment.Id,
+            payment.PmtPdiNo,
+            payment.PmtPdiNoUser,
+            payment.DealerCode,
+            payment.DealerName,
+            payment.StorageCode,
+            payment.PeriodMonth,
+            payment.PaymentDate,
+            payment.TotalVehicleCount,
+            payment.TotalCostIn,
+            payment.TotalCostOut,
+            payment.TotalAmount,
+            payment.VatRate,
+            payment.VatAmount,
+            payment.TotalAmountAfterVAT,
+            payment.FileSigned,
+            payment.BankRefNo,
+            payment.SettledDate,
+            payment.Status,
+            payment.CreatedBy,
+            payment.CreatedAt,
+            payment.Approved1By,
+            payment.Approved1At,
+            payment.Approved2By,
+            payment.Approved2At,
+            payment.TCMSSignedBy,
+            payment.TCMSSignedAt,
+            payment.HTVSignedBy,
+            payment.HTVSignedAt,
+            payment.SettledBy,
+            payment.SettledAt,
+            payment.RejectedBy,
+            payment.RejectedAt,
+            payment.RejectReason,
+            payment.CancelledBy,
+            payment.CancelledAt,
+            payment.CancelReason,
+            payment.Remark,
+            lines = details
+        };
+    }
+
+    public async Task<object?> UpdatePdiPaymentHeaderAsync(string pmtPdiNo, UpdatePdiPaymentHeaderDto dto)
+    {
+        pmtPdiNo = pmtPdiNo.Trim().ToUpperInvariant();
+        var payment = await db.PdiPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PmtPdiNo == pmtPdiNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể sửa bảng kê quyết toán PDI ở trạng thái {payment.Status}.");
+
+        if (dto.PmtPdiNoUser != null) payment.PmtPdiNoUser = dto.PmtPdiNoUser.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.DealerCode)) payment.DealerCode = dto.DealerCode.Trim().ToUpperInvariant();
+        if (dto.DealerName != null) payment.DealerName = dto.DealerName.Trim();
+        if (dto.StorageCode != null) payment.StorageCode = dto.StorageCode.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.PeriodMonth)) payment.PeriodMonth = dto.PeriodMonth.Trim();
+        if (dto.PaymentDate.HasValue) payment.PaymentDate = dto.PaymentDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.BankRefNo)) payment.BankRefNo = dto.BankRefNo.Trim();
+        if (dto.SettledDate.HasValue) payment.SettledDate = dto.SettledDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.FileSigned)) payment.FileSigned = dto.FileSigned.Trim();
+        if (dto.Remark != null) payment.Remark = dto.Remark.Trim();
+
+        if (dto.VatRate.HasValue && dto.VatRate.Value >= 0)
+        {
+            payment.VatRate = dto.VatRate.Value;
+            payment.VatAmount = Math.Round(payment.TotalAmount * payment.VatRate / 100, 0);
+            payment.TotalAmountAfterVAT = payment.TotalAmount + payment.VatAmount;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            payment.PmtPdiNo,
+            payment.PmtPdiNoUser,
+            payment.DealerCode,
+            payment.DealerName,
+            payment.PeriodMonth,
+            payment.PaymentDate,
+            payment.TotalAmount,
+            payment.VatRate,
+            payment.VatAmount,
+            payment.TotalAmountAfterVAT,
+            payment.BankRefNo,
+            payment.SettledDate,
+            payment.Status,
+            payment.Remark
+        };
+    }
+
+    public async Task<object?> PdiPaymentTransitionAsync(string pmtPdiNo, string action, PdiPaymentTransitionDto? dto)
+    {
+        pmtPdiNo = pmtPdiNo.Trim().ToUpperInvariant();
+        var act = action.Trim().ToLowerInvariant();
+
+        var payment = await db.PdiPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PmtPdiNo == pmtPdiNo);
+        if (payment is null) return null;
+
+        var lines = await db.PdiPaymentLines.Where(l => l.OrgId == Org && l.PdiPaymentId == payment.Id).ToListAsync();
+        var lineVins = lines.Select(l => l.Vin).ToList();
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && lineVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+
+        var now = DateTime.Now;
+
+        switch (act)
+        {
+            case "submit":
+                if (payment.Status != "Draft") return null;
+                payment.Status = "Submitted";
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    payment.Remark = (payment.Remark + " | Trình duyệt: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Submitted";
+                    Log(line.Vin, "PdiPaymentSubmitted", $"{pmtPdiNo} Trình duyệt bảng kê quyết toán PDI kỳ {payment.PeriodMonth} tới Hãng OEM. Số tiền: {line.TotalCostCheck:N0} VNĐ");
+                }
+                break;
+
+            case "approve1":
+            case "approve-tech":
+            case "tech-approve":
+                if (payment.Status is not ("Draft" or "Submitted")) return null;
+                payment.Status = "Approved1";
+                payment.Approved1By = dto?.Actor?.Trim() ?? "OEM.ServiceDepartment";
+                payment.Approved1At = now;
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    payment.Remark = (payment.Remark + " | Duyệt kỹ thuật: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Approved1";
+                    Log(line.Vin, "PdiPaymentApproved1", $"{pmtPdiNo} Bộ phận Dịch vụ & Sau bán hàng OEM thẩm định đạt chuẩn chất lượng PDI. Người duyệt: {payment.Approved1By}");
+                }
+                break;
+
+            case "approve2":
+            case "approve-finance":
+            case "finance-approve":
+            case "approve":
+                if (payment.Status is not ("Submitted" or "Approved1")) return null;
+                payment.Status = "Approved2";
+                payment.Approved2By = dto?.Actor?.Trim() ?? "OEM.FinanceDepartment";
+                payment.Approved2At = now;
+                if (string.IsNullOrWhiteSpace(payment.Approved1By))
+                {
+                    payment.Approved1By = payment.Approved2By;
+                    payment.Approved1At = now;
+                }
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    payment.Remark = (payment.Remark + " | Duyệt tài chính: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Approved2";
+                    Log(line.Vin, "PdiPaymentApproved2", $"{pmtPdiNo} Bộ phận Tài chính Kế toán OEM phê duyệt định mức quyết toán PDI. Người duyệt: {payment.Approved2By}");
+                }
+                break;
+
+            case "tcms-sign":
+            case "tcmssign":
+            case "sign-tcms":
+                if (payment.Status is not ("Approved1" or "Approved2")) return null;
+                payment.Status = "TCMSSigned";
+                payment.TCMSSignedBy = dto?.Actor?.Trim() ?? "OEM.TCMSDirector";
+                payment.TCMSSignedAt = now;
+                if (!string.IsNullOrWhiteSpace(dto?.FileSigned)) payment.FileSigned = dto.FileSigned.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    payment.Remark = (payment.Remark + " | Ký số TCMS: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "TCMSSigned";
+                    Log(line.Vin, "PdiPaymentTCMSSigned", $"{pmtPdiNo} Lãnh đạo Khối Phân phối TCMS ký số phê duyệt chi trả PDI. Người ký: {payment.TCMSSignedBy}");
+                }
+                break;
+
+            case "htv-sign":
+            case "htvsign":
+            case "sign-htv":
+            case "settle":
+            case "complete":
+            case "finish":
+                if (payment.Status is not ("Approved2" or "TCMSSigned" or "Approved1")) return null;
+                payment.Status = "Settled";
+                payment.HTVSignedBy = dto?.Actor?.Trim() ?? "HTV.GeneralDirector";
+                payment.HTVSignedAt = now;
+                payment.SettledBy = dto?.Actor?.Trim() ?? "HTV.ChiefAccountant";
+                payment.SettledAt = now;
+                payment.SettledDate = dto?.TransitionDate ?? now;
+                if (!string.IsNullOrWhiteSpace(dto?.BankRefNo)) payment.BankRefNo = dto.BankRefNo.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.FileSigned)) payment.FileSigned = dto.FileSigned.Trim();
+                if (string.IsNullOrWhiteSpace(payment.TCMSSignedBy))
+                {
+                    payment.TCMSSignedBy = payment.HTVSignedBy;
+                    payment.TCMSSignedAt = now;
+                }
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    payment.Remark = (payment.Remark + " | Thanh toán hoàn tất: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Settled";
+                    if (vehicles.TryGetValue(line.Vin, out var v))
+                    {
+                        v.IsPdiPaid = true;
+                        v.PdiPaidAmount += line.TotalCostCheck;
+                        v.LastPdiPaymentNo = payment.PmtPdiNo;
+                        v.LastPdiPaymentDate = now;
+                        v.PdiPaymentCount++;
+                        Log(v.Vin, "PdiPaymentSettled", $"{pmtPdiNo} Hoàn tất thanh toán/bù trừ công nợ chi phí PDI cho đại lý {payment.DealerCode}. Số tiền: {line.TotalCostCheck:N0} VNĐ. Mã GD: {payment.BankRefNo ?? "N/A"}");
+                    }
+                }
+                break;
+
+            case "reject":
+                if (payment.Status is "Settled" or "Cancelled") return null;
+                payment.Status = "Rejected";
+                payment.RejectedBy = dto?.Actor?.Trim() ?? "OEM.Approver";
+                payment.RejectedAt = now;
+                payment.RejectReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    payment.Remark = (payment.Remark + " | Từ chối: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Rejected";
+                    Log(line.Vin, "PdiPaymentRejected", $"{pmtPdiNo} Từ chối bảng kê quyết toán PDI: {payment.RejectReason ?? "N/A"}");
+                }
+                break;
+
+            case "cancel":
+                if (payment.Status is "Settled") return null;
+                payment.Status = "Cancelled";
+                payment.CancelledBy = dto?.Actor?.Trim() ?? "PdiCoordinator";
+                payment.CancelledAt = now;
+                payment.CancelReason = dto?.Reason?.Trim() ?? dto?.Note?.Trim();
+                if (!string.IsNullOrWhiteSpace(dto?.Note))
+                    payment.Remark = (payment.Remark + " | Hủy bảng kê: " + dto.Note).Trim(' ', '|');
+
+                foreach (var line in lines)
+                {
+                    line.Status = "Cancelled";
+                    Log(line.Vin, "PdiPaymentCancelled", $"{pmtPdiNo} Hủy bảng kê quyết toán PDI: {payment.CancelReason ?? "N/A"}");
+                }
+                break;
+
+            default:
+                return null;
+        }
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            payment.PmtPdiNo,
+            payment.DealerCode,
+            payment.PeriodMonth,
+            status = payment.Status,
+            payment.TotalVehicleCount,
+            payment.TotalAmount,
+            payment.TotalAmountAfterVAT,
+            payment.Approved1At,
+            payment.Approved2At,
+            payment.TCMSSignedAt,
+            payment.HTVSignedAt,
+            payment.SettledAt,
+            payment.BankRefNo,
+            payment.SettledDate
+        };
+    }
+
+    public async Task<object?> AddPdiPaymentLinesAsync(string pmtPdiNo, List<PdiPaymentItemInputDto> items)
+    {
+        pmtPdiNo = pmtPdiNo.Trim().ToUpperInvariant();
+        var payment = await db.PdiPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PmtPdiNo == pmtPdiNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể thêm xe vào bảng kê quyết toán PDI ở trạng thái {payment.Status}.");
+
+        var existingLines = await db.PdiPaymentLines.Where(l => l.OrgId == Org && l.PdiPaymentId == payment.Id).ToListAsync();
+        var existingVins = new HashSet<string>(existingLines.Select(l => l.Vin), StringComparer.OrdinalIgnoreCase);
+
+        var newVins = items.Where(i => !string.IsNullOrWhiteSpace(i.Vin))
+                           .Select(i => i.Vin.Trim().ToUpperInvariant())
+                           .Where(v => !existingVins.Contains(v))
+                           .Distinct().ToList();
+
+        if (newVins.Count == 0)
+            throw new InvalidOperationException("Không có số khung VIN mới hợp lệ để thêm vào bảng kê.");
+
+        var vehicles = await db.Vehicles.Where(v => v.OrgId == Org && newVins.Contains(v.Vin)).ToDictionaryAsync(v => v.Vin);
+        foreach (var vin in newVins)
+        {
+            if (!vehicles.ContainsKey(vin))
+                throw new InvalidOperationException($"Không tìm thấy số khung VIN {vin} trong hệ thống.");
+        }
+
+        int maxIndex = existingLines.Count > 0 ? existingLines.Max(l => l.LineIndex) : 0;
+
+        foreach (var it in items)
+        {
+            var cleanVin = it.Vin.Trim().ToUpperInvariant();
+            if (!newVins.Contains(cleanVin)) continue;
+
+            var v = vehicles[cleanVin];
+            var model = !string.IsNullOrWhiteSpace(it.Model) ? it.Model.Trim() : v.Model;
+            var spec = it.SpecCode ?? v.ModelYear?.ToString();
+            var engine = it.EngineNo ?? v.EngineNo;
+            var color = it.Color ?? v.Color;
+            var storage = it.StorageCode ?? v.StorageCode ?? payment.StorageCode;
+            var lineDealer = it.DealerCode ?? v.DealerCode ?? payment.DealerCode;
+
+            var costIn = it.CostInCheck.HasValue && it.CostInCheck.Value >= 0 ? it.CostInCheck.Value : 250000m;
+            var costOut = it.CostOutCheck.HasValue && it.CostOutCheck.Value >= 0 ? it.CostOutCheck.Value : 200000m;
+            var totalLineCost = costIn + costOut;
+
+            var line = new PdiPaymentLine
+            {
+                OrgId = Org,
+                PdiPaymentId = payment.Id,
+                PmtPdiNo = pmtPdiNo,
+                LineIndex = ++maxIndex,
+                Vin = cleanVin,
+                Model = model,
+                SpecCode = spec,
+                EngineNo = engine,
+                Color = color,
+                StorageCode = storage,
+                DealerCode = lineDealer,
+                PdiReqNo = it.PdiReqNo?.Trim(),
+                DlvMnNo = it.DlvMnNo?.Trim(),
+                CostInCheck = costIn,
+                CostOutCheck = costOut,
+                TotalCostCheck = totalLineCost,
+                PdiCompletedDate = it.PdiCompletedDate ?? DateTime.Now,
+                PdiResult = string.IsNullOrWhiteSpace(it.PdiResult) ? "Passed" : it.PdiResult.Trim(),
+                Status = "Pending",
+                Remark = it.Remark?.Trim()
+            };
+
+            db.PdiPaymentLines.Add(line);
+            Log(cleanVin, "PdiPaymentLineAdded", $"{pmtPdiNo} Bổ sung xe vào bảng kê quyết toán PDI kỳ {payment.PeriodMonth}. Số tiền: {totalLineCost:N0} VNĐ");
+        }
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.PdiPaymentLines.Where(l => l.OrgId == Org && l.PdiPaymentId == payment.Id).ToListAsync();
+        payment.TotalVehicleCount = allLines.Count;
+        payment.TotalCostIn = allLines.Sum(l => l.CostInCheck);
+        payment.TotalCostOut = allLines.Sum(l => l.CostOutCheck);
+        payment.TotalAmount = payment.TotalCostIn + payment.TotalCostOut;
+        payment.VatAmount = Math.Round(payment.TotalAmount * payment.VatRate / 100, 0);
+        payment.TotalAmountAfterVAT = payment.TotalAmount + payment.VatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            payment.PmtPdiNo,
+            addedCount = newVins.Count,
+            payment.TotalVehicleCount,
+            payment.TotalCostIn,
+            payment.TotalCostOut,
+            payment.TotalAmount,
+            payment.TotalAmountAfterVAT
+        };
+    }
+
+    public async Task<object?> UpdatePdiPaymentLineAsync(string pmtPdiNo, string vin, UpdatePdiPaymentLineDto dto)
+    {
+        pmtPdiNo = pmtPdiNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var payment = await db.PdiPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PmtPdiNo == pmtPdiNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể sửa dòng chi tiết bảng kê quyết toán PDI ở trạng thái {payment.Status}.");
+
+        var line = await db.PdiPaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.PdiPaymentId == payment.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(dto.Model)) line.Model = dto.Model.Trim();
+        if (dto.SpecCode != null) line.SpecCode = dto.SpecCode.Trim();
+        if (dto.EngineNo != null) line.EngineNo = dto.EngineNo.Trim();
+        if (dto.Color != null) line.Color = dto.Color.Trim();
+        if (dto.StorageCode != null) line.StorageCode = dto.StorageCode.Trim();
+        if (dto.DealerCode != null) line.DealerCode = dto.DealerCode.Trim();
+        if (dto.PdiReqNo != null) line.PdiReqNo = dto.PdiReqNo.Trim();
+        if (dto.DlvMnNo != null) line.DlvMnNo = dto.DlvMnNo.Trim();
+        if (dto.PdiCompletedDate.HasValue) line.PdiCompletedDate = dto.PdiCompletedDate.Value;
+        if (!string.IsNullOrWhiteSpace(dto.PdiResult)) line.PdiResult = dto.PdiResult.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Status)) line.Status = dto.Status.Trim();
+        if (dto.Remark != null) line.Remark = dto.Remark.Trim();
+
+        if (dto.CostInCheck.HasValue && dto.CostInCheck.Value >= 0) line.CostInCheck = dto.CostInCheck.Value;
+        if (dto.CostOutCheck.HasValue && dto.CostOutCheck.Value >= 0) line.CostOutCheck = dto.CostOutCheck.Value;
+        line.TotalCostCheck = line.CostInCheck + line.CostOutCheck;
+
+        await db.SaveChangesAsync();
+
+        var allLines = await db.PdiPaymentLines.Where(l => l.OrgId == Org && l.PdiPaymentId == payment.Id).ToListAsync();
+        payment.TotalCostIn = allLines.Sum(l => l.CostInCheck);
+        payment.TotalCostOut = allLines.Sum(l => l.CostOutCheck);
+        payment.TotalAmount = payment.TotalCostIn + payment.TotalCostOut;
+        payment.VatAmount = Math.Round(payment.TotalAmount * payment.VatRate / 100, 0);
+        payment.TotalAmountAfterVAT = payment.TotalAmount + payment.VatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            line.PmtPdiNo,
+            line.Vin,
+            line.Model,
+            line.CostInCheck,
+            line.CostOutCheck,
+            line.TotalCostCheck,
+            line.PdiResult,
+            line.Status,
+            paymentTotalAmount = payment.TotalAmount,
+            paymentTotalAmountAfterVAT = payment.TotalAmountAfterVAT
+        };
+    }
+
+    public async Task<object?> RemovePdiPaymentLineAsync(string pmtPdiNo, string vin)
+    {
+        pmtPdiNo = pmtPdiNo.Trim().ToUpperInvariant();
+        vin = vin.Trim().ToUpperInvariant();
+
+        var payment = await db.PdiPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.PmtPdiNo == pmtPdiNo);
+        if (payment is null) return null;
+
+        if (payment.Status is "HTVSigned" or "Settled" or "Cancelled" or "Rejected")
+            throw new InvalidOperationException($"Không thể xóa dòng xe khỏi bảng kê quyết toán PDI ở trạng thái {payment.Status}.");
+
+        var line = await db.PdiPaymentLines.FirstOrDefaultAsync(l => l.OrgId == Org && l.PdiPaymentId == payment.Id && l.Vin == vin);
+        if (line is null) return null;
+
+        db.PdiPaymentLines.Remove(line);
+        Log(vin, "PdiPaymentLineRemoved", $"{pmtPdiNo} Rút xe khỏi bảng kê quyết toán PDI kỳ {payment.PeriodMonth}");
+        await db.SaveChangesAsync();
+
+        var allLines = await db.PdiPaymentLines.Where(l => l.OrgId == Org && l.PdiPaymentId == payment.Id).ToListAsync();
+        payment.TotalVehicleCount = allLines.Count;
+        payment.TotalCostIn = allLines.Sum(l => l.CostInCheck);
+        payment.TotalCostOut = allLines.Sum(l => l.CostOutCheck);
+        payment.TotalAmount = payment.TotalCostIn + payment.TotalCostOut;
+        payment.VatAmount = Math.Round(payment.TotalAmount * payment.VatRate / 100, 0);
+        payment.TotalAmountAfterVAT = payment.TotalAmount + payment.VatAmount;
+
+        await db.SaveChangesAsync();
+
+        return new
+        {
+            payment.PmtPdiNo,
+            removedVin = vin,
+            payment.TotalVehicleCount,
+            payment.TotalCostIn,
+            payment.TotalCostOut,
+            payment.TotalAmount,
+            payment.TotalAmountAfterVAT
+        };
+    }
+
+    public async Task<object?> GetVehiclePdiPaymentInfoAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null) return null;
+
+        var lastLine = await db.PdiPaymentLines.Where(l => l.OrgId == Org && l.Vin == vin).OrderByDescending(l => l.Id).FirstOrDefaultAsync();
+        PdiPayment? lastPayment = null;
+        if (lastLine != null)
+        {
+            lastPayment = await db.PdiPayments.FirstOrDefaultAsync(p => p.OrgId == Org && p.Id == lastLine.PdiPaymentId);
+        }
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            vehicle.EngineNo,
+            vehicle.Color,
+            vehicle.ModelYear,
+            vehicle.IsPdiPaid,
+            vehicle.PdiPaidAmount,
+            vehicle.LastPdiPaymentNo,
+            vehicle.LastPdiPaymentDate,
+            vehicle.PdiPaymentCount,
+            pdiPayment = lastPayment == null ? null : new
+            {
+                lastPayment.PmtPdiNo,
+                lastPayment.DealerCode,
+                lastPayment.PeriodMonth,
+                lastPayment.PaymentDate,
+                lastPayment.Status,
+                lastPayment.BankRefNo,
+                lastPayment.SettledDate
+            },
+            pdiPaymentLine = lastLine == null ? null : new
+            {
+                lastLine.CostInCheck,
+                lastLine.CostOutCheck,
+                lastLine.TotalCostCheck,
+                lastLine.PdiCompletedDate,
+                lastLine.PdiResult,
+                lastLine.Status,
+                lastLine.Remark
+            }
+        };
+    }
+
+    public async Task<object?> GetVehiclePdiPaymentHistoryAsync(string vin)
+    {
+        vin = vin.Trim().ToUpperInvariant();
+        var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == Org && v.Vin == vin);
+        if (vehicle is null) return null;
+
+        var events = await db.Events
+            .Where(e => e.OrgId == Org && e.Vin == vin && (e.Kind.StartsWith("PdiPayment") || e.Kind.StartsWith("Pdi")))
+            .OrderByDescending(e => e.At)
+            .ToListAsync();
+
+        var paymentLines = await db.PdiPaymentLines
+            .Where(l => l.OrgId == Org && l.Vin == vin)
+            .OrderByDescending(l => l.Id)
+            .ToListAsync();
+
+        var paymentIds = paymentLines.Select(l => l.PdiPaymentId).Distinct().ToList();
+        var payments = await db.PdiPayments.Where(p => p.OrgId == Org && paymentIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+
+        var historyLines = paymentLines.Select(l => new
+        {
+            l.PmtPdiNo,
+            l.Model,
+            l.CostInCheck,
+            l.CostOutCheck,
+            l.TotalCostCheck,
+            l.PdiCompletedDate,
+            l.PdiResult,
+            l.Status,
+            l.Remark,
+            payment = payments.TryGetValue(l.PdiPaymentId, out var p) ? new
+            {
+                p.DealerCode,
+                p.PeriodMonth,
+                p.PaymentDate,
+                p.Status,
+                p.BankRefNo,
+                p.SettledDate
+            } : null
+        }).ToList();
+
+        return new
+        {
+            vehicle.Vin,
+            vehicle.Model,
+            vehicle.IsPdiPaid,
+            vehicle.PdiPaidAmount,
+            vehicle.LastPdiPaymentNo,
+            vehicle.LastPdiPaymentDate,
+            vehicle.PdiPaymentCount,
+            history = events.Select(e => new { e.Id, e.Kind, e.Note, e.At }),
+            pdiPaymentLines = historyLines
+        };
+    }
+
+    public async Task<object> GetPdiPaymentSummaryAsync(string? dealerCode, string? periodMonth, string? storageCode)
+    {
+        var q = db.PdiPayments.Where(p => p.OrgId == Org);
+        if (!string.IsNullOrWhiteSpace(dealerCode)) q = q.Where(p => p.DealerCode.ToLower() == dealerCode.Trim().ToLower());
+        if (!string.IsNullOrWhiteSpace(periodMonth)) q = q.Where(p => p.PeriodMonth == periodMonth.Trim());
+        if (!string.IsNullOrWhiteSpace(storageCode)) q = q.Where(p => p.StorageCode != null && p.StorageCode.ToLower() == storageCode.Trim().ToLower());
+
+        var payments = await q.ToListAsync();
+        var paymentIds = payments.Select(x => x.Id).ToList();
+        var lines = await db.PdiPaymentLines.Where(l => l.OrgId == Org && paymentIds.Contains(l.PdiPaymentId)).ToListAsync();
+
+        int totalPayments = payments.Count;
+        int totalDraft = payments.Count(x => x.Status == "Draft");
+        int totalSubmitted = payments.Count(x => x.Status == "Submitted");
+        int totalApproved1 = payments.Count(x => x.Status == "Approved1");
+        int totalApproved2 = payments.Count(x => x.Status == "Approved2");
+        int totalTCMSSigned = payments.Count(x => x.Status == "TCMSSigned");
+        int totalSettled = payments.Count(x => x.Status is "HTVSigned" or "Settled");
+        int totalCancelled = payments.Count(x => x.Status is "Cancelled" or "Rejected");
+
+        int totalVehicleCount = lines.Where(l => l.Status != "Cancelled").Count();
+        decimal totalCostIn = lines.Where(l => l.Status != "Cancelled").Sum(l => l.CostInCheck);
+        decimal totalCostOut = lines.Where(l => l.Status != "Cancelled").Sum(l => l.CostOutCheck);
+        decimal totalAmount = totalCostIn + totalCostOut;
+        decimal totalVatAmount = payments.Where(p => p.Status != "Cancelled" && p.Status != "Rejected").Sum(p => p.VatAmount);
+        decimal totalAmountAfterVAT = payments.Where(p => p.Status != "Cancelled" && p.Status != "Rejected").Sum(p => p.TotalAmountAfterVAT);
+
+        decimal settlementRatePercent = totalPayments > 0 ? Math.Round((decimal)totalSettled / totalPayments * 100, 1) : 0;
+
+        var byDealer = payments.GroupBy(p => p.DealerCode).Select(g =>
+        {
+            var pIds = g.Select(x => x.Id).ToList();
+            var dLines = lines.Where(l => pIds.Contains(l.PdiPaymentId) && l.Status != "Cancelled").ToList();
+            var settledAmount = g.Where(x => x.Status is "HTVSigned" or "Settled").Sum(x => x.TotalAmountAfterVAT);
+            return new
+            {
+                dealerCode = g.Key,
+                dealerName = g.First().DealerName ?? g.Key,
+                paymentCount = g.Count(),
+                totalVehicles = dLines.Count,
+                totalAmount = g.Sum(x => x.TotalAmountAfterVAT),
+                settledAmount
+            };
+        }).OrderByDescending(x => x.totalAmount).ToList();
+
+        var byStorage = payments.Where(p => !string.IsNullOrWhiteSpace(p.StorageCode)).GroupBy(p => p.StorageCode!).Select(g =>
+        {
+            var pIds = g.Select(x => x.Id).ToList();
+            var sLines = lines.Where(l => pIds.Contains(l.PdiPaymentId) && l.Status != "Cancelled").ToList();
+            return new
+            {
+                storageCode = g.Key,
+                paymentCount = g.Count(),
+                totalVehicles = sLines.Count,
+                totalAmount = g.Sum(x => x.TotalAmountAfterVAT)
+            };
+        }).OrderByDescending(x => x.totalAmount).ToList();
+
+        var byPeriodMonth = payments.GroupBy(p => p.PeriodMonth).Select(g =>
+        {
+            var pIds = g.Select(x => x.Id).ToList();
+            var mLines = lines.Where(l => pIds.Contains(l.PdiPaymentId) && l.Status != "Cancelled").ToList();
+            return new
+            {
+                periodMonth = g.Key,
+                paymentCount = g.Count(),
+                totalVehicles = mLines.Count,
+                totalAmount = g.Sum(x => x.TotalAmountAfterVAT)
+            };
+        }).OrderByDescending(x => x.periodMonth).ToList();
+
+        return new
+        {
+            totalPayments,
+            totalDraft,
+            totalSubmitted,
+            totalApproved1,
+            totalApproved2,
+            totalTCMSSigned,
+            totalSettled,
+            totalCancelled,
+            totalVehicleCount,
+            totalCostIn,
+            totalCostOut,
+            totalAmount,
+            totalVatAmount,
+            totalAmountAfterVAT,
+            settlementRatePercent,
+            byDealer,
+            byStorage,
+            byPeriodMonth
         };
     }
 }

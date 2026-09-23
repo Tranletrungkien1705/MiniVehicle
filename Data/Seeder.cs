@@ -2950,6 +2950,187 @@ public static class Seeder
                 v2.PiCount = 1;
             }
         }
+
+        if (!await db.PdiPayments.AnyAsync())
+        {
+            var org = TenantContext.DefaultOrgId;
+            var pdiPay1 = new PdiPayment
+            {
+                OrgId = org,
+                PmtPdiNo = "PDI-PAY-202603-0001",
+                PmtPdiNoUser = "QT-PDI/2026/03/HN01-01",
+                DealerCode = "DLR-HN01",
+                DealerName = "Hyundai Hà Nội 01",
+                StorageCode = "YARD-A1",
+                PeriodMonth = "2026-03",
+                PaymentDate = DateTime.Now.AddDays(-5),
+                TotalVehicleCount = 2,
+                TotalCostIn = 500000m,
+                TotalCostOut = 400000m,
+                TotalAmount = 900000m,
+                VatRate = 10m,
+                VatAmount = 90000m,
+                TotalAmountAfterVAT = 990000m,
+                BankRefNo = "UNC-PDI-PAY-20260318-001",
+                SettledDate = DateTime.Now.AddDays(-2),
+                FileSigned = "https://doc.hyundai.thanhcong.vn/pdi-payments/PDI-PAY-202603-0001.pdf",
+                Status = "Settled",
+                Remark = "Quyết toán định mức chi phí kiểm tra PDI xe nhập bãi và xuất bãi đợt 1 tháng 03/2026 đại lý Hyundai Hà Nội 01",
+                CreatedBy = "pdi.hn01",
+                CreatedAt = DateTime.Now.AddDays(-7),
+                Approved1By = "ServiceDept.PhamVanHung",
+                Approved1At = DateTime.Now.AddDays(-5),
+                Approved2By = "FinanceDept.NguyenThuHuong",
+                Approved2At = DateTime.Now.AddDays(-4),
+                TCMSSignedBy = "TCMSDirector.TranQuocTuan",
+                TCMSSignedAt = DateTime.Now.AddDays(-3),
+                HTVSignedBy = "HTVDirector.LeNgocDuc",
+                HTVSignedAt = DateTime.Now.AddDays(-2),
+                SettledBy = "ChiefAccountant.HoangThiMai",
+                SettledAt = DateTime.Now.AddDays(-2)
+            };
+            db.PdiPayments.Add(pdiPay1);
+            await db.SaveChangesAsync();
+
+            db.PdiPaymentLines.AddRange(
+                new PdiPaymentLine
+                {
+                    OrgId = org,
+                    PdiPaymentId = pdiPay1.Id,
+                    PmtPdiNo = pdiPay1.PmtPdiNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    EngineNo = "G4LC0001",
+                    Color = "Trắng",
+                    StorageCode = "YARD-A1",
+                    DealerCode = "DLR-HN01",
+                    PdiReqNo = "PDI-202603-001",
+                    DlvMnNo = "DMN202603-001",
+                    CostInCheck = 250000m,
+                    CostOutCheck = 200000m,
+                    TotalCostCheck = 450000m,
+                    PdiCompletedDate = DateTime.Now.AddDays(-6),
+                    PdiResult = "Passed",
+                    Status = "Settled",
+                    Remark = "Kiểm tra toàn diện 20 hạng mục đạt 100% tiêu chuẩn xuất xưởng"
+                },
+                new PdiPaymentLine
+                {
+                    OrgId = org,
+                    PdiPaymentId = pdiPay1.Id,
+                    PmtPdiNo = pdiPay1.PmtPdiNo,
+                    LineIndex = 2,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    EngineNo = "G4FL0002",
+                    Color = "Đen",
+                    StorageCode = "YARD-A1",
+                    DealerCode = "DLR-HN01",
+                    PdiReqNo = "PDI-202603-002",
+                    DlvMnNo = "DMN202603-002",
+                    CostInCheck = 250000m,
+                    CostOutCheck = 200000m,
+                    TotalCostCheck = 450000m,
+                    PdiCompletedDate = DateTime.Now.AddDays(-6),
+                    PdiResult = "Passed",
+                    Status = "Settled",
+                    Remark = "Kiểm tra toàn diện đạt chuẩn bàn giao xe mới"
+                }
+            );
+
+            var pdiPay2 = new PdiPayment
+            {
+                OrgId = org,
+                PmtPdiNo = "PDI-PAY-202603-0002",
+                PmtPdiNoUser = "QT-PDI/2026/03/SG01-02",
+                DealerCode = "DLR-SG01",
+                DealerName = "Hyundai Sài Gòn 01",
+                StorageCode = "YARD-SG01",
+                PeriodMonth = "2026-03",
+                PaymentDate = DateTime.Now.AddDays(-2),
+                TotalVehicleCount = 2,
+                TotalCostIn = 500000m,
+                TotalCostOut = 400000m,
+                TotalAmount = 900000m,
+                VatRate = 10m,
+                VatAmount = 90000m,
+                TotalAmountAfterVAT = 990000m,
+                Status = "Submitted",
+                Remark = "Đề nghị quyết toán chi phí kiểm tra PDI xe SUV SantaFe & Tucson khu vực miền Nam",
+                CreatedBy = "pdi.sg01",
+                CreatedAt = DateTime.Now.AddDays(-3)
+            };
+            db.PdiPayments.Add(pdiPay2);
+            await db.SaveChangesAsync();
+
+            db.PdiPaymentLines.AddRange(
+                new PdiPaymentLine
+                {
+                    OrgId = org,
+                    PdiPaymentId = pdiPay2.Id,
+                    PmtPdiNo = pdiPay2.PmtPdiNo,
+                    LineIndex = 1,
+                    Vin = "DEMOVIN00000001",
+                    Model = "Accent 1.4 AT",
+                    SpecCode = "1.4 AT Đặc biệt",
+                    EngineNo = "G4LC0001",
+                    Color = "Trắng",
+                    StorageCode = "YARD-SG01",
+                    DealerCode = "DLR-SG01",
+                    CostInCheck = 250000m,
+                    CostOutCheck = 200000m,
+                    TotalCostCheck = 450000m,
+                    PdiCompletedDate = DateTime.Now.AddDays(-3),
+                    PdiResult = "Passed",
+                    Status = "Submitted",
+                    Remark = "PDI hoàn tất đạt chuẩn"
+                },
+                new PdiPaymentLine
+                {
+                    OrgId = org,
+                    PdiPaymentId = pdiPay2.Id,
+                    PmtPdiNo = pdiPay2.PmtPdiNo,
+                    LineIndex = 2,
+                    Vin = "DEMOVIN00000002",
+                    Model = "Creta 1.5 Cao cấp",
+                    SpecCode = "1.5 Cao cấp 2 tông màu",
+                    EngineNo = "G4FL0002",
+                    Color = "Đen",
+                    StorageCode = "YARD-SG01",
+                    DealerCode = "DLR-SG01",
+                    CostInCheck = 250000m,
+                    CostOutCheck = 200000m,
+                    TotalCostCheck = 450000m,
+                    PdiCompletedDate = DateTime.Now.AddDays(-3),
+                    PdiResult = "Passed",
+                    Status = "Submitted",
+                    Remark = "PDI hoàn tất đạt chuẩn"
+                }
+            );
+
+            var v1 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000001");
+            if (v1 != null)
+            {
+                v1.IsPdiPaid = true;
+                v1.PdiPaidAmount = 450000m;
+                v1.LastPdiPaymentNo = pdiPay1.PmtPdiNo;
+                v1.LastPdiPaymentDate = DateTime.Now.AddDays(-2);
+                v1.PdiPaymentCount = 1;
+            }
+
+            var v2 = await db.Vehicles.FirstOrDefaultAsync(v => v.OrgId == org && v.Vin == "DEMOVIN00000002");
+            if (v2 != null)
+            {
+                v2.IsPdiPaid = true;
+                v2.PdiPaidAmount = 450000m;
+                v2.LastPdiPaymentNo = pdiPay1.PmtPdiNo;
+                v2.LastPdiPaymentDate = DateTime.Now.AddDays(-2);
+                v2.PdiPaymentCount = 1;
+            }
+        }
         await db.SaveChangesAsync();
     }
 
@@ -3099,7 +3280,14 @@ public static class Seeder
             "CREATE TABLE IF NOT EXISTS public.\"ProductionOrders\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"OrderNo\" text NOT NULL DEFAULT '', \"OrderNoUser\" text NULL, \"OrdMonth\" text NOT NULL DEFAULT '', \"OrdType\" text NOT NULL DEFAULT 'MTO', \"OrdCategoryType\" text NOT NULL DEFAULT 'MakeToOrder', \"PlantCode\" text NOT NULL DEFAULT 'HTMV_NINHBINH_1', \"PlantName\" text NULL, \"TotalPlanQty\" integer NOT NULL DEFAULT 0, \"TotalProducedQty\" integer NOT NULL DEFAULT 0, \"EstimatedCompletionDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ScheduledBy\" text NULL, \"ScheduledAt\" timestamp NULL, \"StartedBy\" text NULL, \"StartedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"ProductionOrderLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ProductionOrderId\" bigint NOT NULL, \"OrderNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT '', \"ColorName\" text NULL, \"PlanQty\" integer NOT NULL DEFAULT 1, \"QtyMonthN1\" integer NOT NULL DEFAULT 0, \"QtyMonthN2\" integer NOT NULL DEFAULT 0, \"QtyMonthN3\" integer NOT NULL DEFAULT 0, \"ProducedQty\" integer NOT NULL DEFAULT 0, \"ETADate\" timestamp NULL, \"Stage\" text NOT NULL DEFAULT 'Stamping', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
             "CREATE TABLE IF NOT EXISTS public.\"ProformaInvoices\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"RefNo\" text NOT NULL DEFAULT '', \"RefNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"OrderMonth\" text NOT NULL DEFAULT '', \"ProductionMonth\" text NULL, \"ExpectedDeliveryMonth\" text NULL, \"Currency\" text NOT NULL DEFAULT 'USD', \"ExchangeRate\" numeric NOT NULL DEFAULT 25450, \"TotalQuantity\" integer NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"DepositRate\" numeric NOT NULL DEFAULT 10, \"DepositAmount\" numeric NOT NULL DEFAULT 0, \"PaymentTerm\" text NOT NULL DEFAULT 'LC', \"DeparturePort\" text NULL, \"ArrivalPort\" text NULL, \"LCTemp\" text NULL, \"LCNo\" text NULL, \"ContractNo\" text NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"ApprovedBy\" text NULL, \"ApprovedAt\" timestamp NULL, \"ExecutedBy\" text NULL, \"ExecutedAt\" timestamp NULL, \"CompletedBy\" text NULL, \"CompletedAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
-            "CREATE TABLE IF NOT EXISTS public.\"ProformaInvoiceLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ProformaInvoiceId\" bigint NOT NULL, \"RefNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT 'NWAC', \"ColorName\" text NULL, \"WorkOrderNo\" text NULL, \"PlantCode\" text NULL, \"PortCode\" text NULL, \"LCTemp\" text NULL, \"ContractNo\" text NULL, \"OrderQty\" integer NOT NULL DEFAULT 1, \"AllocatedQty\" integer NOT NULL DEFAULT 0, \"UnitPriceForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
+            "CREATE TABLE IF NOT EXISTS public.\"ProformaInvoiceLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"ProformaInvoiceId\" bigint NOT NULL, \"RefNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NULL, \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NOT NULL DEFAULT '', \"SpecDescription\" text NULL, \"ColorCode\" text NOT NULL DEFAULT 'NWAC', \"ColorName\" text NULL, \"WorkOrderNo\" text NULL, \"PlantCode\" text NULL, \"PortCode\" text NULL, \"LCTemp\" text NULL, \"ContractNo\" text NULL, \"OrderQty\" integer NOT NULL DEFAULT 1, \"AllocatedQty\" integer NOT NULL DEFAULT 0, \"UnitPriceForeign\" numeric NOT NULL DEFAULT 0, \"TotalAmountForeign\" numeric NOT NULL DEFAULT 0, \"UnitPrice\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"IsPdiPaid\" boolean NOT NULL DEFAULT false",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PdiPaidAmount\" numeric NOT NULL DEFAULT 0",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastPdiPaymentNo\" text NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"LastPdiPaymentDate\" timestamp NULL",
+            "ALTER TABLE public.\"Vehicles\" ADD COLUMN IF NOT EXISTS \"PdiPaymentCount\" integer NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS public.\"PdiPayments\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PmtPdiNo\" text NOT NULL DEFAULT '', \"PmtPdiNoUser\" text NULL, \"DealerCode\" text NOT NULL DEFAULT '', \"DealerName\" text NULL, \"StorageCode\" text NULL, \"PeriodMonth\" text NOT NULL DEFAULT '', \"PaymentDate\" timestamp NOT NULL DEFAULT now(), \"TotalVehicleCount\" integer NOT NULL DEFAULT 0, \"TotalCostIn\" numeric NOT NULL DEFAULT 0, \"TotalCostOut\" numeric NOT NULL DEFAULT 0, \"TotalAmount\" numeric NOT NULL DEFAULT 0, \"VatRate\" numeric NOT NULL DEFAULT 10, \"VatAmount\" numeric NOT NULL DEFAULT 0, \"TotalAmountAfterVAT\" numeric NOT NULL DEFAULT 0, \"FileSigned\" text NULL, \"BankRefNo\" text NULL, \"SettledDate\" timestamp NULL, \"Status\" text NOT NULL DEFAULT 'Draft', \"Remark\" text NULL, \"CreatedBy\" text NULL, \"CreatedAt\" timestamp NOT NULL DEFAULT now(), \"Approved1By\" text NULL, \"Approved1At\" timestamp NULL, \"Approved2By\" text NULL, \"Approved2At\" timestamp NULL, \"TCMSSignedBy\" text NULL, \"TCMSSignedAt\" timestamp NULL, \"HTVSignedBy\" text NULL, \"HTVSignedAt\" timestamp NULL, \"SettledBy\" text NULL, \"SettledAt\" timestamp NULL, \"RejectedBy\" text NULL, \"RejectedAt\" timestamp NULL, \"RejectReason\" text NULL, \"CancelledBy\" text NULL, \"CancelledAt\" timestamp NULL, \"CancelReason\" text NULL)",
+            "CREATE TABLE IF NOT EXISTS public.\"PdiPaymentLines\" (\"Id\" bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, \"OrgId\" uuid NOT NULL, \"PdiPaymentId\" bigint NOT NULL, \"PmtPdiNo\" text NOT NULL DEFAULT '', \"LineIndex\" integer NOT NULL DEFAULT 1, \"Vin\" text NOT NULL DEFAULT '', \"Model\" text NOT NULL DEFAULT '', \"SpecCode\" text NULL, \"EngineNo\" text NULL, \"Color\" text NULL, \"StorageCode\" text NULL, \"DealerCode\" text NULL, \"PdiReqNo\" text NULL, \"DlvMnNo\" text NULL, \"CostInCheck\" numeric NOT NULL DEFAULT 0, \"CostOutCheck\" numeric NOT NULL DEFAULT 0, \"TotalCostCheck\" numeric NOT NULL DEFAULT 0, \"PdiCompletedDate\" timestamp NULL, \"PdiResult\" text NOT NULL DEFAULT 'Passed', \"Status\" text NOT NULL DEFAULT 'Pending', \"Remark\" text NULL)"
         };
         foreach (var s in stmts) try { await db.Database.ExecuteSqlRawAsync(s); } catch { }
     }

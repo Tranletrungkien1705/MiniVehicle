@@ -2892,6 +2892,129 @@ app.MapGet("/api/vehicles/{vin}/pi-history", async (string vin, IVehicleService 
     return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
 }).RequireAuthorization();
 
+// ===== Bảng kê & Quyết toán chi phí kiểm tra PDI xe cho Đại lý & Kho bãi (BizHTC.Payment.Pmt_PaymentPDI / PdiPayment) =====
+
+app.MapPost("/api/pdi-payments", async (CreatePdiPaymentDto dto, IVehicleService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(dto.DealerCode) || string.IsNullOrWhiteSpace(dto.PeriodMonth))
+        return Results.BadRequest(new { error = "Cần mã đại lý DealerCode và kỳ quyết toán PeriodMonth (YYYY-MM)." });
+    try { return Results.Ok(await svc.CreatePdiPaymentAsync(dto)); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/pdi-payments", async (IVehicleService svc, string? status, string? dealer, string? storage, string? periodMonth, string? pmtPdiNo, string? vin) =>
+    Results.Ok(await svc.ListPdiPaymentsAsync(status, dealer, storage, periodMonth, pmtPdiNo, vin))).RequireAuthorization();
+
+app.MapGet("/api/pdi-payments/summary", async (IVehicleService svc, string? dealerCode, string? periodMonth, string? storageCode) =>
+    Results.Ok(await svc.GetPdiPaymentSummaryAsync(dealerCode, periodMonth, storageCode))).RequireAuthorization();
+
+app.MapGet("/api/reports/pdi-payments/summary", async (IVehicleService svc, string? dealerCode, string? periodMonth, string? storageCode) =>
+    Results.Ok(await svc.GetPdiPaymentSummaryAsync(dealerCode, periodMonth, storageCode))).RequireAuthorization();
+
+app.MapGet("/api/pdi-payments/{pmtPdiNo}", async (string pmtPdiNo, IVehicleService svc) =>
+{
+    var r = await svc.GetPdiPaymentAsync(pmtPdiNo);
+    return r is null ? Results.NotFound(new { pmtPdiNo, error = "Không tìm thấy bảng kê quyết toán PDI." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapPut("/api/pdi-payments/{pmtPdiNo}", async (string pmtPdiNo, UpdatePdiPaymentHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdatePdiPaymentHeaderAsync(pmtPdiNo, dto);
+        return r is null ? Results.NotFound(new { pmtPdiNo, error = "Không tìm thấy bảng kê quyết toán PDI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/pdi-payments/{pmtPdiNo}/update", async (string pmtPdiNo, UpdatePdiPaymentHeaderDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdatePdiPaymentHeaderAsync(pmtPdiNo, dto);
+        return r is null ? Results.NotFound(new { pmtPdiNo, error = "Không tìm thấy bảng kê quyết toán PDI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/pdi-payments/{pmtPdiNo}/{action}", async (string pmtPdiNo, string action, PdiPaymentTransitionDto? dto, IVehicleService svc) =>
+{
+    if (action is not ("submit" or "approve1" or "approve-tech" or "tech-approve" or "approve2" or "approve-finance" or "finance-approve" or "approve" or "tcms-sign" or "tcmssign" or "sign-tcms" or "htv-sign" or "htvsign" or "sign-htv" or "settle" or "complete" or "finish" or "reject" or "cancel"))
+        return Results.BadRequest(new { error = "action = submit|approve1|approve2|tcms-sign|htv-sign|settle|reject|cancel" });
+    try
+    {
+        var r = await svc.PdiPaymentTransitionAsync(pmtPdiNo, action, dto);
+        return r is null ? Results.NotFound(new { pmtPdiNo, error = "Không tìm thấy bảng kê quyết toán PDI hoặc sai trạng thái cho action." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/pdi-payments/{pmtPdiNo}/lines", async (string pmtPdiNo, List<PdiPaymentItemInputDto> items, IVehicleService svc) =>
+{
+    if (items is null || items.Count == 0)
+        return Results.BadRequest(new { error = "Cần danh sách xe items để thêm vào bảng kê quyết toán PDI." });
+    try
+    {
+        var r = await svc.AddPdiPaymentLinesAsync(pmtPdiNo, items);
+        return r is null ? Results.NotFound(new { pmtPdiNo, error = "Không tìm thấy bảng kê quyết toán PDI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPost("/api/pdi-payments/{pmtPdiNo}/lines/{vin}/update", async (string pmtPdiNo, string vin, UpdatePdiPaymentLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdatePdiPaymentLineAsync(pmtPdiNo, vin, dto);
+        return r is null ? Results.NotFound(new { pmtPdiNo, vin, error = "Không tìm thấy dòng xe trong bảng kê quyết toán PDI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapPut("/api/pdi-payments/{pmtPdiNo}/lines/{vin}", async (string pmtPdiNo, string vin, UpdatePdiPaymentLineDto dto, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.UpdatePdiPaymentLineAsync(pmtPdiNo, vin, dto);
+        return r is null ? Results.NotFound(new { pmtPdiNo, vin, error = "Không tìm thấy dòng xe trong bảng kê quyết toán PDI." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapDelete("/api/pdi-payments/{pmtPdiNo}/lines/{vin}", async (string pmtPdiNo, string vin, IVehicleService svc) =>
+{
+    try
+    {
+        var r = await svc.RemovePdiPaymentLineAsync(pmtPdiNo, vin);
+        return r is null ? Results.NotFound(new { pmtPdiNo, vin, error = "Không tìm thấy dòng xe trong bảng kê hoặc không thể xóa." }) : Results.Ok(r);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/pdi-payment-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePdiPaymentInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/pdi-info", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePdiPaymentInfoAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/pdi-payments", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePdiPaymentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
+app.MapGet("/api/vehicles/{vin}/pdi-payment-history", async (string vin, IVehicleService svc) =>
+{
+    var r = await svc.GetVehiclePdiPaymentHistoryAsync(vin);
+    return r is null ? Results.NotFound(new { vin, error = "Không tìm thấy số khung VIN." }) : Results.Ok(r);
+}).RequireAuthorization();
+
 // ---- Công khai (không cần auth): tra cứu VIN + bảo hành (cho app/đại lý/khách) ----
 app.MapGet("/api/lookup", async (string vin, IVehicleService svc) =>
 {
